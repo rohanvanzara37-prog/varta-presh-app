@@ -20,6 +20,8 @@ import {
   Send,
   Share2,
   Users,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { FONT_OPTIONS } from '../data/newsData';
@@ -107,18 +109,35 @@ function formatRelativePublished(iso?: string): string {
   return `${diffDays}d ago`;
 }
 
-function buildYouTubeEmbedSrc(video: ShortVideoItem, isActive: boolean): string {
+function buildYouTubeEmbedSrc(
+  video: ShortVideoItem,
+  isActive: boolean,
+  initialMuted: boolean
+): string {
+  const originParam =
+    typeof window !== 'undefined' && window.location?.origin
+      ? `&origin=${encodeURIComponent(window.location.origin)}`
+      : '';
+  const commonParams = `rel=0&modestbranding=1&playsinline=1&enablejsapi=1&autoplay=${
+    isActive ? 1 : 0
+  }&mute=${initialMuted ? 1 : 0}${originParam}`;
+
   if (video.isFallbackPlaylist && video.playlistId) {
     return `https://www.youtube.com/embed?listType=playlist&list=${encodeURIComponent(
       video.playlistId
-    )}&rel=0&modestbranding=1&playsinline=1${isActive ? '&autoplay=1&mute=1' : ''}`;
+    )}&${commonParams}`;
   }
   if (video.youtubeVideoId) {
     return `https://www.youtube.com/embed/${encodeURIComponent(
       video.youtubeVideoId
-    )}?rel=0&modestbranding=1&playsinline=1${isActive ? '&autoplay=1&mute=1' : ''}`;
+    )}?${commonParams}`;
   }
   return video.videoUrl;
+}
+
+function isDirectVideoFile(video: ShortVideoItem): boolean {
+  if (video.youtubeVideoId || video.isFallbackPlaylist) return false;
+  return /\.(mp4|webm|mov)(\?|$)/i.test(video.videoUrl) || video.videoUrl.startsWith('blob:');
 }
 
 export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
@@ -165,6 +184,7 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(true);
   const [isFullScreenReels, setIsFullScreenReels] = useState(false);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
 
@@ -180,6 +200,14 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
   const [creatorSearch, setCreatorSearch] = useState('');
 
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
+  const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const mountMutedRef = useRef<Record<string, boolean>>({});
+  const isMutedRef = useRef<boolean>(isMuted);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   const getFontFamily = (id: FontOptionId) =>
     FONT_OPTIONS.find((f) => f.id === id)?.cssFamily ?? FONT_OPTIONS[0].cssFamily;
@@ -311,6 +339,131 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
     () => liveShorts.filter((v) => Boolean(savedMap[v.id])),
     [liveShorts, savedMap]
   );
+
+  const sendYouTubeCommand = (
+    iframe: HTMLIFrameElement | null | undefined,
+    func: string,
+    args: unknown[] = []
+  ) => {
+    const win = iframe?.contentWindow;
+    if (!win) return;
+    try {
+      win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+    } catch {
+      // ignore cross-origin postMessage restrictions
+    }
+  };
+
+  const applyAudioToReel = (videoId: string, nextMuted: boolean) => {
+    const videoEl = videoRefs.current[videoId];
+    if (videoEl) {
+      videoEl.muted = nextMuted;
+      videoEl.volume = nextMuted ? 0 : 1.0;
+      if (!nextMuted && videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+    }
+
+    const iframeEl = iframeRefs.current[videoId];
+    if (iframeEl) {
+      if (nextMuted) {
+        sendYouTubeCommand(iframeEl, 'mute');
+      } else {
+        sendYouTubeCommand(iframeEl, 'unMute');
+        sendYouTubeCommand(iframeEl, 'setVolume', [100]);
+        sendYouTubeCommand(iframeEl, 'playVideo');
+      }
+    }
+  };
+
+  const handleSetMutedState = (nextMuted: boolean, targetVideoId?: string) => {
+    isMutedRef.current = nextMuted;
+    setIsMuted(nextMuted);
+
+    const activeVidId = targetVideoId ?? filteredVideos[activeIndex]?.id;
+    if (activeVidId) {
+      applyAudioToReel(activeVidId, nextMuted);
+      if (!nextMuted) {
+        window.setTimeout(() => applyAudioToReel(activeVidId, false), 150);
+      }
+    }
+
+    // Sync any mounted direct video tags so scrolled cards remember the unmuted audio state
+    Object.values(videoRefs.current).forEach((el) => {
+      if (!el) return;
+      el.muted = nextMuted;
+      el.volume = nextMuted ? 0 : 1.0;
+    });
+  };
+
+  const handleToggleMute = (videoId: string) => {
+    handleSetMutedState(!isMutedRef.current, videoId);
+  };
+
+  const handleTapVideoToUnmute = (videoId: string) => {
+    if (isMutedRef.current) {
+      handleSetMutedState(false, videoId);
+      return;
+    }
+    const videoEl = videoRefs.current[videoId];
+    if (videoEl) {
+      videoEl.muted = false;
+      videoEl.volume = 1.0;
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      } else {
+        videoEl.pause();
+      }
+    }
+  };
+
+  // Sync audio & playback automatically whenever user scrolls to a new active reel
+  useEffect(() => {
+    const activeVid = filteredVideos[activeIndex];
+    if (!activeVid) return;
+
+    // Pause/mute non-active reels so only the active reel plays audio cleanly
+    filteredVideos.forEach((v, idx) => {
+      if (idx === activeIndex) return;
+      const vidEl = videoRefs.current[v.id];
+      if (vidEl && !vidEl.paused) {
+        vidEl.pause();
+      }
+      const frameEl = iframeRefs.current[v.id];
+      if (frameEl) {
+        sendYouTubeCommand(frameEl, 'pauseVideo');
+        sendYouTubeCommand(frameEl, 'mute');
+      }
+    });
+
+    // Play & apply remembered mute/unmute state on the newly visible active reel
+    const syncActive = () => {
+      const vidEl = videoRefs.current[activeVid.id];
+      if (vidEl) {
+        vidEl.muted = isMutedRef.current;
+        vidEl.volume = isMutedRef.current ? 0 : 1.0;
+        vidEl.play().catch(() => {});
+      }
+      const frameEl = iframeRefs.current[activeVid.id];
+      if (frameEl) {
+        sendYouTubeCommand(frameEl, 'playVideo');
+        if (isMutedRef.current) {
+          sendYouTubeCommand(frameEl, 'mute');
+        } else {
+          sendYouTubeCommand(frameEl, 'unMute');
+          sendYouTubeCommand(frameEl, 'setVolume', [100]);
+        }
+      }
+    };
+
+    syncActive();
+    const t1 = window.setTimeout(syncActive, 180);
+    const t2 = window.setTimeout(syncActive, 500);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [activeIndex, isMuted, filteredVideos]);
 
   // Track visible snap-scroll reel card
   useEffect(() => {
@@ -711,7 +864,15 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                 const commentsCount =
                   (commentsMap[video.id]?.length ?? 0) + video.comments.length;
                 const shouldRenderIframe = Math.abs(idx - activeIndex) <= 1;
-                const embedSrc = buildYouTubeEmbedSrc(video, idx === activeIndex);
+                const directVideo = isDirectVideoFile(video);
+                if (idx !== activeIndex || mountMutedRef.current[video.id] === undefined) {
+                  mountMutedRef.current[video.id] = isMuted;
+                }
+                const embedSrc = buildYouTubeEmbedSrc(
+                  video,
+                  idx === activeIndex,
+                  mountMutedRef.current[video.id]
+                );
 
                 return (
                   <section
@@ -720,13 +881,40 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                     data-reel-id={video.id}
                     className="relative h-full w-full snap-start snap-always flex items-center justify-center bg-black overflow-hidden"
                   >
-                    {/* YouTube Embed Iframe for Active/Adjacent Slides, Crisp Thumbnail Otherwise */}
-                    {shouldRenderIframe ? (
+                    {/* Direct Video Tag OR YouTube Embed Iframe for Active/Adjacent Slides */}
+                    {directVideo ? (
+                      <video
+                        ref={(el) => {
+                          videoRefs.current[video.id] = el;
+                          if (el) {
+                            el.muted = isMuted;
+                            el.volume = isMuted ? 0 : 1.0;
+                          }
+                        }}
+                        src={video.videoUrl}
+                        loop
+                        playsInline
+                        autoPlay={idx === activeIndex}
+                        muted={isMuted}
+                        onClick={() => handleTapVideoToUnmute(video.id)}
+                        className="h-full w-full object-cover cursor-pointer"
+                      />
+                    ) : shouldRenderIframe ? (
                       <iframe
+                        ref={(el) => {
+                          iframeRefs.current[video.id] = el;
+                        }}
                         key={`${video.id}-${idx === activeIndex ? 'active' : 'idle'}`}
                         src={embedSrc}
                         title={video.title}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        onLoad={() => {
+                          if (idx === activeIndex) {
+                            applyAudioToReel(video.id, isMutedRef.current);
+                          } else {
+                            sendYouTubeCommand(iframeRefs.current[video.id], 'mute');
+                          }
+                        }}
+                        allow="autoplay; encrypted-media; accelerometer; clipboard-write; gyroscope; picture-in-picture; web-share"
                         allowFullScreen
                         className="h-full w-full border-0"
                       />
@@ -747,7 +935,22 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                       </div>
                     )}
 
-                    {/* Top Metadata & Category Badge Strip */}
+                    {/* Tap-Anywhere Overlay While Muted to Immediately Unmute & Remember Audio */}
+                    {isMuted && !directVideo && (
+                      <button
+                        type="button"
+                        onClick={() => handleTapVideoToUnmute(video.id)}
+                        aria-label="Tap anywhere on video to unmute audio"
+                        className="absolute inset-0 z-[5] flex items-center justify-center bg-transparent cursor-pointer"
+                      >
+                        <span className="inline-flex items-center gap-2 rounded-full bg-black/70 border border-white/25 px-4 py-2 text-xs font-semibold text-white backdrop-blur-md shadow-lg">
+                          <VolumeX className="h-4 w-4 text-amber-400" />
+                          <span>Tap anywhere for sound</span>
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Top Metadata & Category Badge + Visible Speaker Button */}
                     <div className="pointer-events-none absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/80 to-transparent" />
                     <div className="absolute top-3.5 left-3.5 right-3.5 flex items-center justify-between gap-2 z-10">
                       <div className="flex items-center gap-2 min-w-0">
@@ -763,23 +966,49 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                         </span>
                       </div>
 
-                      {video.externalLink && (
-                        <a
-                          href={video.externalLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          aria-label="Open video on YouTube"
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md"
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMute(video.id)}
+                          aria-label={isMuted ? 'Unmute video audio' : 'Mute video audio'}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/25 px-3 text-xs font-semibold text-white backdrop-blur-md cursor-pointer"
+                          style={{
+                            backgroundColor: isMuted
+                              ? 'rgba(0, 0, 0, 0.7)'
+                              : 'rgba(16, 185, 129, 0.85)',
+                          }}
                         >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      )}
+                          {isMuted ? (
+                            <>
+                              <VolumeX className="h-4 w-4" />
+                              <span>Muted</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="h-4 w-4" />
+                              <span>Sound On</span>
+                            </>
+                          )}
+                        </button>
+
+                        {video.externalLink && (
+                          <a
+                            href={video.externalLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Open video on YouTube"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
                     </div>
 
                     {/* Bottom Scrim */}
                     <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-black/90 via-black/45 to-transparent" />
 
-                    {/* Right Side Overlay Action Controls: Prev/Next, Like, Comment, Share, Save */}
+                    {/* Right Side Overlay Action Controls: Prev/Next, Sound, Like, Comment, Share, Save */}
                     <div className="absolute right-3 bottom-16 flex flex-col items-center gap-3 z-10">
                       <button
                         type="button"
@@ -789,6 +1018,32 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md cursor-pointer disabled:opacity-35"
                       >
                         <ChevronUp className="h-5 w-5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMute(video.id)}
+                        className="flex flex-col items-center gap-0.5 text-white cursor-pointer"
+                        aria-label={isMuted ? 'Turn sound on' : 'Mute sound'}
+                      >
+                        <span
+                          className="flex h-11 w-11 items-center justify-center rounded-full backdrop-blur-md transition-transform active:scale-90"
+                          style={{
+                            backgroundColor: isMuted
+                              ? 'rgba(0, 0, 0, 0.65)'
+                              : 'rgba(16, 185, 129, 0.85)',
+                            color: '#ffffff',
+                          }}
+                        >
+                          {isMuted ? (
+                            <VolumeX className="h-5 w-5" />
+                          ) : (
+                            <Volume2 className="h-5 w-5" />
+                          )}
+                        </span>
+                        <span className="text-[11px] font-semibold">
+                          {isMuted ? 'Unmute' : 'Audio'}
+                        </span>
                       </button>
 
                       <button

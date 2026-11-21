@@ -1,4 +1,4 @@
-export type AppTab = 'shorts' | 'livetv' | 'forex' | 'social';
+export type AppTab = 'shorts' | 'forex' | 'social';
 
 export type ThemeMode = 'light' | 'dark';
 

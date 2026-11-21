@@ -16,7 +16,6 @@ import {
 import { BottomThumbNav } from './components/BottomThumbNav';
 import { ForexMarketView } from './components/ForexMarketView';
 import { HeaderNav } from './components/HeaderNav';
-import { LiveTvView } from './components/LiveTvView';
 import { MarketDetails } from './components/MarketDetails';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
@@ -25,7 +24,6 @@ import { SocialCommunityView } from './components/SocialCommunityView';
 import { ThemePaletteStudio } from './components/ThemePaletteStudio';
 import {
   DEFAULT_TYPOGRAPHY,
-  INITIAL_MESSAGES,
   PRESET_PALETTES,
 } from './data/newsData';
 import {
@@ -40,7 +38,6 @@ import type {
   AppTab,
   ColorPalette,
   MarketAsset,
-  NewsMessage,
   PriceAlertRecord,
   TypographySettings,
 } from './types/news';
@@ -165,9 +162,6 @@ export default function App() {
   const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>(() =>
     loadJson<string[]>(STORAGE_KEYS.watchlist, ['OANDA:XAUUSD', 'OANDA:XAGUSD', 'BINANCE:BTCUSDT', 'BINANCE:ETHUSDT'])
   );
-
-  // Live TV Viewer Chat Messages
-  const [messages, setMessages] = useState<NewsMessage[]>(INITIAL_MESSAGES);
 
   // Live Markets & Price Alerts
   const [marketAssets, setMarketAssets] = useState<MarketAsset[]>(DEFAULT_MARKET_ASSETS);
@@ -488,15 +482,6 @@ export default function App() {
     setLocalAlerts((prev) => prev.filter((a) => a.id !== alertId));
   };
 
-  const handleSendMessage = (msg: Omit<NewsMessage, 'id' | 'timestamp'>) => {
-    const entry: NewsMessage = {
-      ...msg,
-      id: `msg-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages((prev) => [...prev, entry]);
-  };
-
   const handleSelectTab = (tab: AppTab) => {
     setActiveTab(tab);
     setActiveMarketAsset(null);
@@ -722,12 +707,6 @@ export default function App() {
             typography={typography}
             firebaseUser={firebaseUser}
             onRequestSignIn={handleGoogleSignIn}
-          />
-        ) : activeTab === 'livetv' ? (
-          <LiveTvView
-            typography={typography}
-            messages={messages}
-            onSendMessage={handleSendMessage}
           />
         ) : (
           <ForexMarketView

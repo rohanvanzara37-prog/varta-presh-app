@@ -12,7 +12,6 @@ interface HeaderNavProps {
 
 const NAV_ITEMS: { id: AppTab; label: string }[] = [
   { id: 'shorts', label: 'Shorts' },
-  { id: 'livetv', label: 'Watch Live TV' },
   { id: 'forex', label: 'Markets' },
   { id: 'social', label: 'Social' },
 ];

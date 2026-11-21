@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clapperboard, Radio, TrendingUp, Users } from 'lucide-react';
+import { Clapperboard, TrendingUp, Users } from 'lucide-react';
 import type { AppTab } from '../types/news';
 
 interface BottomThumbNavProps {
@@ -9,7 +9,6 @@ interface BottomThumbNavProps {
 
 const MOBILE_TABS: { id: AppTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'shorts', label: 'Shorts', icon: Clapperboard },
-  { id: 'livetv', label: 'Live TV', icon: Radio },
   { id: 'forex', label: 'Markets', icon: TrendingUp },
   { id: 'social', label: 'Social', icon: Users },
 ];
@@ -24,7 +23,7 @@ export const BottomThumbNav: React.FC<BottomThumbNavProps> = ({ activeTab, onSel
         borderColor: 'var(--vp-border)',
       }}
     >
-      <div className="grid grid-cols-4 items-center h-[58px]">
+      <div className="grid grid-cols-3 items-center h-[58px]">
         {MOBILE_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
