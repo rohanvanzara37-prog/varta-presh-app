@@ -2,21 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   Check,
+  ChevronDown,
   Maximize2,
   Minimize2,
-  RefreshCw,
-  Sparkles,
-  ZoomIn,
-  ZoomOut,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { FONT_OPTIONS } from '../data/newsData';
-import type { FontOptionId, MarketAsset, ThemeMode, TypographySettings } from '../types/news';
+import type { MarketAsset, ThemeMode, TypographySettings } from '../types/news';
 import { fetchBinanceKlines, type LiveCandleBar } from '../utils/marketFeeds';
 import { computeSmartChartSummary, type CandleInput } from '../utils/technicalIndicators';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
 import { TradingViewChartPanel } from './TradingViewChartPanel';
 import { TradingViewEmbedChart } from './TradingViewEmbedChart';
-import { TradingViewTickerTape } from './TradingViewTickerTape';
 import { XauGoldAnalysisSection } from './XauGoldAnalysisSection';
 
 interface ForexMarketViewProps {
@@ -24,10 +20,26 @@ interface ForexMarketViewProps {
   themeMode: ThemeMode;
   marketAssets?: MarketAsset[];
   watchlistSymbols?: string[];
+  selectedSymbol?: string;
+  onSelectSymbol?: (tvSymbol: string) => void;
   onOpenMarketDetails?: (asset: MarketAsset) => void;
-  onRefreshAllMarkets?: () => void;
-  isRefreshingMarkets?: boolean;
 }
+
+const COMPACT_SYMBOLS = [
+  { symbol: 'BINANCE:BTCUSDT', label: 'BTC' },
+  { symbol: 'BINANCE:ETHUSDT', label: 'ETH' },
+  { symbol: 'BINANCE:SOLUSDT', label: 'SOL' },
+  { symbol: 'OANDA:XAUUSD', label: 'Gold' },
+  { symbol: 'OANDA:XAGUSD', label: 'Silver' },
+] as const;
+
+const COMPACT_TIMEFRAMES = [
+  { id: '1', label: '1m' },
+  { id: '5', label: '5m' },
+  { id: '15', label: '15m' },
+  { id: '60', label: '1H' },
+  { id: 'D', label: '1D' },
+] as const;
 
 const SMART_STUDY_OPTIONS = [
   { id: 'STD;EMA', label: 'EMA' },
@@ -41,22 +53,22 @@ const SMART_STUDY_OPTIONS = [
 const SMART_PRESETS: { id: string; label: string; studies: string[] }[] = [
   {
     id: 'scalp',
-    label: 'Scalp (EMA + VWAP + RSI)',
+    label: 'Scalp',
     studies: ['STD;EMA', 'STD;VWAP', 'STD;RSI'],
   },
   {
     id: 'trend',
-    label: 'Trend (EMA + MACD + BB)',
+    label: 'Trend',
     studies: ['STD;EMA', 'STD;MACD', 'STD;Bollinger_Bands'],
   },
   {
     id: 'momentum',
-    label: 'Momentum (RSI + MACD + Stoch)',
+    label: 'Momentum',
     studies: ['STD;RSI', 'STD;MACD', 'STD;Stochastic_RSI'],
   },
   {
     id: 'clean',
-    label: 'Clean Price',
+    label: 'Clean',
     studies: [],
   },
 ];
@@ -97,21 +109,54 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   themeMode,
   marketAssets = [],
   watchlistSymbols = [],
+  selectedSymbol,
+  onSelectSymbol,
   onOpenMarketDetails,
-  onRefreshAllMarkets,
-  isRefreshingMarkets = false,
 }) => {
   const [marketSubTab, setMarketSubTab] = useState<'terminal' | 'xau' | 'tradingview'>('terminal');
-  const [tvWidgetSymbol, setTvWidgetSymbol] = useState<string>('BINANCE:BTCUSDT');
+  const [internalSymbol, setInternalSymbol] = useState<string>(selectedSymbol || 'BINANCE:BTCUSDT');
   const [tvWidgetInterval, setTvWidgetInterval] = useState<string>('15');
   const [tvStudies, setTvStudies] = useState<string[]>(['STD;EMA', 'STD;VWAP', 'STD;RSI']);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Metals' | 'Crypto'>('All');
   const [liveCryptoBars, setLiveCryptoBars] = useState<LiveCandleBar[] | null>(null);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
-  const [inlineChartHeight, setInlineChartHeight] = useState<number>(640);
 
   const chartSectionRef = useRef<HTMLElement | null>(null);
+  const indicatorsMenuRef = useRef<HTMLDivElement | null>(null);
   const enteredNativeFsRef = useRef(false);
+
+  useEffect(() => {
+    if (selectedSymbol) {
+      setInternalSymbol(selectedSymbol);
+      setMarketSubTab('terminal');
+    }
+  }, [selectedSymbol]);
+
+  const tvWidgetSymbol = selectedSymbol || internalSymbol;
+
+  const handleChooseSymbol = (sym: string) => {
+    setInternalSymbol(sym);
+    onSelectSymbol?.(sym);
+  };
+
+  useEffect(() => {
+    if (!indicatorsOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (indicatorsMenuRef.current && !indicatorsMenuRef.current.contains(e.target as Node)) {
+        setIndicatorsOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIndicatorsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [indicatorsOpen]);
 
   const toggleFullScreen = useCallback(() => {
     setIsChartFullScreen((prev) => {
@@ -166,9 +211,6 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     };
   }, [isChartFullScreen]);
 
-  const getFontFamily = (id: FontOptionId) =>
-    FONT_OPTIONS.find((f) => f.id === id)?.cssFamily ?? FONT_OPTIONS[0].cssFamily;
-
   // Fetch live Binance klines for any BINANCE:* crypto pair at the active timeframe
   useEffect(() => {
     let cancelled = false;
@@ -219,80 +261,58 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         : 'var(--vp-accent)';
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-6 pb-20 md:pb-8">
-      {/* Header Row */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1
-            className="text-2xl sm:text-3xl font-bold tracking-tight"
-            style={{ fontFamily: getFontFamily(typography.headlineFont) }}
-          >
-            Live Markets — Gold, Silver &amp; Crypto
-          </h1>
-          <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--vp-muted)' }}>
-            Real-time TradingView charts with smart technical indicators, pivot levels, and bullion spot analysis
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+    <div className="mx-auto max-w-[1440px] space-y-4 pb-20 md:pb-8">
+      {/* Compact Top Mode Switcher */}
+      <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        <div
+          className="flex items-center gap-1 rounded-xl p-1 shrink-0"
+          style={{ backgroundColor: 'var(--vp-elevated)' }}
+        >
           <button
             type="button"
-            onClick={() => onRefreshAllMarkets?.()}
-            disabled={isRefreshingMarkets}
-            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold cursor-pointer"
+            onClick={() => setMarketSubTab('terminal')}
+            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             style={{
-              backgroundColor: 'var(--vp-surface)',
-              borderColor: 'var(--vp-border)',
-              color: 'var(--vp-text)',
+              backgroundColor: marketSubTab === 'terminal' ? 'var(--vp-primary)' : 'transparent',
+              color: marketSubTab === 'terminal' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
             }}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingMarkets ? 'animate-spin' : ''}`} />
-            <span>Refresh Live Prices</span>
+            Live Chart
+          </button>
+          <button
+            type="button"
+            onClick={() => setMarketSubTab('xau')}
+            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            style={{
+              backgroundColor: marketSubTab === 'xau' ? 'var(--vp-primary)' : 'transparent',
+              color: marketSubTab === 'xau' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+            }}
+          >
+            Gold Analysis &amp; Alerts
+          </button>
+          <button
+            type="button"
+            onClick={() => setMarketSubTab('tradingview')}
+            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            style={{
+              backgroundColor: marketSubTab === 'tradingview' ? 'var(--vp-primary)' : 'transparent',
+              color: marketSubTab === 'tradingview' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+            }}
+          >
+            Copy &amp; 1m Desk
           </button>
         </div>
-      </div>
 
-      {/* Official TradingView Live Ticker Tape (BTC, ETH, Gold, Silver, SOL, BNB) */}
-      <TradingViewTickerTape themeMode={themeMode} />
-
-      {/* Market Section Switcher */}
-      <div
-        className="flex items-center gap-1.5 rounded-2xl p-1.5 w-fit max-w-full overflow-x-auto no-scrollbar"
-        style={{ backgroundColor: 'var(--vp-elevated)' }}
-      >
-        <button
-          type="button"
-          onClick={() => setMarketSubTab('terminal')}
-          className="min-h-[40px] rounded-xl px-4 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-all"
-          style={{
-            backgroundColor: marketSubTab === 'terminal' ? 'var(--vp-primary)' : 'transparent',
-            color: marketSubTab === 'terminal' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-          }}
-        >
-          Live TradingView Terminal
-        </button>
-        <button
-          type="button"
-          onClick={() => setMarketSubTab('xau')}
-          className="min-h-[40px] rounded-xl px-4 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-all"
-          style={{
-            backgroundColor: marketSubTab === 'xau' ? 'var(--vp-primary)' : 'transparent',
-            color: marketSubTab === 'xau' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-          }}
-        >
-          XAU Gold Analysis &amp; Alerts
-        </button>
-        <button
-          type="button"
-          onClick={() => setMarketSubTab('tradingview')}
-          className="min-h-[40px] rounded-xl px-4 py-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-all"
-          style={{
-            backgroundColor: marketSubTab === 'tradingview' ? 'var(--vp-primary)' : 'transparent',
-            color: marketSubTab === 'tradingview' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-          }}
-        >
-          Copy Trading &amp; 1m Charts (XAU / BTC)
-        </button>
+        {activeSymbolAsset && marketSubTab === 'terminal' && (
+          <div className="hidden sm:flex items-center gap-2 text-xs font-mono-tabular whitespace-nowrap shrink-0">
+            <span className="font-bold">{activeSymbolAsset.displayPair}</span>
+            <span>${formatPrice(activeSymbolAsset.livePrice)}</span>
+            <span style={{ color: activeSymbolAsset.changePct24h >= 0 ? '#10b981' : '#ef4444' }}>
+              {activeSymbolAsset.changePct24h >= 0 ? '+' : ''}
+              {activeSymbolAsset.changePct24h.toFixed(2)}%
+            </span>
+          </div>
+        )}
       </div>
 
       {marketSubTab === 'xau' ? (
@@ -301,42 +321,38 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         <TradingViewChartPanel
           themeMode={themeMode}
           typography={typography}
-          initialSymbol="OANDA:XAUUSD"
+          initialSymbol={tvWidgetSymbol}
         />
       ) : (
-        <div className="space-y-6">
-          {/* Live TradingView Interactive Candlestick Terminal with Smart Indicators */}
+        <div className="space-y-4">
+          {/* Chart-First Full-Width TradingView Section */}
           <section
             ref={chartSectionRef}
             aria-label="Live TradingView Candlestick Terminal"
             className={
               isChartFullScreen
-                ? 'fixed inset-0 z-[90] flex flex-col gap-3 p-3 sm:p-5 overflow-hidden'
-                : 'rounded-2xl border p-4 sm:p-5 space-y-4'
+                ? 'fixed inset-0 z-[90] flex flex-col gap-2.5 p-3 sm:p-4 overflow-hidden'
+                : 'space-y-2.5'
             }
-            style={{
-              backgroundColor: 'var(--vp-surface)',
-              borderColor: 'var(--vp-border)',
-            }}
+            style={
+              isChartFullScreen
+                ? { backgroundColor: 'var(--vp-surface)' }
+                : undefined
+            }
           >
-            <div className="flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[
-                  { symbol: 'BINANCE:BTCUSDT', label: 'Bitcoin (BTC/USDT)' },
-                  { symbol: 'BINANCE:ETHUSDT', label: 'Ethereum (ETH/USDT)' },
-                  { symbol: 'BINANCE:SOLUSDT', label: 'Solana (SOL/USDT)' },
-                  { symbol: 'OANDA:XAUUSD', label: 'Gold (XAU/USD)' },
-                  { symbol: 'OANDA:XAGUSD', label: 'Silver (XAG/USD)' },
-                ].map((pair) => {
+            {/* Compact Single-Line Coin Selector + Timeframe Pills + Collapsible Indicators Dropdown */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
+                {COMPACT_SYMBOLS.map((pair) => {
                   const active = tvWidgetSymbol === pair.symbol;
                   return (
                     <button
                       key={pair.symbol}
                       type="button"
-                      onClick={() => setTvWidgetSymbol(pair.symbol)}
-                      className="min-h-[36px] rounded-xl border px-3 py-1.5 text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
+                      onClick={() => handleChooseSymbol(pair.symbol)}
+                      className="min-h-[34px] rounded-lg border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                       style={{
-                        backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                        backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
                         color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
                         borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
                       }}
@@ -347,71 +363,114 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 })}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
                 <div
-                  className="flex items-center gap-1 rounded-xl p-1"
-                  style={{ backgroundColor: 'var(--vp-elevated)' }}
+                  className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-nowrap rounded-lg p-0.5 border"
+                  style={{
+                    backgroundColor: 'var(--vp-surface)',
+                    borderColor: 'var(--vp-border)',
+                  }}
                 >
-                  {[
-                    { id: '1', label: '1m' },
-                    { id: '5', label: '5m' },
-                    { id: '15', label: '15m' },
-                    { id: '60', label: '1H' },
-                    { id: 'D', label: '1D' },
-                  ].map((tf) => (
-                    <button
-                      key={tf.id}
-                      type="button"
-                      onClick={() => setTvWidgetInterval(tf.id)}
-                      className="min-h-[32px] rounded-lg px-2.5 text-xs font-mono-tabular font-semibold cursor-pointer"
-                      style={{
-                        backgroundColor: tvWidgetInterval === tf.id ? 'var(--vp-primary)' : 'transparent',
-                        color: tvWidgetInterval === tf.id ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-                      }}
-                    >
-                      {tf.label}
-                    </button>
-                  ))}
+                  {COMPACT_TIMEFRAMES.map((tf) => {
+                    const active = tvWidgetInterval === tf.id;
+                    return (
+                      <button
+                        key={tf.id}
+                        type="button"
+                        onClick={() => setTvWidgetInterval(tf.id)}
+                        className="min-h-[30px] rounded-md px-2.5 text-xs font-mono-tabular font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                        style={{
+                          backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
+                          color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+                        }}
+                      >
+                        {tf.label}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {!isChartFullScreen && (
-                  <div
-                    className="hidden sm:flex items-center gap-1 rounded-xl border p-1"
+                {/* Collapsible Smart Indicators Dropdown */}
+                <div className="relative shrink-0" ref={indicatorsMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIndicatorsOpen((prev) => !prev)}
+                    aria-expanded={indicatorsOpen}
+                    className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
                     style={{
-                      backgroundColor: 'var(--vp-elevated)',
-                      borderColor: 'var(--vp-border)',
+                      backgroundColor: indicatorsOpen ? 'var(--vp-secondary)' : 'var(--vp-surface)',
+                      borderColor: indicatorsOpen ? 'var(--vp-primary)' : 'var(--vp-border)',
+                      color: 'var(--vp-text)',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setInlineChartHeight((h) => Math.max(440, h - 80))}
-                      aria-label="Zoom out chart height"
-                      title="Compact chart height"
-                      className="min-h-[28px] rounded-lg px-2 text-xs cursor-pointer"
-                      style={{ color: 'var(--vp-text)' }}
+                    <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
+                    <span>Indicators ({tvStudies.length})</span>
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${indicatorsOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {indicatorsOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-xl border p-3 shadow-xl space-y-2.5"
+                      style={{
+                        backgroundColor: 'var(--vp-surface)',
+                        borderColor: 'var(--vp-border)',
+                      }}
                     >
-                      <ZoomOut className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setInlineChartHeight((h) => Math.min(880, h + 80))}
-                      aria-label="Zoom in chart height"
-                      title="Expand chart height"
-                      className="min-h-[28px] rounded-lg px-2 text-xs cursor-pointer"
-                      style={{ color: 'var(--vp-text)' }}
-                    >
-                      <ZoomIn className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
+                      <div className="flex flex-wrap gap-1">
+                        {SMART_PRESETS.map((preset) => {
+                          const isMatch =
+                            preset.studies.length === tvStudies.length &&
+                            preset.studies.every((s) => tvStudies.includes(s));
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => setTvStudies([...preset.studies])}
+                              className="min-h-[28px] rounded-md border px-2 text-[11px] font-semibold cursor-pointer"
+                              style={{
+                                backgroundColor: isMatch ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                                color: isMatch ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                                borderColor: isMatch ? 'var(--vp-primary)' : 'var(--vp-border)',
+                              }}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t" style={{ borderColor: 'var(--vp-border)' }}>
+                        {SMART_STUDY_OPTIONS.map((ind) => {
+                          const active = tvStudies.includes(ind.id);
+                          return (
+                            <button
+                              key={ind.id}
+                              type="button"
+                              onClick={() => toggleStudy(ind.id)}
+                              className="inline-flex min-h-[30px] items-center justify-between gap-1 rounded-md border px-2 text-xs font-semibold cursor-pointer"
+                              style={{
+                                backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                                color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                                borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
+                              }}
+                            >
+                              <span className="truncate">{ind.label}</span>
+                              {active && <Check className="h-3 w-3 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"
                   onClick={toggleFullScreen}
                   aria-label={isChartFullScreen ? 'Exit full screen chart' : 'Zoom chart full screen'}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors"
+                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                   style={{
-                    backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                    backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-surface)',
                     color: isChartFullScreen ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
                     borderColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-border)',
                   }}
@@ -419,123 +478,43 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   {isChartFullScreen ? (
                     <>
                       <Minimize2 className="h-3.5 w-3.5" />
-                      <span>Exit Full Screen (Esc)</span>
+                      <span>Exit</span>
                     </>
                   ) : (
                     <>
                       <Maximize2 className="h-3.5 w-3.5" />
-                      <span>Full Screen Zoom</span>
+                      <span className="hidden sm:inline">Full Screen</span>
                     </>
                   )}
                 </button>
-
-                {onOpenMarketDetails && !isChartFullScreen && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const found =
-                        marketAssets.find((a) => a.tvSymbol === tvWidgetSymbol) ??
-                        marketAssets[0];
-                      if (found) onOpenMarketDetails(found);
-                    }}
-                    className="min-h-[38px] rounded-xl border px-3 py-1.5 text-xs font-semibold cursor-pointer"
-                    style={{
-                      backgroundColor: 'var(--vp-secondary)',
-                      color: 'var(--vp-secondary-fg)',
-                      borderColor: 'var(--vp-border)',
-                    }}
-                  >
-                    Full Terminal &amp; Alerts →
-                  </button>
-                )}
               </div>
             </div>
 
-            {/* Smart Chart Indicators Toolbar */}
-            <div
-              className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border p-2.5 sm:p-3 shrink-0"
-              style={{
-                backgroundColor: 'var(--vp-elevated)',
-                borderColor: 'var(--vp-border)',
-              }}
-            >
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span
-                  className="inline-flex items-center gap-1.5 text-xs font-bold mr-1"
-                  style={{ color: 'var(--vp-primary)' }}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Smart Indicators:</span>
-                </span>
-                {SMART_STUDY_OPTIONS.map((ind) => {
-                  const active = tvStudies.includes(ind.id);
-                  return (
-                    <button
-                      key={ind.id}
-                      type="button"
-                      onClick={() => toggleStudy(ind.id)}
-                      className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer transition-colors"
-                      style={{
-                        backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
-                        color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
-                        borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
-                      }}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                      <span>{ind.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                {SMART_PRESETS.map((preset) => {
-                  const isMatch =
-                    preset.studies.length === tvStudies.length &&
-                    preset.studies.every((s) => tvStudies.includes(s));
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => setTvStudies([...preset.studies])}
-                      className="min-h-[28px] rounded-lg border px-2.5 text-[11px] font-semibold cursor-pointer"
-                      style={{
-                        backgroundColor: isMatch ? 'var(--vp-secondary)' : 'transparent',
-                        color: isMatch ? 'var(--vp-secondary-fg)' : 'var(--vp-muted)',
-                        borderColor: 'var(--vp-border)',
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className={isChartFullScreen ? 'flex-1 min-h-0' : ''}>
+            {/* Full-Width 450px TradingView Candlestick Chart */}
+            <div className={isChartFullScreen ? 'flex-1 min-h-0 w-full' : 'w-full'}>
               <TradingViewEmbedChart
                 symbol={tvWidgetSymbol}
                 interval={tvWidgetInterval}
                 themeMode={themeMode}
-                height={isChartFullScreen ? '100%' : inlineChartHeight}
+                height={isChartFullScreen ? '100%' : 450}
                 studies={tvStudies}
-                className={isChartFullScreen ? 'h-full' : ''}
+                className={isChartFullScreen ? 'h-full w-full' : 'w-full'}
               />
             </div>
 
-            {/* Smart Technical Confluence & Pivot Readouts */}
+            {/* Compact Technical Confluence Strip */}
             {smartSummary && (
               <div
                 className={
                   isChartFullScreen
-                    ? 'hidden sm:grid sm:grid-cols-3 lg:grid-cols-6 gap-2.5 shrink-0'
-                    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1'
+                    ? 'hidden sm:grid sm:grid-cols-3 lg:grid-cols-6 gap-2 shrink-0'
+                    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1'
                 }
               >
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -552,9 +531,9 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 </div>
 
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -574,9 +553,9 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 </div>
 
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -596,9 +575,9 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 </div>
 
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -614,9 +593,9 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 </div>
 
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -626,15 +605,15 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   <span className="block font-mono-tabular text-sm font-bold mt-0.5 text-emerald-500">
                     ${formatPrice(smartSummary.supportS1)}
                   </span>
-                  <span className="block text-[11px]" style={{ color: 'var(--vp-muted)' }}>
+                  <span className="block text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
                     ATR: ${formatPrice(smartSummary.atr14)}
                   </span>
                 </div>
 
                 <div
-                  className="rounded-xl border p-3"
+                  className="rounded-xl border px-3 py-2.5"
                   style={{
-                    backgroundColor: 'var(--vp-elevated)',
+                    backgroundColor: 'var(--vp-surface)',
                     borderColor: 'var(--vp-border)',
                   }}
                 >
@@ -644,7 +623,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   <span className="block font-mono-tabular text-sm font-bold mt-0.5 text-rose-500">
                     ${formatPrice(smartSummary.resistanceR1)}
                   </span>
-                  <span className="block text-[11px]" style={{ color: 'var(--vp-muted)' }}>
+                  <span className="block text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
                     EMA 9: ${formatPrice(smartSummary.ema9)}
                   </span>
                 </div>
@@ -652,7 +631,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             )}
           </section>
 
-          {/* Perfect Market Analysis & Actionable BUY / SELL Suggestion */}
+          {/* Actionable BUY / SELL Analysis */}
           {smartSummary && (
             <MarketTradeSuggestionCard
               pairLabel={activeSymbolAsset?.displayPair ?? tvWidgetSymbol.replace(/^.*:/, '')}
@@ -676,16 +655,16 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             />
           )}
 
-          {/* Live Gold, Silver & Crypto Coins — Click any card to open interactive TradingView MarketDetails */}
+          {/* Live Gold, Silver & Crypto Coins */}
           {marketAssets.length > 0 && (
             <section aria-label="Live Bullion & Crypto Markets" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2">
                   <h2 className="text-sm sm:text-base font-bold tracking-tight">
-                    Live Precious Metals &amp; Crypto (Click for TradingView Candlestick Chart)
+                    Metals &amp; Crypto Watchlist
                   </h2>
                   <div
-                    className="flex items-center gap-1 rounded-xl p-1"
+                    className="flex items-center gap-1 rounded-lg p-0.5"
                     style={{ backgroundColor: 'var(--vp-elevated)' }}
                   >
                     {(['All', 'Metals', 'Crypto'] as const).map((cat) => (
@@ -693,7 +672,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                         key={cat}
                         type="button"
                         onClick={() => setCategoryFilter(cat)}
-                        className="min-h-[30px] rounded-lg px-2.5 text-xs font-semibold cursor-pointer"
+                        className="min-h-[28px] rounded-md px-2.5 text-xs font-semibold cursor-pointer"
                         style={{
                           backgroundColor:
                             categoryFilter === cat ? 'var(--vp-primary)' : 'transparent',
@@ -706,8 +685,8 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                     ))}
                   </div>
                 </div>
-                <span className="text-xs" style={{ color: 'var(--vp-muted)' }}>
-                  {watchlistSymbols.length > 0 ? `${watchlistSymbols.length} watchlisted` : 'Tap any asset'}
+                <span className="text-xs font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
+                  {watchlistSymbols.length > 0 ? `${watchlistSymbols.length} watchlisted` : 'Tap asset for alerts'}
                 </span>
               </div>
 
@@ -726,8 +705,11 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                     <button
                       key={asset.id}
                       type="button"
-                      onClick={() => onOpenMarketDetails?.(asset)}
-                      className="text-left rounded-2xl border p-4 transition-all hover:translate-y-[-1px] cursor-pointer space-y-2"
+                      onClick={() => {
+                        handleChooseSymbol(asset.tvSymbol);
+                        onOpenMarketDetails?.(asset);
+                      }}
+                      className="text-left rounded-2xl border p-3.5 transition-transform hover:translate-y-[-1px] cursor-pointer space-y-1.5"
                       style={{
                         backgroundColor: 'var(--vp-surface)',
                         borderColor: isGold ? 'var(--vp-accent)' : 'var(--vp-border)',
@@ -743,7 +725,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                           {asset.changePct24h.toFixed(2)}%
                         </span>
                       </div>
-                      <div className="font-mono-tabular text-xl font-bold tracking-tight">
+                      <div className="font-mono-tabular text-lg font-bold tracking-tight">
                         ${formatPrice(asset.livePrice)}
                       </div>
                       <div
@@ -754,7 +736,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                           {assetSignal ? `${assetSignal.action} (${assetSignal.confidencePct}%)` : asset.name}
                         </span>
                         <span className="font-semibold shrink-0" style={{ color: 'var(--vp-primary)' }}>
-                          Big Chart →
+                          Alerts →
                         </span>
                       </div>
                     </button>

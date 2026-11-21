@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  ExternalLink,
   Film,
   Heart,
   Link2,
@@ -14,7 +13,6 @@ import {
   MessageCircle,
   Minimize2,
   Play,
-  Radio,
   RefreshCw,
   Search,
   Send,
@@ -182,7 +180,6 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
   });
 
   const [loading, setLoading] = useState(true);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullScreenReels, setIsFullScreenReels] = useState(false);
@@ -202,7 +199,6 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
-  const mountMutedRef = useRef<Record<string, boolean>>({});
   const isMutedRef = useRef<boolean>(isMuted);
 
   useEffect(() => {
@@ -223,9 +219,6 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
     setLoading(true);
     const fetched = await fetchLiveShortsVideos();
     setLiveShorts(fetched.length > 0 ? fetched : buildPlaylistFallbackVideos());
-    setLastSyncedAt(
-      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    );
     setLoading(false);
   };
 
@@ -618,34 +611,45 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
   }, [creatorProfiles, creatorSearch]);
 
   const activeReel = filteredVideos[activeIndex] ?? filteredVideos[0];
-  const isPlaylistFallbackActive = liveShorts.every((v) => v.isFallbackPlaylist);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 pb-16 md:pb-6">
-      {/* Header Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold" style={{ color: 'var(--vp-muted)' }}>
-            <Radio className="h-3.5 w-3.5 text-emerald-500" />
-            <span>100% Automatic Crypto &amp; Forex YouTube RSS2JSON Feed</span>
-            <span aria-hidden="true">·</span>
-            <span>CoinDesk · Cointelegraph · Kitco NEWS · FXStreet</span>
-            {lastSyncedAt && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="font-mono-tabular">Synced {lastSyncedAt}</span>
-              </>
-            )}
-          </div>
-          <h1
-            className="text-2xl sm:text-3xl font-bold tracking-tight mt-0.5"
-            style={{ fontFamily: getFontFamily(typography.headlineFont) }}
-          >
-            Crypto &amp; Forex Market Reels
-          </h1>
+    <div className="mx-auto max-w-6xl space-y-3 pb-16 md:pb-6">
+      {/* Compact Top Bar: Channel Filter Pills + Action Controls (Zero Extra Text Header) */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          {(['ALL', ...AUTO_YOUTUBE_REEL_CHANNELS.map((c) => c.channelName)] as const).map(
+            (chName) => {
+              const active = channelFilter === chName;
+              const count =
+                chName === 'ALL'
+                  ? liveShorts.length
+                  : liveShorts.filter((v) => v.creator === chName).length;
+              return (
+                <button
+                  key={chName}
+                  type="button"
+                  onClick={() => {
+                    setChannelFilter(chName);
+                    setActiveIndex(0);
+                    if (feedContainerRef.current) {
+                      feedContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  className="min-h-[36px] rounded-xl border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  style={{
+                    backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
+                    color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                    borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
+                  }}
+                >
+                  {chName === 'ALL' ? `All (${count})` : `${chName} (${count})`}
+                </button>
+              );
+            }
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() =>
@@ -654,7 +658,7 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                 'directory'
               )
             }
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold cursor-pointer"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold cursor-pointer"
             style={{
               backgroundColor: 'var(--vp-surface)',
               borderColor: 'var(--vp-border)',
@@ -662,13 +666,13 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
             }}
           >
             <Users className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
-            <span>Channel Profiles ({creatorProfiles.length})</span>
+            <span>Profiles</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsFullScreenReels(true)}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold cursor-pointer"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold cursor-pointer"
             style={{
               backgroundColor: 'var(--vp-surface)',
               borderColor: 'var(--vp-border)',
@@ -676,21 +680,22 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
             }}
           >
             <Maximize2 className="h-3.5 w-3.5" />
-            <span>Full Screen Feed</span>
+            <span className="hidden sm:inline">Full Screen</span>
           </button>
 
           <button
             type="button"
             onClick={loadAutoReels}
             disabled={loading}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold cursor-pointer"
+            aria-label="Sync latest shorts"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 text-xs font-semibold cursor-pointer"
             style={{
               backgroundColor: 'var(--vp-primary)',
               color: 'var(--vp-primary-fg)',
             }}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>{loading ? 'Syncing RSS...' : 'Sync Latest'}</span>
+            <span>{loading ? 'Syncing' : 'Sync'}</span>
           </button>
         </div>
       </div>
@@ -699,7 +704,7 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
       {toastNotice && (
         <div
           role="status"
-          className="flex items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold"
+          className="flex items-center justify-between gap-2 rounded-xl border px-4 py-2 text-xs font-semibold"
           style={{
             backgroundColor: 'var(--vp-surface)',
             borderColor: 'var(--vp-primary)',
@@ -720,101 +725,6 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
           </button>
         </div>
       )}
-
-      {/* Channel Filter + Story-Ring Profile Strip */}
-      <section
-        aria-label="Channel reel profiles and filters"
-        className="rounded-2xl border p-3.5 space-y-3"
-        style={{
-          backgroundColor: 'var(--vp-surface)',
-          borderColor: 'var(--vp-border)',
-        }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(['ALL', ...AUTO_YOUTUBE_REEL_CHANNELS.map((c) => c.channelName)] as const).map(
-              (chName) => {
-                const active = channelFilter === chName;
-                const count =
-                  chName === 'ALL'
-                    ? liveShorts.length
-                    : liveShorts.filter((v) => v.creator === chName).length;
-                return (
-                  <button
-                    key={chName}
-                    type="button"
-                    onClick={() => {
-                      setChannelFilter(chName);
-                      setActiveIndex(0);
-                      if (feedContainerRef.current) {
-                        feedContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-                      }
-                    }}
-                    className="min-h-[36px] rounded-xl border px-3 text-xs font-semibold cursor-pointer"
-                    style={{
-                      backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
-                      color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
-                      borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
-                    }}
-                  >
-                    {chName === 'ALL' ? `All Channels (${count})` : `${chName} (${count})`}
-                  </button>
-                );
-              }
-            )}
-          </div>
-
-          <span className="text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
-            {isPlaylistFallbackActive
-              ? 'Auto Playlist Fallback Active'
-              : 'Live YouTube RSS2JSON Active'}
-          </span>
-        </div>
-
-        {/* Story Rings for Each Channel Profile */}
-        <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pt-1">
-          {creatorProfiles.map((prof) => {
-            const isPlayingCreator =
-              activeReel && normalizeHandle(activeReel.creator) === prof.key;
-            return (
-              <button
-                key={prof.key}
-                type="button"
-                onClick={() => openCreatorProfile(prof.key, 'profile')}
-                className="flex items-center gap-2.5 rounded-xl border px-3 py-2 shrink-0 cursor-pointer transition-colors"
-                style={{
-                  backgroundColor: 'var(--vp-elevated)',
-                  borderColor: isPlayingCreator ? 'var(--vp-primary)' : 'var(--vp-border)',
-                }}
-              >
-                <div
-                  className="p-[2px] rounded-full shrink-0"
-                  style={{ background: prof.ringGradient }}
-                >
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full border-2 text-xs font-bold"
-                    style={{
-                      backgroundColor: 'var(--vp-surface)',
-                      borderColor: 'var(--vp-elevated)',
-                    }}
-                  >
-                    {prof.initials}
-                  </div>
-                </div>
-                <div className="text-left">
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold">{prof.creator}</span>
-                    <BadgeCheck className="h-3.5 w-3.5 text-sky-500" />
-                  </div>
-                  <span className="block text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
-                    {prof.categories[0]} · {prof.videos.length} reels
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
 
       {/* Main Layout: Full-Height Vertical Reels Snap Feed + Active Channel Profile & Queue */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -865,13 +775,11 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                   (commentsMap[video.id]?.length ?? 0) + video.comments.length;
                 const shouldRenderIframe = Math.abs(idx - activeIndex) <= 1;
                 const directVideo = isDirectVideoFile(video);
-                if (idx !== activeIndex || mountMutedRef.current[video.id] === undefined) {
-                  mountMutedRef.current[video.id] = isMuted;
-                }
+                const isCardActive = idx === activeIndex;
                 const embedSrc = buildYouTubeEmbedSrc(
                   video,
-                  idx === activeIndex,
-                  mountMutedRef.current[video.id]
+                  isCardActive,
+                  isCardActive ? isMuted : true
                 );
 
                 return (
@@ -894,7 +802,7 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                         src={video.videoUrl}
                         loop
                         playsInline
-                        autoPlay={idx === activeIndex}
+                        autoPlay={isCardActive}
                         muted={isMuted}
                         onClick={() => handleTapVideoToUnmute(video.id)}
                         className="h-full w-full object-cover cursor-pointer"
@@ -904,14 +812,26 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                         ref={(el) => {
                           iframeRefs.current[video.id] = el;
                         }}
-                        key={`${video.id}-${idx === activeIndex ? 'active' : 'idle'}`}
+                        key={`${video.id}-${isCardActive ? (isMuted ? 'active-muted' : 'active-unmuted') : 'idle'}`}
                         src={embedSrc}
                         title={video.title}
+                        referrerPolicy="strict-origin-when-cross-origin"
                         onLoad={() => {
-                          if (idx === activeIndex) {
+                          const frameEl = iframeRefs.current[video.id];
+                          if (frameEl?.contentWindow) {
+                            try {
+                              frameEl.contentWindow.postMessage(
+                                JSON.stringify({ event: 'listening', id: video.id }),
+                                '*'
+                              );
+                            } catch {
+                              // ignore
+                            }
+                          }
+                          if (isCardActive) {
                             applyAudioToReel(video.id, isMutedRef.current);
                           } else {
-                            sendYouTubeCommand(iframeRefs.current[video.id], 'mute');
+                            sendYouTubeCommand(frameEl, 'mute');
                           }
                         }}
                         allow="autoplay; encrypted-media; accelerometer; clipboard-write; gyroscope; picture-in-picture; web-share"
@@ -990,18 +910,6 @@ export const ShortsFeedView: React.FC<ShortsFeedViewProps> = ({
                             </>
                           )}
                         </button>
-
-                        {video.externalLink && (
-                          <a
-                            href={video.externalLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label="Open video on YouTube"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        )}
                       </div>
                     </div>
 

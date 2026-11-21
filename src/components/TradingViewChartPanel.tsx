@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity,
   ArrowDownRight,
   ArrowUpRight,
   CandlestickChart,
   Check,
+  ChevronDown,
   Copy,
-  ExternalLink,
   Layers,
   Maximize2,
   MessageSquare,
@@ -14,6 +13,7 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  SlidersHorizontal,
   TrendingUp,
   Users,
   ZoomIn,
@@ -248,6 +248,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
   const [widgetLoaded, setWidgetLoaded] = useState(false);
   const [widgetFailed, setWidgetFailed] = useState(false);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [visibleCandleCount, setVisibleCandleCount] = useState<number>(38);
 
   // Live XAU/USD and BTC/USD price feeds
@@ -314,7 +315,19 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartSectionRef = useRef<HTMLElement | null>(null);
+  const indicatorsMenuRef = useRef<HTMLDivElement | null>(null);
   const enteredNativeFsRef = useRef(false);
+
+  useEffect(() => {
+    if (!indicatorsOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (indicatorsMenuRef.current && !indicatorsMenuRef.current.contains(e.target as Node)) {
+        setIndicatorsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [indicatorsOpen]);
 
   const toggleFullScreen = useCallback(() => {
     setIsChartFullScreen((prev) => {
@@ -467,7 +480,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
       style: '1',
       locale: 'en',
       allow_symbol_change: true,
-      hide_side_toolbar: false,
+      hide_side_toolbar: true,
       withdateranges: true,
       calendar: false,
       studies: activeStudies,
@@ -750,15 +763,15 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
         </button>
       </div>
 
-      {/* Main Split: Live 1m TradingView Chart (7 cols) + Copy Trading & Live Chat Desk (5 cols) */}
+      {/* Main Stack: Full-Width 1m TradingView Chart (12 cols) + Copy Trading & Live Chat Desk */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
         {/* Chart Workspace */}
         <section
           ref={chartSectionRef}
           className={
             isChartFullScreen
-              ? 'fixed inset-0 z-[90] flex flex-col gap-3 p-3 sm:p-5 overflow-hidden'
-              : 'xl:col-span-7 rounded-2xl border p-4 sm:p-5 space-y-4'
+              ? 'fixed inset-0 z-[90] flex flex-col gap-2.5 p-3 sm:p-4 overflow-hidden'
+              : 'xl:col-span-12 rounded-2xl border p-3 sm:p-4 space-y-2.5'
           }
           style={{
             backgroundColor: 'var(--vp-surface)',
@@ -833,7 +846,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                 type="button"
                 onClick={toggleFullScreen}
                 aria-label={isChartFullScreen ? 'Exit full screen chart' : 'Zoom chart full screen'}
-                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold cursor-pointer transition-colors"
+                className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer transition-colors"
                 style={{
                   backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-elevated)',
                   color: isChartFullScreen ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -843,7 +856,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                 {isChartFullScreen ? (
                   <>
                     <Minimize2 className="h-3.5 w-3.5" />
-                    <span>Exit (Esc)</span>
+                    <span>Exit</span>
                   </>
                 ) : (
                   <>
@@ -852,27 +865,12 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                   </>
                 )}
               </button>
-
-              <a
-                href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Open on TradingView"
-                className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border px-2.5 text-xs font-semibold"
-                style={{
-                  backgroundColor: 'var(--vp-elevated)',
-                  borderColor: 'var(--vp-border)',
-                  color: 'var(--vp-text)',
-                }}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
             </div>
           </div>
 
-          {/* Symbol Quick Picks + Interval + Custom Symbol */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          {/* Compact Single-Line Symbol Picks + Timeframe Pills + Collapsible Indicators */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
               {SYMBOL_PRESETS.map((item) => {
                 const active = symbol === item.symbol;
                 return (
@@ -880,7 +878,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                     key={item.symbol}
                     type="button"
                     onClick={() => setSymbol(item.symbol)}
-                    className="min-h-[36px] rounded-xl border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                    className="min-h-[34px] rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                     style={{
                       backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
                       color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -893,17 +891,17 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
               })}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0">
               <div
-                className="flex items-center gap-0.5 rounded-xl p-1"
-                style={{ backgroundColor: 'var(--vp-elevated)' }}
+                className="flex items-center gap-0.5 rounded-lg border p-0.5 overflow-x-auto no-scrollbar flex-nowrap"
+                style={{ backgroundColor: 'var(--vp-elevated)', borderColor: 'var(--vp-border)' }}
               >
                 {INTERVALS.map((iv) => (
                   <button
                     key={iv.id}
                     type="button"
                     onClick={() => setInterval(iv.id)}
-                    className="min-h-[32px] rounded-lg px-2 text-xs font-mono-tabular font-semibold cursor-pointer"
+                    className="min-h-[28px] rounded-md px-2 text-xs font-mono-tabular font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                     style={{
                       backgroundColor: interval === iv.id ? 'var(--vp-primary)' : 'transparent',
                       color: interval === iv.id ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
@@ -914,14 +912,62 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                 ))}
               </div>
 
-              <form onSubmit={handleApplyCustomSymbol} className="flex items-center gap-1">
+              <div className="relative" ref={indicatorsMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIndicatorsOpen((o) => !o)}
+                  aria-expanded={indicatorsOpen}
+                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
+                  style={{
+                    backgroundColor: indicatorsOpen ? 'var(--vp-secondary)' : 'var(--vp-elevated)',
+                    borderColor: indicatorsOpen ? 'var(--vp-primary)' : 'var(--vp-border)',
+                    color: 'var(--vp-text)',
+                  }}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
+                  <span>Indicators ({activeStudies.length})</span>
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${indicatorsOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {indicatorsOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1.5 z-40 w-56 rounded-xl border p-2.5 shadow-xl grid grid-cols-2 gap-1.5"
+                    style={{
+                      backgroundColor: 'var(--vp-surface)',
+                      borderColor: 'var(--vp-border)',
+                    }}
+                  >
+                    {PANEL_SMART_STUDIES.map((st) => {
+                      const enabled = activeStudies.includes(st.id);
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => toggleStudy(st.id)}
+                          className="inline-flex min-h-[30px] items-center justify-between gap-1 rounded-md border px-2 text-xs font-semibold cursor-pointer"
+                          style={{
+                            backgroundColor: enabled ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                            color: enabled ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                            borderColor: enabled ? 'var(--vp-primary)' : 'var(--vp-border)',
+                          }}
+                        >
+                          <span className="truncate">{st.label}</span>
+                          {enabled && <Check className="h-3 w-3 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleApplyCustomSymbol} className="hidden md:flex items-center gap-1">
                 <input
                   type="text"
                   value={customSymbolInput}
                   onChange={(e) => setCustomSymbolInput(e.target.value)}
-                  placeholder="e.g. ETHUSD"
+                  placeholder="ETHUSD"
                   aria-label="Enter TradingView symbol"
-                  className="w-28 min-h-[36px] rounded-xl border px-2.5 text-xs font-mono-tabular outline-none"
+                  className="w-20 min-h-[34px] rounded-lg border px-2 text-xs font-mono-tabular outline-none"
                   style={{
                     backgroundColor: 'var(--vp-elevated)',
                     borderColor: 'var(--vp-border)',
@@ -930,87 +976,23 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
                 />
                 <button
                   type="submit"
-                  className="min-h-[36px] rounded-xl px-2.5 text-xs font-semibold cursor-pointer"
+                  className="min-h-[34px] rounded-lg px-2 text-xs font-semibold cursor-pointer"
                   style={{
                     backgroundColor: 'var(--vp-secondary)',
                     color: 'var(--vp-secondary-fg)',
                   }}
                 >
-                  Load
+                  Go
                 </button>
               </form>
             </div>
-          </div>
-
-          {/* Smart Chart Indicators Bar + Live Confluence Badge */}
-          <div
-            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-2.5"
-            style={{
-              backgroundColor: 'var(--vp-elevated)',
-              borderColor: 'var(--vp-border)',
-            }}
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span
-                className="inline-flex items-center gap-1 text-[11px] font-bold mr-1"
-                style={{ color: 'var(--vp-muted)' }}
-              >
-                <Activity className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
-                Smart Indicators:
-              </span>
-              {PANEL_SMART_STUDIES.map((st) => {
-                const enabled = activeStudies.includes(st.id);
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => toggleStudy(st.id)}
-                    className="min-h-[28px] rounded-lg border px-2 text-[11px] font-semibold cursor-pointer"
-                    style={{
-                      backgroundColor: enabled ? 'var(--vp-primary)' : 'var(--vp-surface)',
-                      color: enabled ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-                      borderColor: enabled ? 'var(--vp-primary)' : 'var(--vp-border)',
-                    }}
-                  >
-                    {st.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {smartSummary && (
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
-                <span
-                  className="rounded-md px-2 py-0.5 font-bold"
-                  style={{
-                    backgroundColor: smartSummary.rating.includes('Buy')
-                      ? 'rgba(16, 185, 129, 0.16)'
-                      : smartSummary.rating.includes('Sell')
-                        ? 'rgba(239, 68, 68, 0.16)'
-                        : 'rgba(245, 158, 11, 0.16)',
-                    color: smartSummary.rating.includes('Buy')
-                      ? '#10b981'
-                      : smartSummary.rating.includes('Sell')
-                        ? '#ef4444'
-                        : '#f59e0b',
-                  }}
-                >
-                  {smartSummary.rating}
-                </span>
-                <span style={{ color: 'var(--vp-muted)' }}>
-                  RSI {smartSummary.rsi14.toFixed(1)} · MACD {smartSummary.macdHist >= 0 ? '+' : ''}
-                  {smartSummary.macdHist.toFixed(2)} · S1 ${smartSummary.supportS1.toLocaleString()} · R1 $
-                  {smartSummary.resistanceR1.toLocaleString()}
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Chart Viewport */}
           {renderMode === 'tradingview' && !widgetFailed ? (
             <div
               className={`relative w-full rounded-xl overflow-hidden border ${
-                isChartFullScreen ? 'flex-1 min-h-0' : 'h-[540px] sm:h-[640px]'
+                isChartFullScreen ? 'flex-1 min-h-0' : 'h-[450px]'
               }`}
               style={{
                 borderColor: 'var(--vp-border)',
@@ -1277,7 +1259,7 @@ export const TradingViewChartPanel: React.FC<TradingViewChartPanelProps> = ({
 
         {/* Copy Trading Signals & Live XAU/BTC Trader Chat Desk */}
         <aside
-          className="xl:col-span-5 rounded-2xl border p-4 sm:p-5 space-y-4"
+          className="xl:col-span-12 rounded-2xl border p-4 sm:p-5 space-y-4"
           style={{
             backgroundColor: 'var(--vp-surface)',
             borderColor: 'var(--vp-border)',

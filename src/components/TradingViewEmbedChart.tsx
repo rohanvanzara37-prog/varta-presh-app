@@ -14,7 +14,7 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
   symbol,
   interval = '15',
   themeMode,
-  height = 460,
+  height = 450,
   studies = ['STD;EMA', 'STD;RSI'],
   className = '',
 }) => {
@@ -46,7 +46,7 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
       style: '1',
       locale: 'en',
       allow_symbol_change: true,
-      hide_side_toolbar: false,
+      hide_side_toolbar: true,
       withdateranges: true,
       calendar: false,
       studies,

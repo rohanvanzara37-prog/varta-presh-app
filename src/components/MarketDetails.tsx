@@ -1,26 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownRight,
-  ArrowLeft,
   ArrowUpRight,
   Bell,
   BellRing,
   CandlestickChart,
   Check,
-  ExternalLink,
+  ChevronDown,
   Layers,
   Maximize2,
   Minimize2,
-  RefreshCw,
   RotateCcw,
+  SlidersHorizontal,
   Star,
   Trash2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { FONT_OPTIONS } from '../data/newsData';
 import type {
-  FontOptionId,
   MarketAsset,
   PriceAlertRecord,
   ThemeMode,
@@ -158,6 +155,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
   const [isLiveCandles, setIsLiveCandles] = useState(false);
   const [hoveredCandleIdx, setHoveredCandleIdx] = useState<number | null>(null);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [visibleCandleCount, setVisibleCandleCount] = useState<number>(48);
 
   // Price Alert Form
@@ -171,6 +169,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
   const containerIdRef = useRef(`tv_market_details_${Math.random().toString(36).slice(2, 9)}`);
   const widgetContainerRef = useRef<HTMLDivElement | null>(null);
   const chartSectionRef = useRef<HTMLElement | null>(null);
+  const indicatorsMenuRef = useRef<HTMLDivElement | null>(null);
   const enteredNativeFsRef = useRef(false);
 
   const toggleFullScreen = useCallback(() => {
@@ -226,8 +225,16 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
     };
   }, [isChartFullScreen]);
 
-  const getFontFamily = (id: FontOptionId) =>
-    FONT_OPTIONS.find((f) => f.id === id)?.cssFamily ?? FONT_OPTIONS[0].cssFamily;
+  useEffect(() => {
+    if (!indicatorsOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (indicatorsMenuRef.current && !indicatorsMenuRef.current.contains(e.target as Node)) {
+        setIndicatorsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [indicatorsOpen]);
 
   // Reset suggested alert target when switching symbols
   useEffect(() => {
@@ -262,7 +269,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
           enable_publishing: false,
           allow_symbol_change: true,
           hide_top_toolbar: false,
-          hide_side_toolbar: false,
+          hide_side_toolbar: true,
           withdateranges: true,
           details: true,
           hotlist: false,
@@ -437,24 +444,10 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
     hoveredCandleIdx !== null ? zoomedCandles[hoveredCandleIdx] : zoomedCandles[zoomedCandles.length - 1];
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-5 pb-24 md:pb-8">
-      {/* Top Return & Quick Asset Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
-          style={{
-            backgroundColor: 'var(--vp-surface)',
-            borderColor: 'var(--vp-border)',
-            color: 'var(--vp-text)',
-          }}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>All Markets</span>
-        </button>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
+    <div className="mx-auto max-w-[1440px] space-y-4 pb-24 md:pb-8">
+      {/* Compact Single-Line Symbol Pills + Live Price + Watchlist */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
           {allAssets.slice(0, 9).map((item) => {
             const active = item.tvSymbol === asset.tvSymbol;
             return (
@@ -462,7 +455,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                 key={item.tvSymbol}
                 type="button"
                 onClick={() => onSelectAsset(item)}
-                className="min-h-[38px] rounded-xl border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-all"
+                className="min-h-[34px] rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                 style={{
                   backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
                   color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -474,209 +467,170 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
             );
           })}
         </div>
-      </div>
 
-      {/* Asset Title & Live Price Header Card */}
-      <section
-        className="rounded-2xl border p-5 flex flex-wrap items-center justify-between gap-4"
-        style={{
-          backgroundColor: 'var(--vp-surface)',
-          borderColor: 'var(--vp-border)',
-        }}
-      >
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold" style={{ color: 'var(--vp-muted)' }}>
-            <span>{asset.category}</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono-tabular">{asset.tvSymbol}</span>
-            <span aria-hidden="true">·</span>
-            <span>{asset.provider}</span>
-          </div>
-          <h1
-            className="text-2xl sm:text-3xl font-bold tracking-tight"
-            style={{ fontFamily: getFontFamily(typography.headlineFont) }}
-          >
-            {asset.displayPair} — {asset.name}
-          </h1>
-          <div className="flex flex-wrap items-baseline gap-3 pt-1">
-            <span className="font-mono-tabular text-3xl sm:text-4xl font-bold">
-              ${formatAssetPrice(asset.livePrice)}
-            </span>
+        <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0">
+          <div className="flex items-baseline gap-2 font-mono-tabular text-sm">
+            <span className="font-bold">${formatAssetPrice(asset.livePrice)}</span>
             <span
-              className="inline-flex items-center gap-1 text-sm font-mono-tabular font-semibold"
+              className="inline-flex items-center gap-0.5 text-xs font-semibold"
               style={{ color: up24h ? '#10b981' : '#ef4444' }}
             >
-              {up24h ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-              <span>
-                {up24h ? '+' : ''}
-                {asset.changePct24h.toFixed(2)}% (24h)
-              </span>
+              {up24h ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+              {up24h ? '+' : ''}
+              {asset.changePct24h.toFixed(2)}%
             </span>
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={() => onToggleWatchlist(asset.tvSymbol)}
-            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold cursor-pointer"
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer shrink-0"
             style={{
-              backgroundColor: isWatchlisted ? 'var(--vp-accent)' : 'var(--vp-elevated)',
+              backgroundColor: isWatchlisted ? 'var(--vp-accent)' : 'var(--vp-surface)',
               color: isWatchlisted ? 'var(--vp-accent-fg)' : 'var(--vp-text)',
               borderColor: isWatchlisted ? 'var(--vp-accent)' : 'var(--vp-border)',
             }}
           >
-            <Star className={`h-4 w-4 ${isWatchlisted ? 'fill-current' : ''}`} />
-            <span>{isWatchlisted ? 'Watchlisted' : 'Watchlist'}</span>
+            <Star className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
+            <span>{isWatchlisted ? 'Saved' : 'Watch'}</span>
           </button>
-
-          <button
-            type="button"
-            onClick={onRefreshMarkets}
-            disabled={isRefreshingMarkets}
-            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold cursor-pointer"
-            style={{
-              backgroundColor: 'var(--vp-elevated)',
-              borderColor: 'var(--vp-border)',
-              color: 'var(--vp-text)',
-            }}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingMarkets ? 'animate-spin' : ''}`} />
-            <span>Sync Spot</span>
-          </button>
-
-          <a
-            href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(asset.tvSymbol)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold"
-            style={{
-              backgroundColor: 'var(--vp-elevated)',
-              borderColor: 'var(--vp-border)',
-              color: 'var(--vp-text)',
-            }}
-          >
-            <span>TradingView Full</span>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
         </div>
-      </section>
+      </div>
 
-      {/* Main Content Grid: TradingView Interactive Candlestick Chart (8 cols) + Alerts & Specs (4 cols) */}
+      {/* Full-Width Chart Terminal at Top */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Chart Terminal */}
         <section
           ref={chartSectionRef}
           aria-label="Interactive Candlestick Chart"
           className={
             isChartFullScreen
-              ? 'fixed inset-0 z-[90] flex flex-col gap-3 p-3 sm:p-5 overflow-hidden'
-              : 'lg:col-span-8 rounded-2xl border p-4 sm:p-5 space-y-4'
+              ? 'fixed inset-0 z-[90] flex flex-col gap-2.5 p-3 sm:p-4 overflow-hidden'
+              : 'lg:col-span-12 space-y-2.5'
           }
-          style={{
-            backgroundColor: 'var(--vp-surface)',
-            borderColor: 'var(--vp-border)',
-          }}
+          style={isChartFullScreen ? { backgroundColor: 'var(--vp-surface)' } : undefined}
         >
-          {/* Controls Toolbar: Timeframes + Chart Type + Indicators + Zoom + Full Screen */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-            {/* Timeframe Selector */}
-            <div className="flex flex-wrap items-center gap-2">
-              {isChartFullScreen && (
-                <span className="text-xs sm:text-sm font-bold px-1">
-                  {asset.displayPair} · ${formatAssetPrice(asset.livePrice)}
-                </span>
-              )}
-              <div
-                className="flex items-center gap-1 rounded-xl p-1 overflow-x-auto no-scrollbar"
-                style={{ backgroundColor: 'var(--vp-elevated)' }}
-              >
-                {TV_INTERVALS.map((tf) => {
-                  const active = interval === tf.id;
-                  return (
-                    <button
-                      key={tf.id}
-                      type="button"
-                      onClick={() => setInterval(tf.id)}
-                      className="min-h-[34px] rounded-lg px-2.5 text-xs font-mono-tabular font-semibold cursor-pointer whitespace-nowrap"
-                      style={{
-                        backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
-                        color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-                      }}
-                    >
-                      {tf.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Chart Style + Indicators + Full Screen Zoom */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {CHART_STYLES.map((st) => {
-                const active = chartStyle === st.id;
+          {/* Compact Single-Line Timeframe Pills + Collapsible Indicators + Mode/Zoom */}
+          <div className="flex items-center justify-between gap-2 shrink-0">
+            <div
+              className="flex items-center gap-1 rounded-lg border p-0.5 overflow-x-auto no-scrollbar flex-nowrap"
+              style={{
+                backgroundColor: 'var(--vp-surface)',
+                borderColor: 'var(--vp-border)',
+              }}
+            >
+              {TV_INTERVALS.map((tf) => {
+                const active = interval === tf.id;
                 return (
                   <button
-                    key={st.id}
+                    key={tf.id}
                     type="button"
-                    onClick={() => setChartStyle(st.id)}
-                    className="min-h-[34px] rounded-lg border px-2.5 text-xs font-semibold cursor-pointer"
-                    style={{
-                      backgroundColor: active ? 'var(--vp-secondary)' : 'transparent',
-                      color: active ? 'var(--vp-secondary-fg)' : 'var(--vp-muted)',
-                      borderColor: 'var(--vp-border)',
-                    }}
-                  >
-                    {st.label}
-                  </button>
-                );
-              })}
-
-              <span className="mx-1 h-4 w-px bg-current opacity-20" aria-hidden="true" />
-
-              {INDICATOR_OPTIONS.map((ind) => {
-                const active = activeStudies.includes(ind.id);
-                return (
-                  <button
-                    key={ind.id}
-                    type="button"
-                    onClick={() => toggleStudy(ind.id)}
-                    className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer"
+                    onClick={() => setInterval(tf.id)}
+                    className="min-h-[30px] rounded-md px-2.5 text-xs font-mono-tabular font-semibold cursor-pointer whitespace-nowrap shrink-0"
                     style={{
                       backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
                       color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-                      borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
                     }}
                   >
-                    {active && <Check className="h-3 w-3" />}
-                    <span>{ind.label}</span>
+                    {tf.label}
                   </button>
                 );
               })}
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="relative" ref={indicatorsMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIndicatorsOpen((o) => !o)}
+                  aria-expanded={indicatorsOpen}
+                  className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  style={{
+                    backgroundColor: indicatorsOpen ? 'var(--vp-secondary)' : 'var(--vp-surface)',
+                    borderColor: indicatorsOpen ? 'var(--vp-primary)' : 'var(--vp-border)',
+                    color: 'var(--vp-text)',
+                  }}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
+                  <span>Indicators ({activeStudies.length})</span>
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${indicatorsOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {indicatorsOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border p-3 shadow-xl space-y-2.5"
+                    style={{
+                      backgroundColor: 'var(--vp-surface)',
+                      borderColor: 'var(--vp-border)',
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      {CHART_STYLES.map((st) => {
+                        const active = chartStyle === st.id;
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => setChartStyle(st.id)}
+                            className="flex-1 min-h-[28px] rounded-md border px-2 text-[11px] font-semibold cursor-pointer"
+                            style={{
+                              backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                              color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                              borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
+                            }}
+                          >
+                            {st.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 border-t" style={{ borderColor: 'var(--vp-border)' }}>
+                      {INDICATOR_OPTIONS.map((ind) => {
+                        const active = activeStudies.includes(ind.id);
+                        return (
+                          <button
+                            key={ind.id}
+                            type="button"
+                            onClick={() => toggleStudy(ind.id)}
+                            className="inline-flex min-h-[30px] items-center justify-between gap-1 rounded-md border px-2 text-xs font-semibold cursor-pointer"
+                            style={{
+                              backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                              color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
+                              borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
+                            }}
+                          >
+                            <span>{ind.label}</span>
+                            {active && <Check className="h-3 w-3 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <button
                 type="button"
                 onClick={() =>
                   setEngineMode((m) => (m === 'tradingview' ? 'native' : 'tradingview'))
                 }
-                className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer"
+                className="hidden sm:inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
                 style={{
-                  backgroundColor: 'var(--vp-elevated)',
+                  backgroundColor: 'var(--vp-surface)',
                   borderColor: 'var(--vp-border)',
                   color: 'var(--vp-text)',
                 }}
               >
                 <Layers className="h-3.5 w-3.5" />
-                <span>{engineMode === 'tradingview' ? 'Built-in Candles' : 'TradingView Live'}</span>
+                <span>{engineMode === 'tradingview' ? 'Candles' : 'TradingView'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={toggleFullScreen}
                 aria-label={isChartFullScreen ? 'Exit full screen chart' : 'Zoom chart full screen'}
-                className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer transition-colors"
+                className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
                 style={{
-                  backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-elevated)',
+                  backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-surface)',
                   color: isChartFullScreen ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
                   borderColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-border)',
                 }}
@@ -684,25 +638,25 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                 {isChartFullScreen ? (
                   <>
                     <Minimize2 className="h-3.5 w-3.5" />
-                    <span>Exit (Esc)</span>
+                    <span>Exit</span>
                   </>
                 ) : (
                   <>
                     <Maximize2 className="h-3.5 w-3.5" />
-                    <span>Full Screen</span>
+                    <span className="hidden sm:inline">Full Screen</span>
                   </>
                 )}
               </button>
             </div>
           </div>
 
-          {/* TradingView Advanced Real-Time Widget OR Built-in Candlestick Fallback */}
+          {/* TradingView Full-Width 450px Real-Time Widget OR Built-in Candlestick Fallback */}
           {engineMode === 'tradingview' && !tvFailed ? (
             <div
               className={`w-full overflow-hidden rounded-xl border ${isChartFullScreen ? 'flex-1 min-h-0' : ''}`}
               style={{
                 borderColor: 'var(--vp-border)',
-                height: isChartFullScreen ? '100%' : '640px',
+                height: isChartFullScreen ? '100%' : '450px',
               }}
             >
               <div
@@ -962,7 +916,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
 
         {/* Price Alerts & Push Notification Panel */}
         <aside
-          className="lg:col-span-4 rounded-2xl border p-5 space-y-5"
+          className="lg:col-span-12 rounded-2xl border p-5 space-y-5"
           style={{
             backgroundColor: 'var(--vp-surface)',
             borderColor: 'var(--vp-border)',

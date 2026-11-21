@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, BellOff, LogIn, LogOut, Moon, Sun, TrendingUp } from 'lucide-react';
+import { Bell, BellOff, LogIn, LogOut, Moon, RefreshCw, Sun, TrendingUp } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
   collection,
@@ -21,7 +21,6 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { ShortsFeedView } from './components/ShortsFeedView';
 import { SocialCommunityView } from './components/SocialCommunityView';
-import { ThemePaletteStudio } from './components/ThemePaletteStudio';
 import {
   DEFAULT_TYPOGRAPHY,
   PRESET_PALETTES,
@@ -145,6 +144,7 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('shorts');
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
+  const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('BINANCE:BTCUSDT');
 
   // Theme & Typography
   const [activePalette, setActivePalette] = useState<ColorPalette>(() =>
@@ -153,10 +153,9 @@ export default function App() {
   const [customPalettes, setCustomPalettes] = useState<ColorPalette[]>(() =>
     loadJson<ColorPalette[]>(STORAGE_KEYS.customPalettes, [])
   );
-  const [typography, setTypography] = useState<TypographySettings>(() =>
+  const [typography] = useState<TypographySettings>(() =>
     loadJson<TypographySettings>(STORAGE_KEYS.typography, DEFAULT_TYPOGRAPHY)
   );
-  const [studioOpen, setStudioOpen] = useState(false);
 
   // Watchlist
   const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>(() =>
@@ -498,7 +497,6 @@ export default function App() {
       <HeaderNav
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
-        onOpenStudio={() => setStudioOpen(true)}
         typography={typography}
       />
 
@@ -510,25 +508,32 @@ export default function App() {
           borderColor: 'var(--vp-border)',
         }}
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2.5">
-          {/* Clickable Live Markets Strip */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full py-0.5">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-1.5 flex items-center justify-between gap-2">
+          {/* Single Compact Live Markets Ticker Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 py-0.5">
             <span
-              className="inline-flex items-center gap-1 text-xs font-bold whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 text-xs font-bold whitespace-nowrap shrink-0 mr-1"
               style={{ color: 'var(--vp-primary)' }}
             >
               <TrendingUp className="h-3.5 w-3.5" />
-              <span>Live Markets</span>
+              <span className="hidden sm:inline">Markets</span>
             </span>
             {marketAssets.slice(0, 6).map((asset) => {
               const up = asset.changePct24h >= 0;
-              const isSelected = activeMarketAsset?.tvSymbol === asset.tvSymbol;
+              const isSelected =
+                activeTab === 'forex' &&
+                !activeMarketAsset &&
+                selectedMarketSymbol === asset.tvSymbol;
               return (
                 <button
                   key={asset.id}
                   type="button"
-                  onClick={() => handleOpenMarketDetails(asset)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setActiveMarketAsset(null);
+                    setSelectedMarketSymbol(asset.tvSymbol);
+                    setActiveTab('forex');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   style={{
                     backgroundColor: isSelected ? 'var(--vp-primary)' : 'var(--vp-elevated)',
                     color: isSelected ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -552,10 +557,25 @@ export default function App() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={loadLiveMarkets}
+              disabled={isRefreshingMarkets}
+              aria-label="Refresh live prices"
+              title="Refresh live prices"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border shrink-0 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--vp-elevated)',
+                borderColor: 'var(--vp-border)',
+                color: 'var(--vp-muted)',
+              }}
+            >
+              <RefreshCw className={`h-3 w-3 ${isRefreshingMarkets ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           {/* Utility Controls: Dark/Light, Push Notifications, PWA Install, Firebase Sync */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={handleToggleDarkLight}
@@ -671,7 +691,7 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-5 pb-20 md:pb-10">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-3 pb-20 md:pb-8">
         {activeMarketAsset ? (
           <MarketDetails
             asset={activeMarketAsset}
@@ -714,31 +734,14 @@ export default function App() {
             themeMode={activePalette.mode}
             marketAssets={marketAssets}
             watchlistSymbols={watchlistSymbols}
+            selectedSymbol={selectedMarketSymbol}
+            onSelectSymbol={setSelectedMarketSymbol}
             onOpenMarketDetails={handleOpenMarketDetails}
-            onRefreshAllMarkets={loadLiveMarkets}
-            isRefreshingMarkets={isRefreshingMarkets}
           />
         )}
       </main>
 
       <BottomThumbNav activeTab={activeTab} onSelectTab={handleSelectTab} />
-
-      <ThemePaletteStudio
-        isOpen={studioOpen}
-        onClose={() => setStudioOpen(false)}
-        activePalette={activePalette}
-        customPalettes={customPalettes}
-        onSelectPalette={setActivePalette}
-        onSaveCustomPalette={(palette) => {
-          setCustomPalettes((prev) => [palette, ...prev.filter((p) => p.id !== palette.id)]);
-          setActivePalette(palette);
-        }}
-        onDeleteCustomPalette={(paletteId) => {
-          setCustomPalettes((prev) => prev.filter((p) => p.id !== paletteId));
-        }}
-        typography={typography}
-        onUpdateTypography={setTypography}
-      />
 
       <OfflineIndicator />
     </div>
