@@ -1,4 +1,4 @@
-export type AppTab = 'shorts' | 'forex' | 'social';
+export type AppTab = 'forex';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -202,7 +202,7 @@ export interface MarketAsset {
   tvSymbol: string;
   displayPair: string;
   name: string;
-  category: 'Metals' | 'Crypto';
+  category: 'Metals' | 'Crypto' | 'Indices' | 'Commodities';
   livePrice: number;
   changePct24h: number;
   provider: string;
@@ -220,56 +220,5 @@ export interface PriceAlertRecord {
   triggered: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
-}
-
-export interface ShortVideoComment {
-  id: string;
-  author: string;
-  text: string;
-  createdAt: string;
-}
-
-export interface ShortVideoItem {
-  id: string;
-  title: string;
-  creator: string;
-  category: string;
-  videoUrl: string;
-  youtubeVideoId?: string;
-  playlistId?: string;
-  thumbnailUrl?: string;
-  publishedAt?: string;
-  externalLink?: string;
-  isFallbackPlaylist?: boolean;
-  durationSec: number;
-  likesCount: number;
-  likedByMe?: boolean;
-  comments: ShortVideoComment[];
-  sourceName: string;
-  isUserUploaded?: boolean;
-}
-
-export interface CommunityComment {
-  id: string;
-  author: string;
-  text: string;
-  createdAt: string;
-}
-
-export interface CommunityPost {
-  id: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar?: string;
-  text: string;
-  imageUrl?: string;
-  feeling?: string;
-  visibility: 'public' | 'friends';
-  likesCount: number;
-  likedByMe?: boolean;
-  sharesCount: number;
-  comments: CommunityComment[];
-  createdAtMs: number;
-  syncedToCloud?: boolean;
 }
 

@@ -13,14 +13,12 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { BottomThumbNav } from './components/BottomThumbNav';
 import { ForexMarketView } from './components/ForexMarketView';
 import { HeaderNav } from './components/HeaderNav';
 import { MarketDetails } from './components/MarketDetails';
+import { MarketNewsTicker } from './components/MarketNewsTicker';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
-import { ShortsFeedView } from './components/ShortsFeedView';
-import { SocialCommunityView } from './components/SocialCommunityView';
 import {
   DEFAULT_TYPOGRAPHY,
   PRESET_PALETTES,
@@ -83,19 +81,8 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
     displayPair: 'XAU/USD',
     name: 'Gold Spot (Troy Oz)',
     category: 'Metals',
-    livePrice: 2664.8,
+    livePrice: 3515.4,
     changePct24h: 0.64,
-    provider: 'Spot Snapshot',
-    unitLabel: 'oz',
-  },
-  {
-    id: 'xagusd',
-    tvSymbol: 'OANDA:XAGUSD',
-    displayPair: 'XAG/USD',
-    name: 'Silver Spot (Troy Oz)',
-    category: 'Metals',
-    livePrice: 31.42,
-    changePct24h: 0.42,
     provider: 'Spot Snapshot',
     unitLabel: 'oz',
   },
@@ -120,6 +107,27 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
     provider: 'Spot Snapshot',
   },
   {
+    id: 'us500',
+    tvSymbol: 'FOREXCOM:SPXUSD',
+    displayPair: 'S&P 500',
+    name: 'S&P 500 Index (US500)',
+    category: 'Indices',
+    livePrice: 6910.39,
+    changePct24h: 0.45,
+    provider: 'US Market Snapshot',
+  },
+  {
+    id: 'usoil',
+    tvSymbol: 'TVC:USOIL',
+    displayPair: 'US OIL',
+    name: 'WTI Crude Oil (bbl)',
+    category: 'Commodities',
+    livePrice: 83.41,
+    changePct24h: -0.35,
+    provider: 'Oil Snapshot',
+    unitLabel: 'bbl',
+  },
+  {
     id: 'solusd',
     tvSymbol: 'BINANCE:SOLUSDT',
     displayPair: 'SOL/USD',
@@ -142,13 +150,13 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('shorts');
+  const [activeTab, setActiveTab] = useState<AppTab>('forex');
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
-  const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('BINANCE:BTCUSDT');
+  const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('OANDA:XAUUSD');
 
   // Theme & Typography
   const [activePalette, setActivePalette] = useState<ColorPalette>(() =>
-    loadJson<ColorPalette>(STORAGE_KEYS.palette, PRESET_PALETTES[0])
+    loadJson<ColorPalette>(STORAGE_KEYS.palette, PRESET_PALETTES[2])
   );
   const [customPalettes, setCustomPalettes] = useState<ColorPalette[]>(() =>
     loadJson<ColorPalette[]>(STORAGE_KEYS.customPalettes, [])
@@ -232,6 +240,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.pushEnabled, JSON.stringify(pushEnabled));
   }, [pushEnabled]);
+
+  // Block external website navigation from any TradingView embedded widget (tv-link-open)
+  useEffect(() => {
+    const handleTvLinkOpen = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener('tv-link-open', handleTvLinkOpen, true);
+    return () => {
+      document.removeEventListener('tv-link-open', handleTvLinkOpen, true);
+    };
+  }, []);
 
   // Firebase Connection Test + Auth Listener + UserPrivate Sync
   useEffect(() => {
@@ -663,6 +683,9 @@ export default function App() {
         </div>
       </div>
 
+      {/* Subtle Gemini-Filtered Auto-Scrolling Macro, Gold & Crypto News Ticker */}
+      <MarketNewsTicker />
+
       {/* Triggered Price Alert In-App Banner */}
       {alertBanner && (
         <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4">
@@ -691,7 +714,7 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-3 pb-20 md:pb-8">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-3 pb-8">
         {activeMarketAsset ? (
           <MarketDetails
             asset={activeMarketAsset}
@@ -717,17 +740,6 @@ export default function App() {
             onRefreshMarkets={loadLiveMarkets}
             isRefreshingMarkets={isRefreshingMarkets}
           />
-        ) : activeTab === 'shorts' ? (
-          <ShortsFeedView
-            typography={typography}
-            userName={firebaseUser?.displayName ?? 'You'}
-          />
-        ) : activeTab === 'social' ? (
-          <SocialCommunityView
-            typography={typography}
-            firebaseUser={firebaseUser}
-            onRequestSignIn={handleGoogleSignIn}
-          />
         ) : (
           <ForexMarketView
             typography={typography}
@@ -740,8 +752,6 @@ export default function App() {
           />
         )}
       </main>
-
-      <BottomThumbNav activeTab={activeTab} onSelectTab={handleSelectTab} />
 
       <OfflineIndicator />
     </div>

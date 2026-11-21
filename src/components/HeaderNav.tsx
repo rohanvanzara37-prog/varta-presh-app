@@ -9,9 +9,7 @@ interface HeaderNavProps {
 }
 
 const NAV_ITEMS: { id: AppTab; label: string }[] = [
-  { id: 'shorts', label: 'Shorts' },
   { id: 'forex', label: 'Markets' },
-  { id: 'social', label: 'Social' },
 ];
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -35,7 +33,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
         {/* Zone 1: Single-line Brand Wordmark */}
         <button
           type="button"
-          onClick={() => onSelectTab('shorts')}
+          onClick={() => onSelectTab('forex')}
           className="text-xl md:text-2xl font-bold tracking-tight whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 rounded-sm cursor-pointer"
           style={{
             fontFamily: headlineCss,

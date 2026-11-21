@@ -66,8 +66,14 @@
 
 .animate-ticker {
   display: inline-flex;
+  width: max-content;
   white-space: nowrap;
-  animation: marqueeScroll 28s linear infinite;
+  animation: marqueeScroll 25s linear infinite;
+}
+
+.ticker-wrap:hover .animate-ticker,
+.ticker-wrap[data-paused="true"] .animate-ticker {
+  animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {

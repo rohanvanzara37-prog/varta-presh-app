@@ -32,6 +32,7 @@ import {
   computeSmartChartSummary,
 } from '../utils/technicalIndicators';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
+import { attachTradingViewLinkGuard } from '../utils/tradingViewLinkGuard';
 
 declare global {
   interface Window {
@@ -81,12 +82,12 @@ const CHART_STYLES = [
 ] as const;
 
 const INDICATOR_OPTIONS = [
-  { id: 'MAExp@tv-basicstudies', label: 'EMA' },
   { id: 'RSI@tv-basicstudies', label: 'RSI' },
   { id: 'MACD@tv-basicstudies', label: 'MACD' },
+  { id: 'MASimple@tv-basicstudies', label: 'MA' },
+  { id: 'MAExp@tv-basicstudies', label: 'EMA' },
   { id: 'BB@tv-basicstudies', label: 'Bollinger' },
   { id: 'VWAP@tv-basicstudies', label: 'VWAP' },
-  { id: 'Stochastic@tv-basicstudies', label: 'Stoch' },
 ] as const;
 
 function formatAssetPrice(val: number): string {
@@ -145,9 +146,8 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
   const [interval, setInterval] = useState<string>('15');
   const [chartStyle, setChartStyle] = useState<string>('1');
   const [activeStudies, setActiveStudies] = useState<string[]>([
-    'MAExp@tv-basicstudies',
+    'MASimple@tv-basicstudies',
     'RSI@tv-basicstudies',
-    'VWAP@tv-basicstudies',
   ]);
   const [engineMode, setEngineMode] = useState<'tradingview' | 'native'>('tradingview');
   const [tvFailed, setTvFailed] = useState(false);
@@ -247,6 +247,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
   // Load TradingView tv.js script and mount interactive candlestick widget
   useEffect(() => {
     if (engineMode !== 'tradingview') return;
+    const detachGuard = attachTradingViewLinkGuard(widgetContainerRef.current);
     let cancelled = false;
 
     const mountWidget = () => {
@@ -257,25 +258,38 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
       }
 
       widgetContainerRef.current.innerHTML = '';
+      const isDark = themeMode === 'dark';
+      const bg = isDark ? '#0B0E11' : '#FFFFFF';
+      const grid = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)';
       try {
         new window.TradingView.widget({
           autosize: true,
           symbol: asset.tvSymbol,
           interval,
           timezone: 'Asia/Kolkata',
-          theme: themeMode === 'dark' ? 'dark' : 'light',
+          theme: isDark ? 'dark' : 'light',
           style: chartStyle,
           locale: 'en',
           enable_publishing: false,
-          allow_symbol_change: true,
+          backgroundColor: bg,
+          gridColor: grid,
           hide_top_toolbar: false,
-          hide_side_toolbar: true,
-          withdateranges: true,
-          details: true,
-          hotlist: false,
-          calendar: false,
-          studies: activeStudies,
+          hide_side_toolbar: false,
+          allow_symbol_change: true,
+          save_image: false,
           container_id: containerIdRef.current,
+          studies: activeStudies,
+          overrides: {
+            'paneProperties.background': bg,
+            'paneProperties.vertGridProperties.color': grid,
+            'paneProperties.horzGridProperties.color': grid,
+            'mainSeriesProperties.candleStyle.upColor': '#00C087',
+            'mainSeriesProperties.candleStyle.downColor': '#F6465D',
+            'mainSeriesProperties.candleStyle.borderUpColor': '#00C087',
+            'mainSeriesProperties.candleStyle.borderDownColor': '#F6465D',
+            'mainSeriesProperties.candleStyle.wickUpColor': '#00C087',
+            'mainSeriesProperties.candleStyle.wickDownColor': '#F6465D',
+          },
         });
         setTvFailed(false);
       } catch {
@@ -287,6 +301,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
       mountWidget();
       return () => {
         cancelled = true;
+        detachGuard();
       };
     }
 
@@ -303,6 +318,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
       }, 6000);
       return () => {
         cancelled = true;
+        detachGuard();
         clearTimeout(timer);
         existingScript.removeEventListener('load', onLoad);
         existingScript.removeEventListener('error', onError);
@@ -325,9 +341,10 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
 
     return () => {
       cancelled = true;
+      detachGuard();
       clearTimeout(guardTimer);
     };
-  }, [asset.tvSymbol, interval, chartStyle, activeStudies, themeMode, engineMode]);
+  }, [asset.tvSymbol, interval, chartStyle, activeStudies, themeMode, engineMode, isChartFullScreen]);
 
   // Load real Binance OHLCV candles for all BINANCE:* symbols or spot-anchored candles for Metals
   useEffect(() => {
@@ -656,7 +673,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
               className={`w-full overflow-hidden rounded-xl border ${isChartFullScreen ? 'flex-1 min-h-0' : ''}`}
               style={{
                 borderColor: 'var(--vp-border)',
-                height: isChartFullScreen ? '100%' : '450px',
+                height: isChartFullScreen ? '100%' : '500px',
               }}
             >
               <div

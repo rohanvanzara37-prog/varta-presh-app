@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { ThemeMode } from '../types/news';
+import { attachTradingViewLinkGuard } from '../utils/tradingViewLinkGuard';
 
 interface TradingViewTickerTapeProps {
   themeMode: ThemeMode;
@@ -11,6 +12,7 @@ export const TradingViewTickerTape: React.FC<TradingViewTickerTapeProps> = ({ th
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const detachGuard = attachTradingViewLinkGuard(container);
 
     container.innerHTML = '';
     const widgetDiv = document.createElement('div');
@@ -39,6 +41,7 @@ export const TradingViewTickerTape: React.FC<TradingViewTickerTapeProps> = ({ th
     container.appendChild(script);
 
     return () => {
+      detachGuard();
       container.innerHTML = '';
     };
   }, [themeMode]);

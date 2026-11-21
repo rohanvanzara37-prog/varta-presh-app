@@ -50,7 +50,7 @@ export const PRESET_PALETTES: ColorPalette[] = [
     primary: '#0284c7',
     secondary: '#1e293b',
     accent: '#f59e0b',
-    canvas: '#0b0f17',
+    canvas: '#0B0E11',
     surface: '#131a26',
     elevated: '#1b2434',
     text: '#f1f5f9',

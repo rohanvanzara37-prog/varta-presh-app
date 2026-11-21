@@ -11,12 +11,11 @@ import type { MarketAsset, ThemeMode, TypographySettings } from '../types/news';
 import { fetchBinanceKlines, type LiveCandleBar } from '../utils/marketFeeds';
 import { computeSmartChartSummary, type CandleInput } from '../utils/technicalIndicators';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
-import { TradingViewChartPanel } from './TradingViewChartPanel';
+import { ProSmcTerminal } from './ProSmcTerminal';
 import { TradingViewEmbedChart } from './TradingViewEmbedChart';
-import { XauGoldAnalysisSection } from './XauGoldAnalysisSection';
 
 interface ForexMarketViewProps {
-  typography: TypographySettings;
+  typography?: TypographySettings;
   themeMode: ThemeMode;
   marketAssets?: MarketAsset[];
   watchlistSymbols?: string[];
@@ -26,10 +25,12 @@ interface ForexMarketViewProps {
 }
 
 const COMPACT_SYMBOLS = [
+  { symbol: 'OANDA:XAUUSD', label: 'Gold' },
   { symbol: 'BINANCE:BTCUSDT', label: 'BTC' },
   { symbol: 'BINANCE:ETHUSDT', label: 'ETH' },
+  { symbol: 'FOREXCOM:SPXUSD', label: 'S&P 500' },
+  { symbol: 'TVC:USOIL', label: 'US Oil' },
   { symbol: 'BINANCE:SOLUSDT', label: 'SOL' },
-  { symbol: 'OANDA:XAUUSD', label: 'Gold' },
   { symbol: 'OANDA:XAGUSD', label: 'Silver' },
 ] as const;
 
@@ -42,29 +43,29 @@ const COMPACT_TIMEFRAMES = [
 ] as const;
 
 const SMART_STUDY_OPTIONS = [
-  { id: 'STD;EMA', label: 'EMA' },
-  { id: 'STD;RSI', label: 'RSI (14)' },
-  { id: 'STD;MACD', label: 'MACD' },
-  { id: 'STD;Bollinger_Bands', label: 'Bollinger' },
-  { id: 'STD;VWAP', label: 'VWAP' },
-  { id: 'STD;Stochastic_RSI', label: 'Stoch RSI' },
+  { id: 'RSI@tv-basicstudies', label: 'RSI (14)' },
+  { id: 'MACD@tv-basicstudies', label: 'MACD' },
+  { id: 'MASimple@tv-basicstudies', label: 'Moving Avg' },
+  { id: 'MAExp@tv-basicstudies', label: 'EMA' },
+  { id: 'BB@tv-basicstudies', label: 'Bollinger' },
+  { id: 'VWAP@tv-basicstudies', label: 'VWAP' },
 ] as const;
 
 const SMART_PRESETS: { id: string; label: string; studies: string[] }[] = [
   {
+    id: 'default',
+    label: 'MA + RSI',
+    studies: ['MASimple@tv-basicstudies', 'RSI@tv-basicstudies'],
+  },
+  {
     id: 'scalp',
     label: 'Scalp',
-    studies: ['STD;EMA', 'STD;VWAP', 'STD;RSI'],
+    studies: ['MAExp@tv-basicstudies', 'VWAP@tv-basicstudies', 'RSI@tv-basicstudies'],
   },
   {
     id: 'trend',
     label: 'Trend',
-    studies: ['STD;EMA', 'STD;MACD', 'STD;Bollinger_Bands'],
-  },
-  {
-    id: 'momentum',
-    label: 'Momentum',
-    studies: ['STD;RSI', 'STD;MACD', 'STD;Stochastic_RSI'],
+    studies: ['MASimple@tv-basicstudies', 'MACD@tv-basicstudies', 'BB@tv-basicstudies'],
   },
   {
     id: 'clean',
@@ -105,7 +106,6 @@ function buildSpotAnchoredBars(basePrice: number, seedKey: string, count = 42): 
 }
 
 export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
-  typography,
   themeMode,
   marketAssets = [],
   watchlistSymbols = [],
@@ -113,12 +113,17 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   onSelectSymbol,
   onOpenMarketDetails,
 }) => {
-  const [marketSubTab, setMarketSubTab] = useState<'terminal' | 'xau' | 'tradingview'>('terminal');
-  const [internalSymbol, setInternalSymbol] = useState<string>(selectedSymbol || 'BINANCE:BTCUSDT');
+  const [marketSubTab, setMarketSubTab] = useState<'smc' | 'terminal'>('smc');
+  const [internalSymbol, setInternalSymbol] = useState<string>(selectedSymbol || 'OANDA:XAUUSD');
   const [tvWidgetInterval, setTvWidgetInterval] = useState<string>('15');
-  const [tvStudies, setTvStudies] = useState<string[]>(['STD;EMA', 'STD;VWAP', 'STD;RSI']);
+  const [tvStudies, setTvStudies] = useState<string[]>([
+    'MASimple@tv-basicstudies',
+    'RSI@tv-basicstudies',
+  ]);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<'All' | 'Metals' | 'Crypto'>('All');
+  const [categoryFilter, setCategoryFilter] = useState<
+    'All' | 'Metals' | 'Crypto' | 'Indices' | 'Commodities'
+  >('All');
   const [liveCryptoBars, setLiveCryptoBars] = useState<LiveCandleBar[] | null>(null);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
 
@@ -129,7 +134,6 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   useEffect(() => {
     if (selectedSymbol) {
       setInternalSymbol(selectedSymbol);
-      setMarketSubTab('terminal');
     }
   }, [selectedSymbol]);
 
@@ -211,14 +215,63 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     };
   }, [isChartFullScreen]);
 
-  // Fetch live Binance klines for any BINANCE:* crypto pair at the active timeframe
+  // Fetch live OHLCV candles from /api/klines (or Binance) for the active chart symbol
   useEffect(() => {
     let cancelled = false;
     const loadCandles = async () => {
+      const intervalKey =
+        tvWidgetInterval === '1'
+          ? '1m'
+          : tvWidgetInterval === '5'
+            ? '5m'
+            : tvWidgetInterval === '60'
+              ? '1h'
+              : '15m';
+      const klineKey = tvWidgetSymbol.includes('XAU')
+        ? 'XAUUSD'
+        : tvWidgetSymbol.includes('SPX') || tvWidgetSymbol.includes('US500')
+          ? 'US500'
+          : tvWidgetSymbol.includes('USOIL')
+            ? 'USOIL'
+            : tvWidgetSymbol.startsWith('BINANCE:')
+              ? tvWidgetSymbol.replace('BINANCE:', '')
+              : null;
+
+      if (klineKey) {
+        try {
+          const res = await fetch(`/api/klines?symbol=${klineKey}&interval=${intervalKey}`, {
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const json = (await res.json()) as {
+              candles?: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+            };
+            if (!cancelled && Array.isArray(json.candles) && json.candles.length >= 20) {
+              setLiveCryptoBars(
+                json.candles.slice(-60).map((c) => ({
+                  timeLabel: new Date(c.time * 1000).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  vol: 100,
+                }))
+              );
+              return;
+            }
+          }
+        } catch {
+          // fallback below
+        }
+      }
+
       if (tvWidgetSymbol.startsWith('BINANCE:')) {
         const bars = await fetchBinanceKlines(tvWidgetSymbol, tvWidgetInterval, 60);
         if (!cancelled) setLiveCryptoBars(bars);
-      } else {
+      } else if (!cancelled) {
         setLiveCryptoBars(null);
       }
     };
@@ -234,7 +287,14 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   );
 
   const smartSummary = useMemo(() => {
-    const basePrice = activeSymbolAsset?.livePrice ?? (tvWidgetSymbol.includes('XAU') ? 2664.8 : 91850);
+    const fallbackPrice = tvWidgetSymbol.includes('XAU')
+      ? 3515
+      : tvWidgetSymbol.includes('SPX')
+        ? 6910
+        : tvWidgetSymbol.includes('USOIL')
+          ? 83.4
+          : 91850;
+    const basePrice = activeSymbolAsset?.livePrice ?? fallbackPrice;
     const candles: CandleInput[] =
       liveCryptoBars && liveCryptoBars.length >= 20
         ? liveCryptoBars
@@ -270,40 +330,29 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         >
           <button
             type="button"
+            onClick={() => setMarketSubTab('smc')}
+            className="min-h-[32px] rounded-lg px-2.5 sm:px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            style={{
+              backgroundColor: marketSubTab === 'smc' ? 'var(--vp-primary)' : 'transparent',
+              color: marketSubTab === 'smc' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+            }}
+          >
+            SMC Terminal
+          </button>
+          <button
+            type="button"
             onClick={() => setMarketSubTab('terminal')}
-            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="min-h-[32px] rounded-lg px-2.5 sm:px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             style={{
               backgroundColor: marketSubTab === 'terminal' ? 'var(--vp-primary)' : 'transparent',
               color: marketSubTab === 'terminal' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
             }}
           >
-            Live Chart
-          </button>
-          <button
-            type="button"
-            onClick={() => setMarketSubTab('xau')}
-            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-            style={{
-              backgroundColor: marketSubTab === 'xau' ? 'var(--vp-primary)' : 'transparent',
-              color: marketSubTab === 'xau' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-            }}
-          >
-            Gold Analysis &amp; Alerts
-          </button>
-          <button
-            type="button"
-            onClick={() => setMarketSubTab('tradingview')}
-            className="min-h-[32px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-            style={{
-              backgroundColor: marketSubTab === 'tradingview' ? 'var(--vp-primary)' : 'transparent',
-              color: marketSubTab === 'tradingview' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-            }}
-          >
-            Copy &amp; 1m Desk
+            TradingView
           </button>
         </div>
 
-        {activeSymbolAsset && marketSubTab === 'terminal' && (
+        {activeSymbolAsset && (
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono-tabular whitespace-nowrap shrink-0">
             <span className="font-bold">{activeSymbolAsset.displayPair}</span>
             <span>${formatPrice(activeSymbolAsset.livePrice)}</span>
@@ -315,14 +364,101 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         )}
       </div>
 
-      {marketSubTab === 'xau' ? (
-        <XauGoldAnalysisSection typography={typography} />
-      ) : marketSubTab === 'tradingview' ? (
-        <TradingViewChartPanel
-          themeMode={themeMode}
-          typography={typography}
-          initialSymbol={tvWidgetSymbol}
-        />
+      {marketSubTab === 'smc' ? (
+        <div className="space-y-4">
+          <ProSmcTerminal externalTvSymbol={tvWidgetSymbol} />
+
+          {/* Live Gold, Silver & Crypto Coins Watchlist */}
+          {marketAssets.length > 0 && (
+            <section aria-label="Live Bullion & Crypto Markets" className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-bold tracking-tight">
+                    Live Markets Watchlist
+                  </h2>
+                  <div
+                    className="flex items-center gap-1 overflow-x-auto no-scrollbar rounded-lg p-0.5"
+                    style={{ backgroundColor: 'var(--vp-elevated)' }}
+                  >
+                    {(['All', 'Metals', 'Crypto', 'Indices', 'Commodities'] as const).map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setCategoryFilter(cat)}
+                        className="min-h-[28px] rounded-md px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
+                        style={{
+                          backgroundColor:
+                            categoryFilter === cat ? 'var(--vp-primary)' : 'transparent',
+                          color:
+                            categoryFilter === cat ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+                        }}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <span className="text-xs font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
+                  {watchlistSymbols.length > 0 ? `${watchlistSymbols.length} watchlisted` : 'Tap asset for alerts'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredAssets.map((asset) => {
+                  const up = asset.changePct24h >= 0;
+                  const isGold = asset.displayPair === 'XAU/USD';
+                  const assetBars = buildSpotAnchoredBars(asset.livePrice, `${asset.tvSymbol}-15`);
+                  const assetSignal = computeSmartChartSummary(assetBars);
+                  const signalColor = assetSignal?.action.includes('BUY')
+                    ? '#10b981'
+                    : assetSignal?.action.includes('SELL')
+                      ? '#ef4444'
+                      : '#f59e0b';
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      onClick={() => {
+                        handleChooseSymbol(asset.tvSymbol);
+                        onOpenMarketDetails?.(asset);
+                      }}
+                      className="text-left rounded-2xl border p-3.5 transition-transform hover:translate-y-[-1px] cursor-pointer space-y-1.5"
+                      style={{
+                        backgroundColor: 'var(--vp-surface)',
+                        borderColor: isGold ? 'var(--vp-accent)' : 'var(--vp-border)',
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold truncate">{asset.displayPair}</span>
+                        <span
+                          className="text-[11px] font-mono-tabular font-semibold"
+                          style={{ color: up ? '#10b981' : '#ef4444' }}
+                        >
+                          {up ? '+' : ''}
+                          {asset.changePct24h.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="font-mono-tabular text-lg font-bold tracking-tight">
+                        ${formatPrice(asset.livePrice)}
+                      </div>
+                      <div
+                        className="flex items-center justify-between gap-1 text-[11px]"
+                        style={{ color: 'var(--vp-muted)' }}
+                      >
+                        <span className="font-mono-tabular font-bold" style={{ color: signalColor }}>
+                          {assetSignal ? `${assetSignal.action} (${assetSignal.confidencePct}%)` : asset.name}
+                        </span>
+                        <span className="font-semibold shrink-0" style={{ color: 'var(--vp-primary)' }}>
+                          Alerts →
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
           {/* Chart-First Full-Width TradingView Section */}
@@ -490,13 +626,13 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
               </div>
             </div>
 
-            {/* Full-Width 450px TradingView Candlestick Chart */}
+            {/* Full-Width 500px TradingView Candlestick Chart */}
             <div className={isChartFullScreen ? 'flex-1 min-h-0 w-full' : 'w-full'}>
               <TradingViewEmbedChart
                 symbol={tvWidgetSymbol}
                 interval={tvWidgetInterval}
                 themeMode={themeMode}
-                height={isChartFullScreen ? '100%' : 450}
+                height={isChartFullScreen ? '100%' : 500}
                 studies={tvStudies}
                 className={isChartFullScreen ? 'h-full w-full' : 'w-full'}
               />
@@ -659,20 +795,20 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
           {marketAssets.length > 0 && (
             <section aria-label="Live Bullion & Crypto Markets" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm sm:text-base font-bold tracking-tight">
-                    Metals &amp; Crypto Watchlist
+                    Live Markets Watchlist
                   </h2>
                   <div
-                    className="flex items-center gap-1 rounded-lg p-0.5"
+                    className="flex items-center gap-1 overflow-x-auto no-scrollbar rounded-lg p-0.5"
                     style={{ backgroundColor: 'var(--vp-elevated)' }}
                   >
-                    {(['All', 'Metals', 'Crypto'] as const).map((cat) => (
+                    {(['All', 'Metals', 'Crypto', 'Indices', 'Commodities'] as const).map((cat) => (
                       <button
                         key={cat}
                         type="button"
                         onClick={() => setCategoryFilter(cat)}
-                        className="min-h-[28px] rounded-md px-2.5 text-xs font-semibold cursor-pointer"
+                        className="min-h-[28px] rounded-md px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
                         style={{
                           backgroundColor:
                             categoryFilter === cat ? 'var(--vp-primary)' : 'transparent',
