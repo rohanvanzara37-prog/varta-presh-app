@@ -1,0 +1,8 @@
+{
+  "name": "VartaPress — Personalized News, Live TV & Typography Studio",
+  "description": "Mobile-first Android-style news reader featuring live TV, cricket scores, 14+ Indian languages, custom primary/secondary/accent color palette creation, and personalized article & message typography.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

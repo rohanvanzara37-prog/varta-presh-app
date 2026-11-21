@@ -1,0 +1,278 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Public social profile without PII such as email or phone.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "bio": { "type": "string", "maxLength": 240 },
+        "city": { "type": "string", "maxLength": 80 },
+        "work": { "type": "string", "maxLength": 100 },
+        "avatarUrl": { "type": "string", "maxLength": 600 },
+        "coverUrl": { "type": "string", "maxLength": 600 },
+        "isDiscoverable": { "type": "boolean" },
+        "friendsCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "isDiscoverable", "friendsCount", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Owner-only private account data including email, saved items, watchlist, and push preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "savedPostIds": { "type": "array" },
+        "savedArticleIds": { "type": "array" },
+        "watchlistSymbols": { "type": "array" },
+        "pushAlertsEnabled": { "type": "boolean" },
+        "language": { "type": "string", "enum": ["en", "hi"] },
+        "darkMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "savedPostIds", "language", "darkMode", "updatedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Social feed post with optional photo, feeling, background color, or group scope.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorAvatar": { "type": "string", "maxLength": 600 },
+        "text": { "type": "string", "maxLength": 3000 },
+        "imageUrl": { "type": "string", "maxLength": 600 },
+        "feeling": { "type": "string", "maxLength": 60 },
+        "bgStyle": { "type": "string", "maxLength": 60 },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "groupName": { "type": "string", "maxLength": 80 },
+        "visibility": { "type": "string", "enum": ["public", "friends", "only_me"] },
+        "likesCount": { "type": "integer" },
+        "commentsCount": { "type": "integer" },
+        "sharesCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "authorId",
+        "authorName",
+        "text",
+        "visibility",
+        "likesCount",
+        "commentsCount",
+        "sharesCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Comment under a post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorAvatar": { "type": "string", "maxLength": 600 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "authorName", "text", "createdAt"]
+    },
+    "Reaction": {
+      "title": "Reaction",
+      "description": "Single reaction per user per post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["like", "love", "haha", "wow", "sad", "angry"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "userName", "type", "createdAt"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "Short-form status story card.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorAvatar": { "type": "string", "maxLength": 600 },
+        "caption": { "type": "string", "maxLength": 220 },
+        "imageUrl": { "type": "string", "maxLength": 600 },
+        "bgColor": { "type": "string", "maxLength": 40 },
+        "visibility": { "type": "string", "enum": ["public"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "caption", "visibility", "createdAt"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "Friend request / connection between two users.",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "fromAvatar": { "type": "string", "maxLength": 600 },
+        "toUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "toName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "toAvatar": { "type": "string", "maxLength": 600 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUid", "fromName", "toUid", "toName", "status", "createdAt", "updatedAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Direct 1-to-1 Messenger thread.",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array" },
+        "participantNames": { "type": "object" },
+        "lastMessage": { "type": "string", "maxLength": 400 },
+        "lastSenderId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participants", "lastMessage", "lastSenderId", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time Messenger message.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participants": { "type": "array" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "participants", "senderId", "senderName", "text", "createdAt"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "Community group.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "description": { "type": "string", "maxLength": 400 },
+        "coverUrl": { "type": "string", "maxLength": 600 },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "membersCount": { "type": "integer" },
+        "visibility": { "type": "string", "enum": ["public"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "description", "creatorId", "membersCount", "visibility", "createdAt", "updatedAt"]
+    },
+    "GroupMember": {
+      "title": "GroupMember",
+      "description": "Membership record inside a group.",
+      "type": "object",
+      "properties": {
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["groupId", "userId", "role", "joinedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User activity notification.",
+      "type": "object",
+      "properties": {
+        "toUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "fromAvatar": { "type": "string", "maxLength": 600 },
+        "type": { "type": "string", "enum": ["like", "comment", "friend_request", "friend_accept"] },
+        "postId": { "type": "string", "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["toUid", "fromUid", "fromName", "type", "message", "read", "createdAt"]
+    },
+    "PriceAlert": {
+      "title": "PriceAlert",
+      "description": "User-configured Gold, Forex, or Crypto push notification price alert.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "symbol": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "displayPair": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "condition": { "type": "string", "enum": ["above", "below"] },
+        "targetPrice": { "type": "number" },
+        "active": { "type": "boolean" },
+        "triggered": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "symbol", "displayPair", "condition", "targetPrice", "active", "triggered", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users_public/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public discoverable profiles."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Owner-only private user preferences and PII."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Social feed posts."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Comments belonging to a post."
+    },
+    "/posts/{postId}/reactions/{userId}": {
+      "schema": { "$ref": "#/entities/Reaction" },
+      "description": "User reactions on a post."
+    },
+    "/stories/{storyId}": {
+      "schema": { "$ref": "#/entities/Story" },
+      "description": "Short-form community stories."
+    },
+    "/friend_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/FriendRequest" },
+      "description": "Friend requests and accepted friendships."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "1-to-1 Messenger conversations."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages in a 1-to-1 Messenger conversation."
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Public community groups."
+    },
+    "/groups/{groupId}/members/{userId}": {
+      "schema": { "$ref": "#/entities/GroupMember" },
+      "description": "Group membership documents."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Notifications addressed to a specific user."
+    },
+    "/price_alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/PriceAlert" },
+      "description": "Owner-only real-time Gold, Forex, and Crypto price alerts."
+    }
+  }
+}

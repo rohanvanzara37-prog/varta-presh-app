@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --vp-primary: #1d4ed8;
+  --vp-primary-fg: #ffffff;
+  --vp-secondary: #e2e8f0;
+  --vp-secondary-fg: #0f172a;
+  --vp-accent: #d97706;
+  --vp-accent-fg: #ffffff;
+  --vp-canvas: #f7f8fa;
+  --vp-surface: #ffffff;
+  --vp-elevated: #eef2f6;
+  --vp-text: #111827;
+  --vp-muted: #556070;
+  --vp-border: rgba(17, 24, 39, 0.11);
+  --vp-msg-self-bg: #1d4ed8;
+  --vp-msg-self-fg: #ffffff;
+  --vp-msg-other-bg: #ebeff5;
+  --vp-msg-other-fg: #111827;
+}
+
+.dark {
+  --vp-border: rgba(241, 245, 249, 0.13);
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--vp-canvas);
+    color: var(--vp-text);
+    font-family: "Plus Jakarta Sans", "Noto Sans Devanagari", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+.font-display {
+  font-family: "Fraunces", "Playfair Display", Georgia, serif;
+}
+
+.font-mono-tabular {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marqueeScroll 28s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ticker {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
