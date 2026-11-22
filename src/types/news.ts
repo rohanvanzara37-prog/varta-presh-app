@@ -1,4 +1,4 @@
-export type AppTab = 'forex';
+export type AppTab = 'terminal' | 'news' | 'academy';
 
 export type ThemeMode = 'light' | 'dark';
 

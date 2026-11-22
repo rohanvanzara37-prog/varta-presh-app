@@ -2,26 +2,26 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --vp-primary: #1d4ed8;
-  --vp-primary-fg: #ffffff;
-  --vp-secondary: #e2e8f0;
-  --vp-secondary-fg: #0f172a;
-  --vp-accent: #d97706;
-  --vp-accent-fg: #ffffff;
-  --vp-canvas: #f7f8fa;
-  --vp-surface: #ffffff;
-  --vp-elevated: #eef2f6;
-  --vp-text: #111827;
-  --vp-muted: #556070;
-  --vp-border: rgba(17, 24, 39, 0.11);
-  --vp-msg-self-bg: #1d4ed8;
-  --vp-msg-self-fg: #ffffff;
-  --vp-msg-other-bg: #ebeff5;
-  --vp-msg-other-fg: #111827;
+  --vp-primary: #f0b90b;
+  --vp-primary-fg: #0b0e11;
+  --vp-secondary: #1e2329;
+  --vp-secondary-fg: #eaecef;
+  --vp-accent: #f0b90b;
+  --vp-accent-fg: #0b0e11;
+  --vp-canvas: #0b0e11;
+  --vp-surface: #12161c;
+  --vp-elevated: #1e2329;
+  --vp-text: #eaecef;
+  --vp-muted: #848e9c;
+  --vp-border: #2b3139;
+  --vp-msg-self-bg: #f0b90b;
+  --vp-msg-self-fg: #0b0e11;
+  --vp-msg-other-bg: #1e2329;
+  --vp-msg-other-fg: #eaecef;
 }
 
 .dark {
-  --vp-border: rgba(241, 245, 249, 0.13);
+  --vp-border: #2b3139;
 }
 
 @layer base {
@@ -88,3 +88,32 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Hide TradingView Lightweight Charts attribution watermark */
+#tv-attr-logo,
+.tv-attr-logo,
+.smc-chart-host #tv-attr-logo,
+.smc-chart-host .tv-attr-logo,
+.smc-chart-host a[href*="tradingview.com"],
+.tv-lightweight-charts a[href*="tradingview.com"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Allow smooth vertical page scroll over candles, while keeping right price-scale touch scaling unlocked */
+.smc-chart-host,
+.smc-chart-host canvas {
+  touch-action: pan-y !important;
+}
+
+.smc-chart-host td:last-child,
+.smc-chart-host td:last-child canvas,
+.smc-chart-host tr:last-child,
+.smc-chart-host tr:last-child canvas {
+  touch-action: none !important;
+}
+
+
+

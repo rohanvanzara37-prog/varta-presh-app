@@ -346,10 +346,62 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
     };
   }, [asset.tvSymbol, interval, chartStyle, activeStudies, themeMode, engineMode, isChartFullScreen]);
 
-  // Load real Binance OHLCV candles for all BINANCE:* symbols or spot-anchored candles for Metals
+  // Load real OHLCV candles from /api/klines (Gold, Silver, S&P 500, US Oil & Crypto)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      const intervalKey =
+        interval === '1'
+          ? '1m'
+          : interval === '5'
+            ? '5m'
+            : interval === '60' || interval === '240' || interval === 'D' || interval === 'W'
+              ? '1h'
+              : '15m';
+      const klineKey = asset.tvSymbol.includes('XAU')
+        ? 'XAUUSD'
+        : asset.tvSymbol.includes('XAG')
+          ? 'XAGUSD'
+          : asset.tvSymbol.includes('SPX') || asset.tvSymbol.includes('US500')
+            ? 'US500'
+            : asset.tvSymbol.includes('USOIL')
+              ? 'USOIL'
+              : asset.tvSymbol.startsWith('BINANCE:')
+                ? asset.tvSymbol.replace('BINANCE:', '')
+                : null;
+
+      if (klineKey) {
+        try {
+          const res = await fetch(`/api/klines?symbol=${klineKey}&interval=${intervalKey}`, {
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const json = (await res.json()) as {
+              candles?: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+            };
+            if (!cancelled && Array.isArray(json.candles) && json.candles.length >= 15) {
+              setNativeCandles(
+                json.candles.slice(-60).map((c) => ({
+                  timeLabel: new Date(c.time * 1000).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                  vol: 100,
+                }))
+              );
+              setIsLiveCandles(true);
+              return;
+            }
+          }
+        } catch {
+          // fallback below
+        }
+      }
+
       if (asset.tvSymbol.startsWith('BINANCE:')) {
         const bars = await fetchBinanceKlines(asset.tvSymbol, interval, 60);
         if (!cancelled && bars && bars.length >= 15) {
@@ -1085,7 +1137,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
           timeframeLabel={TV_INTERVALS.find((t) => t.id === interval)?.label ?? interval}
           summary={smartSummary}
           dataSourceLabel={
-            isLiveCandles ? 'Live Binance OHLCV Candles' : 'Live Spot-Anchored Technicals'
+            isLiveCandles ? 'Live Market OHLCV Candles' : 'Live Spot-Anchored Technicals'
           }
         />
       )}

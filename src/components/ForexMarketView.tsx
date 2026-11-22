@@ -7,11 +7,12 @@ import {
   Minimize2,
   SlidersHorizontal,
 } from 'lucide-react';
-import type { MarketAsset, ThemeMode, TypographySettings } from '../types/news';
+import type { AppTab, MarketAsset, ThemeMode, TypographySettings } from '../types/news';
 import { fetchBinanceKlines, type LiveCandleBar } from '../utils/marketFeeds';
 import { computeSmartChartSummary, type CandleInput } from '../utils/technicalIndicators';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
-import { ProSmcTerminal } from './ProSmcTerminal';
+import { ProSmcTerminal, type SmcTelemetrySnapshot } from './ProSmcTerminal';
+import { TerminalTopicBoxes } from './TerminalTopicBoxes';
 import { TradingViewEmbedChart } from './TradingViewEmbedChart';
 
 interface ForexMarketViewProps {
@@ -22,23 +23,30 @@ interface ForexMarketViewProps {
   selectedSymbol?: string;
   onSelectSymbol?: (tvSymbol: string) => void;
   onOpenMarketDetails?: (asset: MarketAsset) => void;
+  onRefreshMarkets?: () => void;
+  isRefreshingMarkets?: boolean;
+  onNavigateTab?: (tab: AppTab) => void;
 }
 
 const COMPACT_SYMBOLS = [
   { symbol: 'OANDA:XAUUSD', label: 'Gold' },
+  { symbol: 'OANDA:XAGUSD', label: 'Silver' },
   { symbol: 'BINANCE:BTCUSDT', label: 'BTC' },
   { symbol: 'BINANCE:ETHUSDT', label: 'ETH' },
   { symbol: 'FOREXCOM:SPXUSD', label: 'S&P 500' },
   { symbol: 'TVC:USOIL', label: 'US Oil' },
   { symbol: 'BINANCE:SOLUSDT', label: 'SOL' },
-  { symbol: 'OANDA:XAGUSD', label: 'Silver' },
+  { symbol: 'BINANCE:BNBUSDT', label: 'BNB' },
+  { symbol: 'BINANCE:XRPUSDT', label: 'XRP' },
 ] as const;
 
 const COMPACT_TIMEFRAMES = [
   { id: '1', label: '1m' },
   { id: '5', label: '5m' },
   { id: '15', label: '15m' },
+  { id: '30', label: '30m' },
   { id: '60', label: '1H' },
+  { id: '240', label: '4H' },
   { id: 'D', label: '1D' },
 ] as const;
 
@@ -112,8 +120,9 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   selectedSymbol,
   onSelectSymbol,
   onOpenMarketDetails,
+  onNavigateTab,
 }) => {
-  const [marketSubTab, setMarketSubTab] = useState<'smc' | 'terminal'>('smc');
+  const [marketSubTab, setMarketSubTab] = useState<'terminal' | 'smc'>('smc');
   const [internalSymbol, setInternalSymbol] = useState<string>(selectedSymbol || 'OANDA:XAUUSD');
   const [tvWidgetInterval, setTvWidgetInterval] = useState<string>('15');
   const [tvStudies, setTvStudies] = useState<string[]>([
@@ -126,6 +135,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   >('All');
   const [liveCryptoBars, setLiveCryptoBars] = useState<LiveCandleBar[] | null>(null);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
+  const [liveTelemetry, setLiveTelemetry] = useState<SmcTelemetrySnapshot | null>(null);
 
   const chartSectionRef = useRef<HTMLElement | null>(null);
   const indicatorsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -224,18 +234,26 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
           ? '1m'
           : tvWidgetInterval === '5'
             ? '5m'
-            : tvWidgetInterval === '60'
-              ? '1h'
-              : '15m';
+            : tvWidgetInterval === '30'
+              ? '30m'
+              : tvWidgetInterval === '60'
+                ? '1h'
+                : tvWidgetInterval === '240'
+                  ? '4h'
+                  : tvWidgetInterval === 'D'
+                    ? '1d'
+                    : '15m';
       const klineKey = tvWidgetSymbol.includes('XAU')
         ? 'XAUUSD'
-        : tvWidgetSymbol.includes('SPX') || tvWidgetSymbol.includes('US500')
-          ? 'US500'
-          : tvWidgetSymbol.includes('USOIL')
-            ? 'USOIL'
-            : tvWidgetSymbol.startsWith('BINANCE:')
-              ? tvWidgetSymbol.replace('BINANCE:', '')
-              : null;
+        : tvWidgetSymbol.includes('XAG')
+          ? 'XAGUSD'
+          : tvWidgetSymbol.includes('SPX') || tvWidgetSymbol.includes('US500')
+            ? 'US500'
+            : tvWidgetSymbol.includes('USOIL')
+              ? 'USOIL'
+              : tvWidgetSymbol.startsWith('BINANCE:')
+                ? tvWidgetSymbol.replace('BINANCE:', '')
+                : null;
 
       if (klineKey) {
         try {
@@ -321,143 +339,58 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         : 'var(--vp-accent)';
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4 pb-20 md:pb-8">
-      {/* Compact Top Mode Switcher */}
+    <div className="mx-auto max-w-[1440px] space-y-4">
+      {/* Compact Top Mode Switcher + Active Pair Readout & Live Refresh */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
         <div
-          className="flex items-center gap-1 rounded-xl p-1 shrink-0"
-          style={{ backgroundColor: 'var(--vp-elevated)' }}
+          className="flex items-center gap-1 rounded-xl border p-1 shrink-0"
+          style={{
+            backgroundColor: 'var(--vp-surface)',
+            borderColor: 'var(--vp-border)',
+          }}
         >
           <button
             type="button"
             onClick={() => setMarketSubTab('smc')}
-            className="min-h-[32px] rounded-lg px-2.5 sm:px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             style={{
               backgroundColor: marketSubTab === 'smc' ? 'var(--vp-primary)' : 'transparent',
               color: marketSubTab === 'smc' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
             }}
           >
-            SMC Terminal
+            Live WS + Auto-Draw
           </button>
           <button
             type="button"
             onClick={() => setMarketSubTab('terminal')}
-            className="min-h-[32px] rounded-lg px-2.5 sm:px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             style={{
               backgroundColor: marketSubTab === 'terminal' ? 'var(--vp-primary)' : 'transparent',
               color: marketSubTab === 'terminal' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
             }}
           >
-            TradingView
+            TradingView Pro
           </button>
         </div>
 
-        {activeSymbolAsset && (
-          <div className="hidden sm:flex items-center gap-2 text-xs font-mono-tabular whitespace-nowrap shrink-0">
-            <span className="font-bold">{activeSymbolAsset.displayPair}</span>
-            <span>${formatPrice(activeSymbolAsset.livePrice)}</span>
-            <span style={{ color: activeSymbolAsset.changePct24h >= 0 ? '#10b981' : '#ef4444' }}>
-              {activeSymbolAsset.changePct24h >= 0 ? '+' : ''}
-              {activeSymbolAsset.changePct24h.toFixed(2)}%
+        {liveTelemetry?.price != null && Number.isFinite(liveTelemetry.price) && (
+          <div className="flex items-center gap-2 text-xs font-mono-tabular whitespace-nowrap shrink-0">
+            <span className="inline-flex items-center gap-1.5 font-bold text-[#00C087]">
+              <span className="h-2 w-2 rounded-full bg-[#00C087] animate-pulse" />
+              <span>LIVE WS</span>
             </span>
+            <span className="font-bold text-[#EAECEF]">${formatPrice(liveTelemetry.price)}</span>
           </div>
         )}
       </div>
 
       {marketSubTab === 'smc' ? (
         <div className="space-y-4">
-          <ProSmcTerminal externalTvSymbol={tvWidgetSymbol} />
-
-          {/* Live Gold, Silver & Crypto Coins Watchlist */}
-          {marketAssets.length > 0 && (
-            <section aria-label="Live Bullion & Crypto Markets" className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-sm sm:text-base font-bold tracking-tight">
-                    Live Markets Watchlist
-                  </h2>
-                  <div
-                    className="flex items-center gap-1 overflow-x-auto no-scrollbar rounded-lg p-0.5"
-                    style={{ backgroundColor: 'var(--vp-elevated)' }}
-                  >
-                    {(['All', 'Metals', 'Crypto', 'Indices', 'Commodities'] as const).map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setCategoryFilter(cat)}
-                        className="min-h-[28px] rounded-md px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
-                        style={{
-                          backgroundColor:
-                            categoryFilter === cat ? 'var(--vp-primary)' : 'transparent',
-                          color:
-                            categoryFilter === cat ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
-                        }}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <span className="text-xs font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
-                  {watchlistSymbols.length > 0 ? `${watchlistSymbols.length} watchlisted` : 'Tap asset for alerts'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {filteredAssets.map((asset) => {
-                  const up = asset.changePct24h >= 0;
-                  const isGold = asset.displayPair === 'XAU/USD';
-                  const assetBars = buildSpotAnchoredBars(asset.livePrice, `${asset.tvSymbol}-15`);
-                  const assetSignal = computeSmartChartSummary(assetBars);
-                  const signalColor = assetSignal?.action.includes('BUY')
-                    ? '#10b981'
-                    : assetSignal?.action.includes('SELL')
-                      ? '#ef4444'
-                      : '#f59e0b';
-                  return (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      onClick={() => {
-                        handleChooseSymbol(asset.tvSymbol);
-                        onOpenMarketDetails?.(asset);
-                      }}
-                      className="text-left rounded-2xl border p-3.5 transition-transform hover:translate-y-[-1px] cursor-pointer space-y-1.5"
-                      style={{
-                        backgroundColor: 'var(--vp-surface)',
-                        borderColor: isGold ? 'var(--vp-accent)' : 'var(--vp-border)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold truncate">{asset.displayPair}</span>
-                        <span
-                          className="text-[11px] font-mono-tabular font-semibold"
-                          style={{ color: up ? '#10b981' : '#ef4444' }}
-                        >
-                          {up ? '+' : ''}
-                          {asset.changePct24h.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div className="font-mono-tabular text-lg font-bold tracking-tight">
-                        ${formatPrice(asset.livePrice)}
-                      </div>
-                      <div
-                        className="flex items-center justify-between gap-1 text-[11px]"
-                        style={{ color: 'var(--vp-muted)' }}
-                      >
-                        <span className="font-mono-tabular font-bold" style={{ color: signalColor }}>
-                          {assetSignal ? `${assetSignal.action} (${assetSignal.confidencePct}%)` : asset.name}
-                        </span>
-                        <span className="font-semibold shrink-0" style={{ color: 'var(--vp-primary)' }}>
-                          Alerts →
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+          <ProSmcTerminal
+            externalTvSymbol={tvWidgetSymbol}
+            onSelectTvSymbol={handleChooseSymbol}
+            onTelemetryChange={setLiveTelemetry}
+          />
         </div>
       ) : (
         <div className="space-y-4">
@@ -626,15 +559,16 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
               </div>
             </div>
 
-            {/* Full-Width 500px TradingView Candlestick Chart */}
-            <div className={isChartFullScreen ? 'flex-1 min-h-0 w-full' : 'w-full'}>
+            {/* Full-Width Responsive TradingView Candlestick Chart */}
+            <div className={isChartFullScreen ? 'flex-1 min-h-0 w-full' : 'w-full h-[430px] sm:h-[520px]'}>
               <TradingViewEmbedChart
                 symbol={tvWidgetSymbol}
                 interval={tvWidgetInterval}
                 themeMode={themeMode}
-                height={isChartFullScreen ? '100%' : 500}
+                height="100%"
                 studies={tvStudies}
-                className={isChartFullScreen ? 'h-full w-full' : 'w-full'}
+                className="h-full w-full"
+                onSwitchToSmc={() => setMarketSubTab('smc')}
               />
             </div>
 
@@ -778,22 +712,36 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                     ? '5m'
                     : tvWidgetInterval === '15'
                       ? '15m'
-                      : tvWidgetInterval === '60'
-                        ? '1H'
-                        : '1D'
+                      : tvWidgetInterval === '30'
+                        ? '30m'
+                        : tvWidgetInterval === '60'
+                          ? '1H'
+                          : tvWidgetInterval === '240'
+                            ? '4H'
+                            : '1D'
               }
               summary={smartSummary}
               dataSourceLabel={
                 liveCryptoBars && liveCryptoBars.length >= 20
-                  ? 'Live Binance OHLCV Candles'
+                  ? 'Live Market OHLCV Candles'
                   : 'Live Spot-Anchored Technicals'
               }
             />
           )}
+        </div>
+      )}
 
-          {/* Live Gold, Silver & Crypto Coins */}
-          {marketAssets.length > 0 && (
-            <section aria-label="Live Bullion & Crypto Markets" className="space-y-3">
+      {/* 3 Separate Topic Boxes Below the Chart: AI Pattern Analysis, SMC & OMYE Guide, Chart Learning Academy */}
+      <TerminalTopicBoxes
+        telemetry={liveTelemetry}
+        fallbackPairLabel={activeSymbolAsset?.displayPair ?? tvWidgetSymbol.replace(/^.*:/, '')}
+        fallbackPrice={activeSymbolAsset?.livePrice ?? null}
+        onNavigateTab={onNavigateTab}
+      />
+
+      {/* Shared Live Markets Watchlist across Gold, Silver, Crypto, S&P 500 & US Oil */}
+      {marketAssets.length > 0 && (
+        <section aria-label="Live Bullion, Crypto, Index & Oil Markets" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm sm:text-base font-bold tracking-tight">
@@ -881,8 +829,6 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
               </div>
             </section>
           )}
-        </div>
-      )}
     </div>
   );
 };

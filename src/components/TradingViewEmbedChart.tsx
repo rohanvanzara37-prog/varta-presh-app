@@ -11,6 +11,7 @@ interface TradingViewEmbedChartProps {
   studies?: string[];
   className?: string;
   containerId?: string;
+  onSwitchToSmc?: () => void;
 }
 
 const DEFAULT_STUDIES = [
@@ -24,6 +25,8 @@ function buildWidgetConfig(params: {
   themeMode: ThemeMode;
   studies: string[];
   containerId: string;
+  showTvToolbar: boolean;
+  showTopToolbar: boolean;
 }) {
   const isDark = params.themeMode === 'dark';
   const bg = isDark ? '#0B0E11' : '#FFFFFF';
@@ -40,8 +43,8 @@ function buildWidgetConfig(params: {
     enable_publishing: false,
     backgroundColor: bg,
     gridColor: grid,
-    hide_top_toolbar: false,
-    hide_side_toolbar: false,
+    hide_top_toolbar: !params.showTopToolbar,
+    hide_side_toolbar: !params.showTvToolbar,
     allow_symbol_change: true,
     save_image: false,
     container_id: params.containerId,
@@ -68,10 +71,13 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
   studies = DEFAULT_STUDIES,
   className = '',
   containerId = 'tv_chart_container',
+  onSwitchToSmc,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [showTvToolbar, setShowTvToolbar] = useState(false);
+  const [showTopToolbar, setShowTopToolbar] = useState(true);
   const studiesKey = studies.join('|');
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -97,6 +103,8 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
             themeMode,
             studies,
             containerId,
+            showTvToolbar,
+            showTopToolbar,
           })
         );
         setLoaded(true);
@@ -156,67 +164,144 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
       window.clearTimeout(guardTimer);
       if (containerRef.current) containerRef.current.innerHTML = '';
     };
-  }, [symbol, interval, themeMode, studiesKey, containerId]);
+  }, [symbol, interval, themeMode, studiesKey, containerId, showTvToolbar, showTopToolbar]);
 
   return (
     <div
-      className={`tradingview-widget-container relative w-full overflow-hidden rounded-xl border ${className}`}
+      className={`tradingview-widget-container relative flex flex-col w-full overflow-hidden rounded-xl border touch-pan-y ${className}`}
       style={{
         height: resolvedHeight,
         width: '100%',
+        touchAction: 'pan-y',
         borderColor: 'var(--vp-border)',
         backgroundColor: themeMode === 'dark' ? '#0B0E11' : 'var(--vp-surface)',
       }}
     >
-      {!loaded && !failed && (
+      {/* Slim Mobile Page-Scroll Grip + Toolbar Toggles */}
+      <div
+        className="flex items-center justify-between gap-2 px-2.5 py-1 border-b shrink-0 touch-pan-y select-none"
+        style={{
+          touchAction: 'pan-y',
+          borderColor: 'var(--vp-border)',
+          backgroundColor: themeMode === 'dark' ? '#12161C' : 'var(--vp-elevated)',
+        }}
+      >
         <div
-          className="absolute inset-0 flex items-center justify-center gap-2 text-xs pointer-events-none z-10"
+          className="flex items-center gap-1.5 text-[10px] font-medium touch-pan-y"
           style={{ color: 'var(--vp-muted)' }}
         >
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>Loading TradingView Chart ({symbol})...</span>
+          <span aria-hidden="true" className="text-xs leading-none">
+            ⇅
+          </span>
+          <span>Swipe bar to scroll page</span>
         </div>
-      )}
-      {failed && (
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-xs z-10"
-          style={{ color: 'var(--vp-muted)' }}
-        >
-          <span>TradingView chart could not load in this browser context.</span>
+
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => {
-              setFailed(false);
-              if (window.TradingView?.widget && containerRef.current) {
-                containerRef.current.innerHTML = '';
-                new window.TradingView.widget(
-                  buildWidgetConfig({
-                    symbol,
-                    interval,
-                    themeMode,
-                    studies,
-                    containerId,
-                  })
-                );
-                setLoaded(true);
-              }
-            }}
-            className="rounded-lg border px-3 py-1.5 font-semibold cursor-pointer"
-            style={{
-              backgroundColor: 'var(--vp-elevated)',
-              borderColor: 'var(--vp-border)',
-              color: 'var(--vp-text)',
-            }}
+            onClick={() => setShowTopToolbar((v) => !v)}
+            aria-pressed={showTopToolbar}
+            aria-label="Toggle TradingView top toolbar"
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${
+              showTopToolbar
+                ? 'border-[#00C087]/70 bg-[#00C087]/15 text-[#00C087]'
+                : 'border-[#2B3139] bg-[#1E2329] text-[#848E9C] hover:text-[#EAECEF]'
+            }`}
           >
-            Retry Chart
+            <span>Top Bar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTvToolbar((v) => !v)}
+            aria-pressed={showTvToolbar}
+            aria-label="Toggle TradingView drawing toolbar"
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${
+              showTvToolbar
+                ? 'border-[#F0B90B]/70 bg-[#F0B90B]/15 text-[#F0B90B]'
+                : 'border-[#2B3139] bg-[#1E2329] text-[#EAECEF] hover:border-[#F0B90B]/50'
+            }`}
+          >
+            <span>✏️ Draw Tools</span>
           </button>
         </div>
-      )}
+      </div>
+
+      {/* TradingView Iframe Wrapper with pan-y touch fallback */}
       <div
-        id={containerId}
-        ref={containerRef}
-        style={{ width: '100%', height: '100%' }}
-      />
+        className="relative flex-1 min-h-0 w-full touch-pan-y"
+        style={{ touchAction: 'pan-y' }}
+      >
+        {!loaded && !failed && (
+          <div
+            className="absolute inset-0 flex items-center justify-center gap-2 text-xs pointer-events-none z-10"
+            style={{ color: 'var(--vp-muted)' }}
+          >
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading TradingView Chart ({symbol})...</span>
+          </div>
+        )}
+        {failed && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-xs z-10"
+            style={{ color: 'var(--vp-muted)' }}
+          >
+            <span>TradingView chart could not load in this browser context.</span>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFailed(false);
+                  if (window.TradingView?.widget && containerRef.current) {
+                    containerRef.current.innerHTML = '';
+                    new window.TradingView.widget(
+                      buildWidgetConfig({
+                        symbol,
+                        interval,
+                        themeMode,
+                        studies,
+                        containerId,
+                        showTvToolbar,
+                        showTopToolbar,
+                      })
+                    );
+                    setLoaded(true);
+                  }
+                }}
+                className="rounded-lg border px-3 py-1.5 font-semibold cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--vp-elevated)',
+                  borderColor: 'var(--vp-border)',
+                  color: 'var(--vp-text)',
+                }}
+              >
+                Retry Chart
+              </button>
+              {onSwitchToSmc && (
+                <button
+                  type="button"
+                  onClick={onSwitchToSmc}
+                  className="rounded-lg border px-3 py-1.5 font-semibold cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--vp-primary)',
+                    borderColor: 'var(--vp-primary)',
+                    color: 'var(--vp-primary-fg)',
+                  }}
+                >
+                  Open SMC Live Chart
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <div
+          id={containerId}
+          ref={containerRef}
+          className="w-full h-full touch-pan-y"
+          style={{ width: '100%', height: '100%', touchAction: 'pan-y' }}
+        />
+      </div>
     </div>
   );
 };
+

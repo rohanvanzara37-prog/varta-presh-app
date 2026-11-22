@@ -74,7 +74,11 @@ function getSentimentColor(sentiment: 'Bullish' | 'Bearish' | 'Neutral'): string
   return '#9aa7b8';
 }
 
-export const MarketNewsTicker: React.FC = () => {
+interface MarketNewsTickerProps {
+  onOpenNewsTab?: () => void;
+}
+
+export const MarketNewsTicker: React.FC<MarketNewsTickerProps> = ({ onOpenNewsTab }) => {
   const [data, setData] = useState<NewsTickerResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -85,31 +89,38 @@ export const MarketNewsTicker: React.FC = () => {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchTicker = useCallback(async (force = false) => {
-    setLoading(true);
+  const fetchTicker = useCallback(async (force = false, silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const endpoint = force ? '/api/news-ticker?refresh=1' : '/api/news-ticker';
       const res = await fetch(endpoint);
       const json = (await res.json()) as NewsTickerResponse;
       if (!res.ok || json.error) {
-        setErrorMsg(json.error ?? 'Unable to load Gemini news ticker.');
-        setData(null);
+        if (!silent) {
+          setErrorMsg(json.error ?? 'Unable to load live market news ticker.');
+        }
       } else {
         setData(json);
         setErrorMsg(null);
       }
     } catch {
-      setErrorMsg('Network error loading live market headlines.');
+      if (!silent) {
+        setErrorMsg('Network error loading live market headlines.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchTicker(false);
+    fetchTicker(false, false);
     const intervalId = window.setInterval(() => {
-      fetchTicker(false);
-    }, 10 * 60 * 1000);
+      fetchTicker(false, true);
+    }, 30_000);
     return () => window.clearInterval(intervalId);
   }, [fetchTicker]);
 
@@ -246,6 +257,15 @@ export const MarketNewsTicker: React.FC = () => {
           >
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           </button>
+          {onOpenNewsTab && (
+            <button
+              type="button"
+              onClick={onOpenNewsTab}
+              className="hidden sm:inline-flex h-6 items-center rounded border border-[#2a2e39] bg-[#161b22] px-2 text-[11px] font-semibold text-[#F0B90B] hover:border-[#F0B90B] cursor-pointer whitespace-nowrap"
+            >
+              News Wire →
+            </button>
+          )}
         </div>
       </div>
 

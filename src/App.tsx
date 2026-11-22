@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, BellOff, LogIn, LogOut, Moon, RefreshCw, Sun, TrendingUp } from 'lucide-react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
   collection,
@@ -13,12 +12,13 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+import { AcademyView } from './components/AcademyView';
+import { BottomNavBar } from './components/BottomNavBar';
 import { ForexMarketView } from './components/ForexMarketView';
 import { HeaderNav } from './components/HeaderNav';
 import { MarketDetails } from './components/MarketDetails';
-import { MarketNewsTicker } from './components/MarketNewsTicker';
+import { NewsTerminalView } from './components/NewsTerminalView';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import {
   DEFAULT_TYPOGRAPHY,
   PRESET_PALETTES,
@@ -48,8 +48,7 @@ import {
 } from './utils/pushNotifications';
 
 const STORAGE_KEYS = {
-  palette: 'vp_active_palette_v2',
-  customPalettes: 'vp_custom_palettes_v2',
+  palette: 'vp_active_palette_v3',
   typography: 'vp_typography_v2',
   watchlist: 'vp_watchlist_symbols_v1',
   localAlerts: 'vp_local_price_alerts_v1',
@@ -64,14 +63,6 @@ function loadJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function formatShortMarketPrice(asset: MarketAsset): string {
-  if (asset.livePrice >= 1000) {
-    return asset.livePrice.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 });
-  }
-  if (asset.livePrice >= 10) return asset.livePrice.toFixed(2);
-  return asset.livePrice.toFixed(4);
 }
 
 const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
@@ -150,16 +141,13 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('forex');
+  const [activeTab, setActiveTab] = useState<AppTab>('terminal');
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
   const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('OANDA:XAUUSD');
 
-  // Theme & Typography
-  const [activePalette, setActivePalette] = useState<ColorPalette>(() =>
+  // Dark-mode Play Store Trading Palette & Typography
+  const [activePalette] = useState<ColorPalette>(() =>
     loadJson<ColorPalette>(STORAGE_KEYS.palette, PRESET_PALETTES[2])
-  );
-  const [customPalettes, setCustomPalettes] = useState<ColorPalette[]>(() =>
-    loadJson<ColorPalette[]>(STORAGE_KEYS.customPalettes, [])
   );
   const [typography] = useState<TypographySettings>(() =>
     loadJson<TypographySettings>(STORAGE_KEYS.typography, DEFAULT_TYPOGRAPHY)
@@ -220,10 +208,6 @@ export default function App() {
 
     localStorage.setItem(STORAGE_KEYS.palette, JSON.stringify(activePalette));
   }, [activePalette, typography]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.customPalettes, JSON.stringify(customPalettes));
-  }, [customPalettes]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.typography, JSON.stringify(typography));
@@ -391,14 +375,6 @@ export default function App() {
     });
   }, [marketAssets, activeAlerts, firebaseUser, pushEnabled]);
 
-  const handleToggleDarkLight = () => {
-    const targetMode = activePalette.mode === 'dark' ? 'light' : 'dark';
-    const matching =
-      [...PRESET_PALETTES, ...customPalettes].find((p) => p.mode === targetMode) ??
-      PRESET_PALETTES[targetMode === 'dark' ? 2 : 0];
-    setActivePalette(matching);
-  };
-
   const handleTogglePush = async () => {
     if (pushPermission !== 'granted') {
       const res = await requestPushPermission();
@@ -504,6 +480,14 @@ export default function App() {
   const handleSelectTab = (tab: AppTab) => {
     setActiveTab(tab);
     setActiveMarketAsset(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenPairInTerminal = (tvSymbol: string) => {
+    setSelectedMarketSymbol(tvSymbol);
+    setActiveMarketAsset(null);
+    setActiveTab('terminal');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -518,194 +502,29 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         typography={typography}
+        pushPermission={pushPermission}
+        pushEnabled={pushEnabled}
+        onTogglePush={handleTogglePush}
+        firebaseUser={firebaseUser}
+        onSignIn={handleGoogleSignIn}
+        onSignOut={() => signOut(auth)}
       />
-
-      {/* Live Gold & Crypto Quick Strip + Alerts / Theme / Cloud Sync Bar */}
-      <div
-        className="border-b"
-        style={{
-          backgroundColor: 'var(--vp-surface)',
-          borderColor: 'var(--vp-border)',
-        }}
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-1.5 flex items-center justify-between gap-2">
-          {/* Single Compact Live Markets Ticker Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 py-0.5">
-            <span
-              className="inline-flex items-center gap-1 text-xs font-bold whitespace-nowrap shrink-0 mr-1"
-              style={{ color: 'var(--vp-primary)' }}
-            >
-              <TrendingUp className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Markets</span>
-            </span>
-            {marketAssets.slice(0, 6).map((asset) => {
-              const up = asset.changePct24h >= 0;
-              const isSelected =
-                activeTab === 'forex' &&
-                !activeMarketAsset &&
-                selectedMarketSymbol === asset.tvSymbol;
-              return (
-                <button
-                  key={asset.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveMarketAsset(null);
-                    setSelectedMarketSymbol(asset.tvSymbol);
-                    setActiveTab('forex');
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                  style={{
-                    backgroundColor: isSelected ? 'var(--vp-primary)' : 'var(--vp-elevated)',
-                    color: isSelected ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
-                    borderColor: isSelected ? 'var(--vp-primary)' : 'var(--vp-border)',
-                  }}
-                >
-                  <span className="font-bold">{asset.displayPair}</span>
-                  <span>${formatShortMarketPrice(asset)}</span>
-                  <span
-                    style={{
-                      color: isSelected
-                        ? 'var(--vp-primary-fg)'
-                        : up
-                          ? '#10b981'
-                          : '#ef4444',
-                    }}
-                  >
-                    {up ? '+' : ''}
-                    {asset.changePct24h.toFixed(1)}%
-                  </span>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={loadLiveMarkets}
-              disabled={isRefreshingMarkets}
-              aria-label="Refresh live prices"
-              title="Refresh live prices"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border shrink-0 cursor-pointer"
-              style={{
-                backgroundColor: 'var(--vp-elevated)',
-                borderColor: 'var(--vp-border)',
-                color: 'var(--vp-muted)',
-              }}
-            >
-              <RefreshCw className={`h-3 w-3 ${isRefreshingMarkets ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          {/* Utility Controls: Dark/Light, Push Notifications, PWA Install, Firebase Sync */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleToggleDarkLight}
-              aria-label="Toggle dark or light mode"
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold cursor-pointer"
-              style={{
-                backgroundColor: 'var(--vp-elevated)',
-                borderColor: 'var(--vp-border)',
-                color: 'var(--vp-text)',
-              }}
-            >
-              {activePalette.mode === 'dark' ? (
-                <>
-                  <Sun className="h-3.5 w-3.5" style={{ color: 'var(--vp-accent)' }} />
-                  <span className="hidden sm:inline">Light</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
-                  <span className="hidden sm:inline">Dark</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleTogglePush}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold cursor-pointer"
-              style={{
-                backgroundColor:
-                  pushPermission === 'granted' && pushEnabled ? 'var(--vp-secondary)' : 'var(--vp-elevated)',
-                borderColor: 'var(--vp-border)',
-                color:
-                  pushPermission === 'granted' && pushEnabled ? 'var(--vp-secondary-fg)' : 'var(--vp-text)',
-              }}
-            >
-              {pushPermission === 'granted' && pushEnabled ? (
-                <>
-                  <Bell className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
-                  <span className="hidden sm:inline">Alerts On</span>
-                </>
-              ) : (
-                <>
-                  <BellOff className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Enable Alerts</span>
-                </>
-              )}
-            </button>
-
-            <PWAInstallButton />
-
-            {firebaseUser ? (
-              <button
-                type="button"
-                onClick={() => signOut(auth)}
-                title={`Signed in as ${firebaseUser.email ?? 'User'} — Sign out`}
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--vp-elevated)',
-                  borderColor: 'var(--vp-border)',
-                  color: 'var(--vp-text)',
-                }}
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline max-w-[96px] truncate">
-                  {firebaseUser.displayName?.split(' ')[0] ?? 'Synced'}
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--vp-elevated)',
-                  borderColor: 'var(--vp-border)',
-                  color: 'var(--vp-text)',
-                }}
-              >
-                <LogIn className="h-3.5 w-3.5" style={{ color: 'var(--vp-primary)' }} />
-                <span>Sync Alerts</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Subtle Gemini-Filtered Auto-Scrolling Macro, Gold & Crypto News Ticker */}
-      <MarketNewsTicker />
 
       {/* Triggered Price Alert In-App Banner */}
       {alertBanner && (
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4">
+        <div className="mx-auto max-w-7xl px-3 sm:px-6 pt-3">
           <div
             role="alert"
-            className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm"
-            style={{
-              backgroundColor: 'var(--vp-secondary)',
-              borderColor: 'var(--vp-accent)',
-              color: 'var(--vp-secondary-fg)',
-            }}
+            className="flex items-center justify-between gap-3 rounded-2xl border border-[#F0B90B]/60 bg-[#1E2329] px-4 py-3 text-sm text-[#EAECEF]"
           >
             <div>
-              <strong className="font-bold">{alertBanner.title}: </strong>
+              <strong className="font-bold text-[#F0B90B]">{alertBanner.title}: </strong>
               <span>{alertBanner.body}</span>
             </div>
             <button
               type="button"
               onClick={() => setAlertBanner(null)}
-              className="text-xs font-bold underline cursor-pointer shrink-0"
+              className="text-xs font-bold text-[#F0B90B] underline cursor-pointer shrink-0"
             >
               Dismiss
             </button>
@@ -713,46 +532,56 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-3 pb-8">
-        {activeMarketAsset ? (
-          <MarketDetails
-            asset={activeMarketAsset}
-            allAssets={marketAssets}
-            onSelectAsset={handleOpenMarketDetails}
-            onBack={() => {
-              setActiveMarketAsset(null);
-              setActiveTab('forex');
-            }}
-            themeMode={activePalette.mode}
-            typography={typography}
-            watchlistSymbols={watchlistSymbols}
-            onToggleWatchlist={handleToggleWatchlist}
-            alerts={activeAlerts}
-            onCreateAlert={handleCreatePriceAlert}
-            onDeleteAlert={handleDeletePriceAlert}
-            pushPermission={pushPermission}
-            onRequestPushPermission={async () => {
-              const res = await requestPushPermission();
-              setPushPermission(res);
-              if (res === 'granted') setPushEnabled(true);
-            }}
-            onRefreshMarkets={loadLiveMarkets}
-            isRefreshingMarkets={isRefreshingMarkets}
-          />
+      {/* Main Workspace */}
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 pt-3 pb-24 md:pb-8">
+        {activeTab === 'terminal' ? (
+          activeMarketAsset ? (
+            <MarketDetails
+              asset={activeMarketAsset}
+              allAssets={marketAssets}
+              onSelectAsset={handleOpenMarketDetails}
+              onBack={() => {
+                setActiveMarketAsset(null);
+                setActiveTab('terminal');
+              }}
+              themeMode="dark"
+              typography={typography}
+              watchlistSymbols={watchlistSymbols}
+              onToggleWatchlist={handleToggleWatchlist}
+              alerts={activeAlerts}
+              onCreateAlert={handleCreatePriceAlert}
+              onDeleteAlert={handleDeletePriceAlert}
+              pushPermission={pushPermission}
+              onRequestPushPermission={async () => {
+                const res = await requestPushPermission();
+                setPushPermission(res);
+                if (res === 'granted') setPushEnabled(true);
+              }}
+              onRefreshMarkets={loadLiveMarkets}
+              isRefreshingMarkets={isRefreshingMarkets}
+            />
+          ) : (
+            <ForexMarketView
+              typography={typography}
+              themeMode="dark"
+              marketAssets={marketAssets}
+              watchlistSymbols={watchlistSymbols}
+              selectedSymbol={selectedMarketSymbol}
+              onSelectSymbol={setSelectedMarketSymbol}
+              onOpenMarketDetails={handleOpenMarketDetails}
+              onRefreshMarkets={loadLiveMarkets}
+              isRefreshingMarkets={isRefreshingMarkets}
+              onNavigateTab={handleSelectTab}
+            />
+          )
+        ) : activeTab === 'news' ? (
+          <NewsTerminalView />
         ) : (
-          <ForexMarketView
-            typography={typography}
-            themeMode={activePalette.mode}
-            marketAssets={marketAssets}
-            watchlistSymbols={watchlistSymbols}
-            selectedSymbol={selectedMarketSymbol}
-            onSelectSymbol={setSelectedMarketSymbol}
-            onOpenMarketDetails={handleOpenMarketDetails}
-          />
+          <AcademyView onOpenPairInTerminal={handleOpenPairInTerminal} />
         )}
       </main>
 
+      <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
       <OfflineIndicator />
     </div>
   );
