@@ -36,21 +36,17 @@ export const MarketTradeSuggestionCard: React.FC<MarketTradeSuggestionCardProps>
   const isBuy = summary.action.includes('BUY');
   const isSell = summary.action.includes('SELL');
 
-  const actionColor = isBuy ? '#10b981' : isSell ? '#ef4444' : '#f59e0b';
+  const actionColor = isBuy ? '#089981' : isSell ? '#F23645' : '#F59E0B';
   const actionBg = isBuy
-    ? 'rgba(16, 185, 129, 0.14)'
+    ? 'rgba(8, 153, 129, 0.14)'
     : isSell
-      ? 'rgba(239, 68, 68, 0.14)'
+      ? 'rgba(242, 54, 69, 0.14)'
       : 'rgba(245, 158, 11, 0.14)';
 
   return (
     <section
       aria-label={`Buy and Sell Analysis for ${pairLabel}`}
-      className="rounded-2xl border p-4 sm:p-5 space-y-4"
-      style={{
-        backgroundColor: 'var(--vp-surface)',
-        borderColor: 'var(--vp-border)',
-      }}
+      className="vp-glass-card rounded-2xl p-4 sm:p-5 space-y-4"
     >
       {/* Top Analysis Header + Directional BUY / SELL Callout */}
       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: 'var(--vp-border)' }}>
@@ -203,10 +199,10 @@ export const MarketTradeSuggestionCard: React.FC<MarketTradeSuggestionCardProps>
           {summary.signals.map((sig) => {
             const sigColor =
               sig.bias === 'BULLISH'
-                ? '#10b981'
+                ? '#089981'
                 : sig.bias === 'BEARISH'
-                  ? '#ef4444'
-                  : '#f59e0b';
+                  ? '#F23645'
+                  : '#F59E0B';
             return (
               <div
                 key={sig.name}

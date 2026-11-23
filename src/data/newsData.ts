@@ -12,6 +12,22 @@ import type {
   TypographySettings,
 } from '../types/news';
 
+export const LIGHT_TERMINAL_PALETTE: ColorPalette = {
+  id: 'light-white-terminal',
+  name: 'Pro Light Exchange',
+  mode: 'light',
+  primary: '#F59E0B',
+  secondary: '#E2E8F0',
+  accent: '#D97706',
+  canvas: '#FFFFFF',
+  surface: '#F8FAFC',
+  elevated: '#F1F5F9',
+  text: '#0F172A',
+  mutedText: '#64748B',
+  msgSelfBg: '#F59E0B',
+  msgOtherBg: '#F1F5F9',
+};
+
 export const PRESET_PALETTES: ColorPalette[] = [
   {
     id: 'daylight-paper',
@@ -45,18 +61,18 @@ export const PRESET_PALETTES: ColorPalette[] = [
   },
   {
     id: 'midnight-ink',
-    name: 'Pro Dark Exchange',
+    name: 'Obsidian Institutional Gold',
     mode: 'dark',
-    primary: '#f0b90b',
-    secondary: '#1e2329',
-    accent: '#f0b90b',
-    canvas: '#0B0E11',
-    surface: '#12161C',
-    elevated: '#1E2329',
-    text: '#EAECEF',
-    mutedText: '#848E9C',
-    msgSelfBg: '#f0b90b',
-    msgOtherBg: '#1E2329',
+    primary: '#F59E0B',
+    secondary: '#1E2433',
+    accent: '#F59E0B',
+    canvas: '#0B0E14',
+    surface: '#131722',
+    elevated: '#181D2B',
+    text: '#F1F5F9',
+    mutedText: '#8B95A5',
+    msgSelfBg: '#F59E0B',
+    msgOtherBg: '#181D2B',
   },
   {
     id: 'botanical-sage',

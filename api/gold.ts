@@ -34,10 +34,10 @@ interface SpotIntervalSpec {
 const INTERVAL_SPEC: Record<string, SpotIntervalSpec> = {
   '1m': {
     sec: 60,
-    defaultRange: '1d',
+    defaultRange: '5d',
     tdInterval: '1min',
     fhResolution: '1',
-    fhLookbackSec: 6 * 3600,
+    fhLookbackSec: 2 * 86400,
     bybitInterval: '1',
     okxBar: '1m',
     binanceInterval: '1m',
@@ -47,17 +47,17 @@ const INTERVAL_SPEC: Record<string, SpotIntervalSpec> = {
     defaultRange: '5d',
     tdInterval: '5min',
     fhResolution: '5',
-    fhLookbackSec: 24 * 3600,
+    fhLookbackSec: 5 * 86400,
     bybitInterval: '5',
     okxBar: '5m',
     binanceInterval: '5m',
   },
   '15m': {
     sec: 900,
-    defaultRange: '5d',
+    defaultRange: '1mo',
     tdInterval: '15min',
     fhResolution: '15',
-    fhLookbackSec: 4 * 86400,
+    fhLookbackSec: 12 * 86400,
     bybitInterval: '15',
     okxBar: '15m',
     binanceInterval: '15m',
@@ -67,47 +67,47 @@ const INTERVAL_SPEC: Record<string, SpotIntervalSpec> = {
     defaultRange: '1mo',
     tdInterval: '30min',
     fhResolution: '30',
-    fhLookbackSec: 7 * 86400,
+    fhLookbackSec: 24 * 86400,
     bybitInterval: '30',
     okxBar: '30m',
     binanceInterval: '30m',
   },
   '60m': {
     sec: 3600,
-    defaultRange: '1mo',
+    defaultRange: '3mo',
     tdInterval: '1h',
     fhResolution: '60',
-    fhLookbackSec: 14 * 86400,
+    fhLookbackSec: 45 * 86400,
     bybitInterval: '60',
     okxBar: '1H',
     binanceInterval: '1h',
   },
   '1h': {
     sec: 3600,
-    defaultRange: '1mo',
+    defaultRange: '3mo',
     tdInterval: '1h',
     fhResolution: '60',
-    fhLookbackSec: 14 * 86400,
+    fhLookbackSec: 45 * 86400,
     bybitInterval: '60',
     okxBar: '1H',
     binanceInterval: '1h',
   },
   '4h': {
     sec: 14400,
-    defaultRange: '3mo',
+    defaultRange: '6mo',
     tdInterval: '4h',
     fhResolution: '60',
-    fhLookbackSec: 45 * 86400,
+    fhLookbackSec: 160 * 86400,
     bybitInterval: '240',
     okxBar: '4H',
     binanceInterval: '4h',
   },
   '1d': {
     sec: 86400,
-    defaultRange: '1y',
+    defaultRange: '2y',
     tdInterval: '1day',
     fhResolution: 'D',
-    fhLookbackSec: 260 * 86400,
+    fhLookbackSec: 750 * 86400,
     bybitInterval: 'D',
     okxBar: '1Dutc',
     binanceInterval: '1d',
@@ -180,7 +180,7 @@ function normalizeAndAggregateUtcBars(rawBars: OhlcBar[], intervalSec: number): 
 
   return Array.from(byBucket.values())
     .sort((a, b) => a.time - b.time)
-    .slice(-180);
+    .slice(-500);
 }
 
 function parseUtcTimestampSec(raw: string | number | undefined): number | null {
@@ -254,7 +254,7 @@ async function fetchTwelveDataXauUsd(
 ): Promise<{ source: string; candles: OhlcBar[] } | null> {
   const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=${encodeURIComponent(
     spec.tdInterval
-  )}&outputsize=180&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`;
+  )}&outputsize=500&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`;
 
   const data = await fetchJsonWithTimeout<{
     status?: string;
@@ -383,7 +383,7 @@ async function fetchKeylessUtcSpotGoldFallback(
     }>(
       `https://api.bybit.com/v5/market/kline?category=spot&symbol=XAUTUSDT&interval=${encodeURIComponent(
         spec.bybitInterval
-      )}&limit=180`,
+      )}&limit=500`,
       4200
     ),
     fetchJsonWithTimeout<{
@@ -392,13 +392,13 @@ async function fetchKeylessUtcSpotGoldFallback(
     }>(
       `https://www.okx.com/api/v5/market/candles?instId=XAUT-USDT&bar=${encodeURIComponent(
         spec.okxBar
-      )}&limit=180`,
+      )}&limit=300`,
       4200
     ),
     fetchJsonWithTimeout<Array<[number, string, string, string, string, string?]>>(
       `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
         spec.binanceInterval
-      )}&limit=180`,
+      )}&limit=500`,
       4200
     ),
   ]);

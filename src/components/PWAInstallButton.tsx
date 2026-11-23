@@ -15,7 +15,7 @@ export const PWAInstallButton: React.FC = () => {
       <button
         type="button"
         onClick={install}
-        className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-transform active:scale-[0.98]"
+        className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
         style={{
           backgroundColor: 'var(--vp-surface)',
           borderColor: 'var(--vp-border)',
@@ -34,7 +34,7 @@ export const PWAInstallButton: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowGuide(true)}
-          className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+          className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
           style={{
             backgroundColor: 'var(--vp-surface)',
             borderColor: 'var(--vp-border)',
@@ -50,14 +50,12 @@ export const PWAInstallButton: React.FC = () => {
             role="dialog"
             aria-modal="true"
             aria-label="Install VartaPress on iOS"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
             onClick={() => setShowGuide(false)}
           >
             <div
-              className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl space-y-3"
+              className="vp-glass-card vp-modal-in w-full max-w-sm rounded-2xl p-5 space-y-3"
               style={{
-                backgroundColor: 'var(--vp-surface)',
-                borderColor: 'var(--vp-border)',
                 color: 'var(--vp-text)',
               }}
               onClick={(e) => e.stopPropagation()}

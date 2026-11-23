@@ -38,18 +38,25 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   const alertsActive = pushPermission === 'granted' && pushEnabled;
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#2B3139] bg-[#0B0E11]/95 backdrop-blur-md">
-      <div className="mx-auto flex h-[52px] md:h-[60px] max-w-7xl items-center justify-between gap-4 lg:gap-8 px-3 sm:px-6">
+    <header
+      className="sticky top-0 z-30 border-b backdrop-blur-xl transition-colors duration-200"
+      style={{
+        backgroundColor: 'color-mix(in srgb, var(--vp-canvas) 88%, transparent)',
+        borderColor: 'var(--vp-border)',
+      }}
+    >
+      <div className="mx-auto flex h-[54px] md:h-[60px] max-w-7xl items-center justify-between gap-4 lg:gap-8 px-3 sm:px-6">
         {/* Zone 1: Single-line Brand Wordmark */}
         <button
           type="button"
           onClick={() => onSelectTab('terminal')}
-          className="text-lg md:text-xl font-bold tracking-tight text-[#EAECEF] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F0B90B] focus-visible:outline-offset-4 rounded-sm"
+          className="text-lg md:text-xl font-extrabold tracking-tight whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F59E0B] focus-visible:outline-offset-4 rounded-sm transition-colors"
+          style={{ color: 'var(--vp-text)' }}
         >
           Varta Presh
         </button>
 
-        {/* Zone 2: 4 Clean Single-Line Desktop Navigation Links */}
+        {/* Zone 2: Clean Single-Line Desktop Navigation Links */}
         <nav
           aria-label="Primary navigation"
           className="hidden md:flex items-center gap-7 text-sm font-semibold"
@@ -62,16 +69,17 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 type="button"
                 onClick={() => onSelectTab(item.id)}
                 aria-current={isActive ? 'page' : undefined}
-                className="relative py-2 whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+                className="relative py-2 whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer hover:text-[var(--vp-text)]"
                 style={{
-                  color: isActive ? '#F0B90B' : '#848E9C',
+                  color: isActive ? 'var(--vp-accent-text)' : 'var(--vp-muted)',
                 }}
               >
                 {item.label}
                 {isActive && (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full bg-[#F0B90B]"
+                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full shadow-[0_0_10px_rgba(245,158,11,0.55)]"
+                    style={{ backgroundColor: 'var(--vp-primary)' }}
                   />
                 )}
               </button>
@@ -79,18 +87,18 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           })}
         </nav>
 
-        {/* Zone 3: Compact Non-Duplicate Utility Controls */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Zone 3: Compact Utility Controls */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onTogglePush}
             aria-label={alertsActive ? 'Disable push price alerts' : 'Enable push price alerts'}
             title={alertsActive ? 'Alerts On' : 'Enable Alerts'}
-            className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
+            className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 border px-3 text-xs font-semibold cursor-pointer whitespace-nowrap"
             style={{
-              backgroundColor: '#1E2329',
-              borderColor: alertsActive ? '#F0B90B' : '#2B3139',
-              color: alertsActive ? '#F0B90B' : '#EAECEF',
+              backgroundColor: alertsActive ? 'rgba(245, 158, 11, 0.12)' : 'var(--vp-elevated)',
+              borderColor: alertsActive ? 'var(--vp-primary)' : 'var(--vp-border)',
+              color: alertsActive ? 'var(--vp-accent-text)' : 'var(--vp-text)',
             }}
           >
             {alertsActive ? (
@@ -100,7 +108,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               </>
             ) : (
               <>
-                <BellOff className="h-3.5 w-3.5 text-[#848E9C]" />
+                <BellOff className="h-3.5 w-3.5" style={{ color: 'var(--vp-muted)' }} />
                 <span className="hidden sm:inline">Alerts</span>
               </>
             )}
@@ -113,9 +121,14 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               type="button"
               onClick={onSignOut}
               title={`Signed in as ${firebaseUser.email ?? 'User'} — Sign out`}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-[#2B3139] bg-[#1E2329] px-2.5 text-xs font-semibold text-[#EAECEF] cursor-pointer whitespace-nowrap"
+              className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 border px-3 text-xs font-semibold cursor-pointer whitespace-nowrap"
+              style={{
+                backgroundColor: 'var(--vp-elevated)',
+                borderColor: 'var(--vp-border)',
+                color: 'var(--vp-text)',
+              }}
             >
-              <LogOut className="h-3.5 w-3.5 text-[#848E9C]" />
+              <LogOut className="h-3.5 w-3.5" style={{ color: 'var(--vp-muted)' }} />
               <span className="hidden sm:inline max-w-[90px] truncate">
                 {firebaseUser.displayName?.split(' ')[0] ?? 'Synced'}
               </span>
@@ -125,7 +138,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               type="button"
               disabled={isSigningIn}
               onClick={onSignIn}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#F0B90B] disabled:opacity-60 px-3 text-xs font-bold text-[#0B0E11] cursor-pointer whitespace-nowrap"
+              className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 bg-[#F59E0B] hover:bg-[#FBBF24] disabled:opacity-60 px-3.5 text-xs font-bold text-[#0B0E14] shadow-[0_0_18px_rgba(245,158,11,0.24)] cursor-pointer whitespace-nowrap"
             >
               <LogIn className="h-3.5 w-3.5" />
               <span>{isSigningIn ? 'Signing in...' : 'Sync'}</span>

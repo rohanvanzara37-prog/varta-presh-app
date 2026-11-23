@@ -1039,7 +1039,7 @@ async function startServer() {
       sec: 60,
       tdInterval: '1min',
       fhResolution: '1',
-      fhLookbackSec: 6 * 3600,
+      fhLookbackSec: 2 * 86400,
       bybitInterval: '1',
       okxBar: '1m',
       binanceInterval: '1m',
@@ -1048,7 +1048,7 @@ async function startServer() {
       sec: 300,
       tdInterval: '5min',
       fhResolution: '5',
-      fhLookbackSec: 24 * 3600,
+      fhLookbackSec: 5 * 86400,
       bybitInterval: '5',
       okxBar: '5m',
       binanceInterval: '5m',
@@ -1057,7 +1057,7 @@ async function startServer() {
       sec: 900,
       tdInterval: '15min',
       fhResolution: '15',
-      fhLookbackSec: 4 * 86400,
+      fhLookbackSec: 12 * 86400,
       bybitInterval: '15',
       okxBar: '15m',
       binanceInterval: '15m',
@@ -1066,7 +1066,7 @@ async function startServer() {
       sec: 1800,
       tdInterval: '30min',
       fhResolution: '30',
-      fhLookbackSec: 7 * 86400,
+      fhLookbackSec: 24 * 86400,
       bybitInterval: '30',
       okxBar: '30m',
       binanceInterval: '30m',
@@ -1075,7 +1075,7 @@ async function startServer() {
       sec: 3600,
       tdInterval: '1h',
       fhResolution: '60',
-      fhLookbackSec: 14 * 86400,
+      fhLookbackSec: 45 * 86400,
       bybitInterval: '60',
       okxBar: '1H',
       binanceInterval: '1h',
@@ -1084,7 +1084,7 @@ async function startServer() {
       sec: 14400,
       tdInterval: '4h',
       fhResolution: '60',
-      fhLookbackSec: 45 * 86400,
+      fhLookbackSec: 160 * 86400,
       bybitInterval: '240',
       okxBar: '4H',
       binanceInterval: '4h',
@@ -1093,7 +1093,7 @@ async function startServer() {
       sec: 86400,
       tdInterval: '1day',
       fhResolution: 'D',
-      fhLookbackSec: 260 * 86400,
+      fhLookbackSec: 750 * 86400,
       bybitInterval: 'D',
       okxBar: '1Dutc',
       binanceInterval: '1d',
@@ -1162,7 +1162,7 @@ async function startServer() {
 
     return Array.from(byBucket.values())
       .sort((a, b) => a.time - b.time)
-      .slice(-180);
+      .slice(-500);
   }
 
   async function fetchTradingViewCfdGoldSpot(): Promise<number | null> {
@@ -1211,7 +1211,7 @@ async function startServer() {
     if (tdKey) {
       const tdUrl = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=${encodeURIComponent(
         spec.tdInterval
-      )}&outputsize=180&timezone=UTC&apikey=${encodeURIComponent(tdKey)}`;
+      )}&outputsize=500&timezone=UTC&apikey=${encodeURIComponent(tdKey)}`;
       const tdJson = await fetchJsonWithTimeout<{
         status?: string;
         values?: Array<{ datetime?: string; open?: string; high?: string; low?: string; close?: string }>;
@@ -1320,7 +1320,7 @@ async function startServer() {
       }>(
         `https://api.bybit.com/v5/market/kline?category=spot&symbol=XAUTUSDT&interval=${encodeURIComponent(
           spec.bybitInterval
-        )}&limit=180`,
+        )}&limit=500`,
         4200
       ),
       fetchJsonWithTimeout<{
@@ -1329,13 +1329,13 @@ async function startServer() {
       }>(
         `https://www.okx.com/api/v5/market/candles?instId=XAUT-USDT&bar=${encodeURIComponent(
           spec.okxBar
-        )}&limit=180`,
+        )}&limit=300`,
         4200
       ),
       fetchJsonWithTimeout<Array<[number, string, string, string, string]>>(
         `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
           spec.binanceInterval
-        )}&limit=180`,
+        )}&limit=500`,
         4200
       ),
     ]);
@@ -1463,8 +1463,8 @@ async function startServer() {
 
     if (spec.source === 'binance') {
       const urls = [
-        `https://api.binance.com/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=180`,
-        `https://data-api.binance.vision/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=180`,
+        `https://api.binance.com/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=500`,
+        `https://data-api.binance.vision/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=500`,
       ];
       for (const u of urls) {
         const rows = await fetchJsonWithTimeout<Array<[number, string, string, string, string]>>(u, 4500);
@@ -1486,14 +1486,14 @@ async function startServer() {
       const yahooIv = rawIv === '4h' || rawIv === '1h' ? '60m' : rawIv;
       const defaultRange =
         rawIv === '1m'
-          ? '1d'
-          : rawIv === '5m' || rawIv === '15m'
-            ? '5d'
-            : rawIv === '30m' || rawIv === '1h'
-              ? '1mo'
+          ? '5d'
+          : rawIv === '5m' || rawIv === '15m' || rawIv === '30m'
+            ? '1mo'
+            : rawIv === '1h'
+              ? '6mo'
               : rawIv === '4h'
-                ? '3mo'
-                : '1y';
+                ? '1y'
+                : '2y';
       const range = rangeOverride || defaultRange;
       const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(spec.ticker)}?interval=${yahooIv}&range=${range}`;
 
@@ -1578,7 +1578,7 @@ async function startServer() {
 
     const candles = Array.from(byTime.values())
       .sort((a, b) => a.time - b.time)
-      .slice(-180);
+      .slice(-500);
 
     if (candles.length > 0) {
       klineCache.set(cacheKey, {
@@ -1800,6 +1800,80 @@ async function startServer() {
       });
     } catch {
       res.status(502).json({ error: 'Unable to run AI pattern scan right now.' });
+    }
+  });
+
+  app.post('/api/academy-coach', async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) {
+      res.status(503).json({ error: 'Gemini API key is not configured for AI Coach.' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as {
+      lang?: string;
+      scenarioTitle?: string;
+      symbol?: string;
+      timeframe?: string;
+      bias?: string;
+      entryPrice?: number;
+      slPrice?: number;
+      tpPrice?: number;
+      rrRatio?: number;
+      simResult?: string;
+      lastMistake?: string;
+      question?: string;
+    };
+
+    const lang = body.lang === 'hi' ? 'Hindi (Devanagari)' : body.lang === 'hinglish' ? 'Hinglish (Hindi in Roman script)' : 'English';
+    const prompt =
+      `Language: ${lang}\n` +
+      `Scenario: ${String(body.scenarioTitle ?? 'SMC Chart Setup').slice(0, 120)} (${String(body.symbol ?? 'XAU/USD').slice(0, 20)}, ${String(body.timeframe ?? '15m').slice(0, 8)})\n` +
+      `Recommended Bias: ${String(body.bias ?? 'long')}\n` +
+      `User Simulator Setup -> Entry: ${body.entryPrice ?? 'N/A'}, SL: ${body.slPrice ?? 'N/A'}, TP: ${body.tpPrice ?? 'N/A'}, R:R: 1:${typeof body.rrRatio === 'number' ? body.rrRatio.toFixed(2) : 'N/A'}, Outcome: ${String(body.simResult ?? 'pending')}\n` +
+      `Recent Mistake: ${String(body.lastMistake ?? 'None recorded').slice(0, 220)}\n` +
+      `Student Question: ${String(body.question ?? 'Review my entry, Stop Loss, and SMC structure logic.').slice(0, 320)}`;
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: prompt,
+        config: {
+          abortSignal: AbortSignal.timeout(20000),
+          systemInstruction:
+            'You are Varta Presh Academy Coach, a disciplined institutional Smart Money Concepts & Risk Management mentor. Always respond in the exact requested Language (English, Hinglish, or Hindi Devanagari). Be educational only (no financial advice). Return concise JSON: diagnosis (max 28 words), correction (max 32 words), riskTip (max 22 words).',
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              diagnosis: { type: Type.STRING },
+              correction: { type: Type.STRING },
+              riskTip: { type: Type.STRING },
+            },
+            required: ['diagnosis', 'correction', 'riskTip'],
+          },
+        },
+      });
+
+      const parsed = JSON.parse((result.text ?? '{}').trim()) as {
+        diagnosis?: string;
+        correction?: string;
+        riskTip?: string;
+      };
+      res.json({
+        diagnosis: parsed.diagnosis ?? 'Structure and liquidity alignment reviewed.',
+        correction: parsed.correction ?? 'Wait for liquidity sweep + body BOS before placing limit entries.',
+        riskTip: parsed.riskTip ?? 'Keep risk under 1% and target at least 1:2 R:R.',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'AI Coach is temporarily unavailable.';
+      res.status(502).json({ error: msg.includes('API') ? 'Check GEMINI_API_KEY in Settings > Secrets.' : 'AI Coach is temporarily unavailable. Please try again.' });
     }
   });
 

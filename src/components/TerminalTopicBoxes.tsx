@@ -127,82 +127,82 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
       className="grid grid-cols-1 md:grid-cols-3 gap-3"
     >
       {/* Box 1: AI Pattern Analysis */}
-      <article className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 flex flex-col justify-between gap-3">
+      <article className="vp-glass-card rounded-2xl p-4 flex flex-col justify-between gap-3">
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#F0B90B]/15 text-[#F0B90B]">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#F59E0B]/15 text-[var(--vp-accent-text)]">
                 <Sparkles className="h-4 w-4" />
               </span>
               <div>
-                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[#848E9C]">
+                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
                   Topic 01 · Live Scan
                 </span>
-                <h3 className="text-sm font-bold text-[#EAECEF]">AI Pattern Analysis</h3>
+                <h3 className="text-sm font-bold text-[var(--vp-text)]">AI Pattern Analysis</h3>
               </div>
             </div>
 
             <span
-              className="rounded px-2 py-0.5 text-[10px] font-bold font-mono-tabular"
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-bold font-mono-tabular"
               style={{
                 backgroundColor:
                   patternBias === 'Bullish'
-                    ? 'rgba(0, 192, 135, 0.15)'
+                    ? 'rgba(8, 153, 129, 0.16)'
                     : patternBias === 'Bearish'
-                      ? 'rgba(246, 70, 93, 0.15)'
-                      : 'rgba(240, 185, 11, 0.15)',
+                      ? 'rgba(242, 54, 69, 0.16)'
+                      : 'rgba(245, 158, 11, 0.16)',
                 color:
                   patternBias === 'Bullish'
-                    ? '#00C087'
+                    ? 'var(--vp-bull)'
                     : patternBias === 'Bearish'
-                      ? '#F6465D'
-                      : '#F0B90B',
+                      ? 'var(--vp-bear)'
+                      : 'var(--vp-accent-text)',
               }}
             >
               {patternBias}
             </span>
           </div>
 
-          <div className="rounded-xl border border-[#2B3139] bg-[#1E2329] p-3 space-y-1.5 text-xs">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-3 space-y-1.5 text-xs transition-colors">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#848E9C]">Active Pattern</span>
-              <span className="font-bold text-[#F0B90B]">{patternName}</span>
+              <span className="text-[var(--vp-muted)]">Active Pattern</span>
+              <span className="font-bold text-[var(--vp-accent-text)]">{patternName}</span>
             </div>
             <div className="flex items-center justify-between gap-2 font-mono-tabular">
-              <span className="text-[#00C087]">
+              <span className="text-[var(--vp-bull)]">
                 S1: {telemetry?.smc?.supportPrice ? telemetry.smc.supportPrice.toFixed(2) : '--'}
               </span>
-              <span className="text-[#EAECEF]">
+              <span className="text-[var(--vp-text)]">
                 {activeSymbolLabel} · {telemetry?.timeframe ?? '15m'}
               </span>
-              <span className="text-[#F6465D]">
+              <span className="text-[var(--vp-bear)]">
                 R1: {telemetry?.smc?.resistancePrice ? telemetry.smc.resistancePrice.toFixed(2) : '--'}
               </span>
             </div>
           </div>
 
           {aiScan ? (
-            <div className="rounded-xl border border-[#F0B90B]/40 bg-[#1E2329] p-2.5 space-y-1 text-xs">
-              <div className="font-bold text-[#F0B90B]">{aiScan.headline}</div>
-              <p className="text-[#EAECEF] leading-relaxed">{aiScan.summary}</p>
-              <p className="text-[11px] text-[#848E9C]">Invalidation: {aiScan.invalidation}</p>
+            <div className="rounded-xl border border-[#F59E0B]/40 bg-[var(--vp-elevated)] p-2.5 space-y-1 text-xs">
+              <div className="font-bold text-[var(--vp-accent-text)]">{aiScan.headline}</div>
+              <p className="text-[var(--vp-text)] leading-relaxed">{aiScan.summary}</p>
+              <p className="text-[11px] text-[var(--vp-muted)]">Invalidation: {aiScan.invalidation}</p>
             </div>
           ) : scanError ? (
-            <p className="text-[11px] text-[#F6465D]">{scanError}</p>
+            <p className="text-[11px] text-[var(--vp-bear)]">{scanError}</p>
           ) : (
-            <p className="text-xs text-[#848E9C] leading-relaxed">
+            <p className="text-xs text-[var(--vp-muted)] leading-relaxed">
               Auto-drawn support, resistance &amp; geometric chart patterns sync live with WebSocket
               candles. Run an instant AI structural read below.
             </p>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#2B3139]">
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--vp-border)]">
           <button
             type="button"
             onClick={handleRunAiScan}
             disabled={scanning}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-[#F0B90B] px-3 text-xs font-bold text-[#0B0E11] cursor-pointer disabled:opacity-60"
+            className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 bg-[#F59E0B] hover:bg-[#FBBF24] px-3.5 text-xs font-bold text-[#0B0E14] shadow-[0_0_16px_rgba(245,158,11,0.24)] cursor-pointer disabled:opacity-60"
           >
             {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             <span>{aiScan ? 'Rescan Pattern' : 'AI Deep Scan'}</span>
@@ -212,7 +212,7 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('news')}
-              className="inline-flex min-h-[36px] items-center gap-1 text-xs font-semibold text-[#EAECEF] hover:text-[#F0B90B] cursor-pointer"
+              className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1 px-2.5 text-xs font-semibold text-[var(--vp-text)] hover:text-[var(--vp-accent-text)] cursor-pointer"
             >
               <Newspaper className="h-3.5 w-3.5" />
               <span>Crypto/FX News</span>
@@ -222,22 +222,22 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
       </article>
 
       {/* Box 2: SMC & OMYE Guide */}
-      <article className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 flex flex-col justify-between gap-3">
+      <article className="vp-glass-card rounded-2xl p-4 flex flex-col justify-between gap-3">
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#00C087]/15 text-[#00C087]">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#089981]/15 text-[var(--vp-bull)]">
                 <Layers className="h-4 w-4" />
               </span>
               <div>
-                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[#848E9C]">
+                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
                   Topic 02 · Playbook
                 </span>
-                <h3 className="text-sm font-bold text-[#EAECEF]">SMC &amp; OMYE Guide</h3>
+                <h3 className="text-sm font-bold text-[var(--vp-text)]">SMC &amp; OMYE Guide</h3>
               </div>
             </div>
 
-            <span className="text-[10px] font-mono-tabular font-bold text-[#00C087]">
+            <span className="text-[10px] font-mono-tabular font-bold text-[var(--vp-bull)]">
               {telemetry?.omye?.signal ?? '1m LIVE'}
             </span>
           </div>
@@ -250,10 +250,10 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => setActiveGuideId(item.id)}
-                  className="min-h-[28px] rounded-lg px-2.5 text-[11px] font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  className="vp-pill-btn min-h-[28px] px-3 text-[11px] font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                   style={{
-                    backgroundColor: active ? '#F0B90B' : '#1E2329',
-                    color: active ? '#0B0E11' : '#848E9C',
+                    backgroundColor: active ? '#F59E0B' : 'var(--vp-elevated)',
+                    color: active ? '#0B0E14' : 'var(--vp-muted)',
                   }}
                 >
                   {item.label}
@@ -262,13 +262,13 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
             })}
           </div>
 
-          <div className="rounded-xl border border-[#2B3139] bg-[#1E2329] p-3 text-xs text-[#EAECEF] leading-relaxed">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-3 text-xs text-[var(--vp-text)] leading-relaxed transition-colors">
             {activeGuide.desc}
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#2B3139]">
-          <span className="text-[11px] font-mono-tabular text-[#848E9C]">
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--vp-border)]">
+          <span className="text-[11px] font-mono-tabular text-[var(--vp-muted)]">
             {telemetry?.smc?.orderBlock
               ? `${telemetry.smc.orderBlock.type} OB Active`
               : 'BOS · OB · FVG · OMYE'}
@@ -278,7 +278,7 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('academy')}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-[#1E2329] border border-[#2B3139] px-3 text-xs font-bold text-[#F0B90B] hover:border-[#F0B90B] cursor-pointer"
+              className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 bg-[var(--vp-elevated)] border border-[var(--vp-border)] px-3.5 text-xs font-bold text-[var(--vp-accent-text)] hover:border-[#F59E0B] cursor-pointer"
             >
               <BookOpen className="h-3.5 w-3.5" />
               <span>Study SMC Guide</span>
@@ -289,56 +289,56 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
       </article>
 
       {/* Box 3: Chart Learning Academy */}
-      <article className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 flex flex-col justify-between gap-3">
+      <article className="vp-glass-card rounded-2xl p-4 flex flex-col justify-between gap-3">
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#F0B90B]/15 text-[#F0B90B]">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#F59E0B]/15 text-[var(--vp-accent-text)]">
                 <GraduationCap className="h-4 w-4" />
               </span>
               <div>
-                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[#848E9C]">
+                <span className="block text-[10px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
                   Topic 03 · Curriculum
                 </span>
-                <h3 className="text-sm font-bold text-[#EAECEF]">Chart Learning Academy</h3>
+                <h3 className="text-sm font-bold text-[var(--vp-text)]">Chart Learning Academy</h3>
               </div>
             </div>
 
-            <span className="text-[11px] font-mono-tabular font-bold text-[#00C087]">
+            <span className="text-[11px] font-mono-tabular font-bold text-[var(--vp-bull)]">
               {academyDoneCount}/4 Done
             </span>
           </div>
 
           <ul className="space-y-1.5 text-xs">
-            <li className="rounded-xl border border-[#2B3139] bg-[#1E2329] px-3 py-2 flex items-center justify-between gap-2">
-              <span className="text-[#EAECEF] font-medium truncate">
+            <li className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2 flex items-center justify-between gap-2 transition-colors">
+              <span className="text-[var(--vp-text)] font-medium truncate">
                 01. HH / HL / LH / LL Market Structure
               </span>
-              <span className="text-[10px] font-mono-tabular text-[#00C087] shrink-0">4m</span>
+              <span className="text-[10px] font-mono-tabular text-[var(--vp-bull)] shrink-0">4m</span>
             </li>
-            <li className="rounded-xl border border-[#2B3139] bg-[#1E2329] px-3 py-2 flex items-center justify-between gap-2">
-              <span className="text-[#EAECEF] font-medium truncate">
+            <li className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2 flex items-center justify-between gap-2 transition-colors">
+              <span className="text-[var(--vp-text)] font-medium truncate">
                 02. BOS vs CHoCH + Order Block Entry
               </span>
-              <span className="text-[10px] font-mono-tabular text-[#F0B90B] shrink-0">6m</span>
+              <span className="text-[10px] font-mono-tabular text-[var(--vp-accent-text)] shrink-0">6m</span>
             </li>
-            <li className="rounded-xl border border-[#2B3139] bg-[#1E2329] px-3 py-2 flex items-center justify-between gap-2">
-              <span className="text-[#EAECEF] font-medium truncate">
+            <li className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2 flex items-center justify-between gap-2 transition-colors">
+              <span className="text-[var(--vp-text)] font-medium truncate">
                 03. Trading Gold around CPI, PCE &amp; FOMC
               </span>
-              <span className="text-[10px] font-mono-tabular text-[#848E9C] shrink-0">5m</span>
+              <span className="text-[10px] font-mono-tabular text-[var(--vp-muted)] shrink-0">5m</span>
             </li>
           </ul>
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#2B3139]">
-          <span className="text-[11px] text-[#848E9C]">Interactive quizzes included</span>
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--vp-border)]">
+          <span className="text-[11px] text-[var(--vp-muted)]">Interactive quizzes included</span>
 
           {onNavigateTab && (
             <button
               type="button"
               onClick={() => onNavigateTab('academy')}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-[#F0B90B] px-3 text-xs font-bold text-[#0B0E11] cursor-pointer"
+              className="vp-pill-btn inline-flex min-h-[36px] items-center gap-1.5 bg-[#F59E0B] hover:bg-[#FBBF24] px-3.5 text-xs font-bold text-[#0B0E14] shadow-[0_0_16px_rgba(245,158,11,0.24)] cursor-pointer"
             >
               <BookOpen className="h-3.5 w-3.5" />
               <span>Open Academy</span>

@@ -21,6 +21,7 @@ import { NewsTerminalView } from './components/NewsTerminalView';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   DEFAULT_TYPOGRAPHY,
+  LIGHT_TERMINAL_PALETTE,
   PRESET_PALETTES,
 } from './data/newsData';
 import {
@@ -36,6 +37,7 @@ import type {
   ColorPalette,
   MarketAsset,
   PriceAlertRecord,
+  ThemeMode,
   TypographySettings,
 } from './types/news';
 import { getContrastText } from './utils/colorContrast';
@@ -49,6 +51,7 @@ import {
 
 const STORAGE_KEYS = {
   palette: 'vp_active_palette_v3',
+  themeMode: 'vp_theme_mode_v1',
   typography: 'vp_typography_v2',
   watchlist: 'vp_watchlist_symbols_v1',
   localAlerts: 'vp_local_price_alerts_v1',
@@ -145,10 +148,17 @@ export default function App() {
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
   const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('OANDA:XAUUSD');
 
-  // Dark-mode Play Store Trading Palette & Typography
-  const [activePalette] = useState<ColorPalette>(() =>
-    loadJson<ColorPalette>(STORAGE_KEYS.palette, PRESET_PALETTES[2])
-  );
+  // Theme Mode (Dark default, Light/White saved in localStorage) & Typography
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.themeMode);
+      return saved === 'light' ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+  const activePalette: ColorPalette =
+    themeMode === 'light' ? LIGHT_TERMINAL_PALETTE : PRESET_PALETTES[2];
   const [typography] = useState<TypographySettings>(() =>
     loadJson<TypographySettings>(STORAGE_KEYS.typography, DEFAULT_TYPOGRAPHY)
   );
@@ -181,21 +191,36 @@ export default function App() {
   // Apply palette & dark/light CSS variables
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('dark', activePalette.mode === 'dark');
+    const isDark = themeMode === 'dark';
+    root.classList.toggle('dark', isDark);
+    root.classList.toggle('light', !isDark);
+    root.style.colorScheme = themeMode;
     root.style.setProperty('--vp-primary', activePalette.primary);
     root.style.setProperty('--vp-primary-fg', getContrastText(activePalette.primary));
     root.style.setProperty('--vp-secondary', activePalette.secondary);
     root.style.setProperty('--vp-secondary-fg', getContrastText(activePalette.secondary));
     root.style.setProperty('--vp-accent', activePalette.accent);
     root.style.setProperty('--vp-accent-fg', getContrastText(activePalette.accent));
+    root.style.setProperty('--vp-accent-text', isDark ? '#F59E0B' : '#B45309');
     root.style.setProperty('--vp-canvas', activePalette.canvas);
     root.style.setProperty('--vp-surface', activePalette.surface);
+    root.style.setProperty(
+      '--vp-surface-glass',
+      isDark ? 'rgba(19, 23, 34, 0.86)' : 'rgba(248, 250, 252, 0.92)'
+    );
+    root.style.setProperty('--vp-header', isDark ? '#0F131D' : '#F1F5F9');
     root.style.setProperty('--vp-elevated', activePalette.elevated);
+    root.style.setProperty('--vp-control', isDark ? '#1E2433' : '#E2E8F0');
     root.style.setProperty('--vp-text', activePalette.text);
     root.style.setProperty('--vp-muted', activePalette.mutedText);
+    root.style.setProperty('--vp-border', isDark ? '#1E2433' : '#E2E8F0');
+    root.style.setProperty('--vp-bull', isDark ? '#089981' : '#089981');
+    root.style.setProperty('--vp-bear', isDark ? '#F23645' : '#DC2626');
     root.style.setProperty(
-      '--vp-border',
-      activePalette.mode === 'dark' ? 'rgba(241, 245, 249, 0.13)' : 'rgba(17, 24, 39, 0.11)'
+      '--vp-card-shadow',
+      isDark
+        ? '0 12px 32px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04)'
+        : '0 10px 26px -12px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8)'
     );
 
     const selfBg =
@@ -207,8 +232,19 @@ export default function App() {
     root.style.setProperty('--vp-msg-other-bg', otherBg);
     root.style.setProperty('--vp-msg-other-fg', getContrastText(otherBg));
 
-    localStorage.setItem(STORAGE_KEYS.palette, JSON.stringify(activePalette));
-  }, [activePalette, typography]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.themeMode, themeMode);
+      localStorage.setItem(STORAGE_KEYS.palette, JSON.stringify(activePalette));
+    } catch {
+      // ignore storage errors
+    }
+  }, [themeMode, activePalette, typography]);
+
+  useEffect(() => {
+    document.documentElement.style.backgroundColor = activePalette.canvas;
+    document.body.style.backgroundColor = activePalette.canvas;
+    document.body.style.color = activePalette.text;
+  }, [activePalette]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.typography, JSON.stringify(typography));
@@ -520,6 +556,18 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  if (activeTab === 'academy') {
+    return (
+      <div className="vp-tab-stage">
+        <AcademyView
+          onOpenPairInTerminal={handleOpenPairInTerminal}
+          onNavigateTab={handleSelectTab}
+          themeMode={themeMode}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen transition-colors"
@@ -546,16 +594,23 @@ export default function App() {
         <div className="mx-auto max-w-7xl px-3 sm:px-6 pt-3">
           <div
             role="alert"
-            className="flex items-center justify-between gap-3 rounded-2xl border border-[#F0B90B]/60 bg-[#1E2329] px-4 py-3 text-sm text-[#EAECEF]"
+            className="vp-glass-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm"
+            style={{
+              borderColor: 'var(--vp-primary)',
+              color: 'var(--vp-text)',
+            }}
           >
             <div>
-              <strong className="font-bold text-[#F0B90B]">{alertBanner.title}: </strong>
+              <strong className="font-bold" style={{ color: 'var(--vp-accent-text)' }}>
+                {alertBanner.title}:{' '}
+              </strong>
               <span>{alertBanner.body}</span>
             </div>
             <button
               type="button"
               onClick={() => setAlertBanner(null)}
-              className="text-xs font-bold text-[#F0B90B] underline cursor-pointer shrink-0"
+              className="vp-pill-btn px-3 py-1 text-xs font-bold cursor-pointer shrink-0 border border-[var(--vp-border)] bg-[var(--vp-elevated)]"
+              style={{ color: 'var(--vp-accent-text)' }}
             >
               Dismiss
             </button>
@@ -564,7 +619,7 @@ export default function App() {
       )}
 
       {/* Main Workspace */}
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 pt-3 pb-24 md:pb-8">
+      <main key={activeTab} className="vp-tab-stage mx-auto max-w-7xl px-3 sm:px-6 pt-3 pb-24 md:pb-8">
         {activeTab === 'terminal' ? (
           activeMarketAsset ? (
             <MarketDetails
@@ -575,7 +630,7 @@ export default function App() {
                 setActiveMarketAsset(null);
                 setActiveTab('terminal');
               }}
-              themeMode="dark"
+              themeMode={themeMode}
               typography={typography}
               watchlistSymbols={watchlistSymbols}
               onToggleWatchlist={handleToggleWatchlist}
@@ -594,7 +649,8 @@ export default function App() {
           ) : (
             <ForexMarketView
               typography={typography}
-              themeMode="dark"
+              themeMode={themeMode}
+              onChangeThemeMode={setThemeMode}
               marketAssets={marketAssets}
               watchlistSymbols={watchlistSymbols}
               selectedSymbol={selectedMarketSymbol}
@@ -605,10 +661,8 @@ export default function App() {
               onNavigateTab={handleSelectTab}
             />
           )
-        ) : activeTab === 'news' ? (
-          <NewsTerminalView />
         ) : (
-          <AcademyView onOpenPairInTerminal={handleOpenPairInTerminal} />
+          <NewsTerminalView />
         )}
       </main>
 

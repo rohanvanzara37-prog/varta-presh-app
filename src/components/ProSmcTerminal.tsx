@@ -28,6 +28,7 @@ import {
   Pencil,
   Play,
   RotateCcw,
+  Settings,
   SkipForward,
   Trash2,
   TrendingUp,
@@ -35,6 +36,8 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
+import type { ThemeMode } from '../types/news';
+import { ChartSettingsModal } from './ChartSettingsModal';
 
 export type SmcSymbol =
   | 'XAUUSD'
@@ -99,6 +102,39 @@ interface ProSmcTerminalProps {
   externalTvSymbol?: string;
   onSelectTvSymbol?: (tvSymbol: string) => void;
   onTelemetryChange?: (snapshot: SmcTelemetrySnapshot) => void;
+  themeMode?: ThemeMode;
+  onChangeThemeMode?: (mode: ThemeMode) => void;
+}
+
+function getChartThemeOptions(themeMode: ThemeMode) {
+  const isLight = themeMode === 'light';
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: isLight ? '#FFFFFF' : '#0B0E14' },
+      textColor: isLight ? '#1E293B' : '#94A3B8',
+      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+    },
+    grid: {
+      vertLines: { color: isLight ? 'rgba(15, 23, 42, 0.05)' : 'rgba(255, 255, 255, 0.035)' },
+      horzLines: { color: isLight ? 'rgba(15, 23, 42, 0.05)' : 'rgba(255, 255, 255, 0.035)' },
+    },
+    crosshair: {
+      vertLine: {
+        color: isLight ? 'rgba(180, 83, 9, 0.4)' : 'rgba(245, 158, 11, 0.42)',
+        labelBackgroundColor: isLight ? '#0F172A' : '#1E2433',
+      },
+      horzLine: {
+        color: isLight ? 'rgba(180, 83, 9, 0.4)' : 'rgba(245, 158, 11, 0.42)',
+        labelBackgroundColor: isLight ? '#0F172A' : '#1E2433',
+      },
+    },
+    timeScale: {
+      borderColor: isLight ? '#E2E8F0' : '#1E2433',
+    },
+    rightPriceScale: {
+      borderColor: isLight ? '#E2E8F0' : '#1E2433',
+    },
+  };
 }
 
 interface DetectedPatternInfo {
@@ -333,13 +369,13 @@ function formatUtcShort(ts: number): string {
 }
 
 const GOLD_CFD_PARAMS: Record<SmcTimeframe, { interval: string; range: string }> = {
-  '1m': { interval: '1m', range: '1d' },
+  '1m': { interval: '1m', range: '5d' },
   '5m': { interval: '5m', range: '5d' },
-  '15m': { interval: '15m', range: '5d' },
+  '15m': { interval: '15m', range: '1mo' },
   '30m': { interval: '30m', range: '1mo' },
-  '1h': { interval: '60m', range: '1mo' },
-  '4h': { interval: '4h', range: '3mo' },
-  '1d': { interval: '1d', range: '1y' },
+  '1h': { interval: '60m', range: '3mo' },
+  '4h': { interval: '4h', range: '6mo' },
+  '1d': { interval: '1d', range: '2y' },
 };
 
 async function fetchCandles(
@@ -402,8 +438,8 @@ async function fetchCandles(
   if (!meta?.isCrypto) return [];
 
   const endpoints = [
-    `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=180`,
-    `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=180`,
+    `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=500`,
+    `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=500`,
   ];
 
   for (const url of endpoints) {
@@ -548,6 +584,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   externalTvSymbol,
   onSelectTvSymbol,
   onTelemetryChange,
+  themeMode = 'dark',
+  onChangeThemeMode,
 }) => {
   const [symbol, setSymbol] = useState<SmcSymbol>(() => mapTvSymbolToSmc(externalTvSymbol) ?? 'XAUUSD');
   const [timeframe, setTimeframe] = useState<SmcTimeframe>('15m');
@@ -555,6 +593,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const [showPatterns, setShowPatterns] = useState(true);
   const [showSwingLabels, setShowSwingLabels] = useState(true);
   const [showBosChoch, setShowBosChoch] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // On-Chart Technical Indicators
   const [showEma20, setShowEma20] = useState(false);
@@ -611,6 +650,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
   const fullCandlesRef = useRef<TerminalCandle[]>([]);
   const latestCandlesRef = useRef<TerminalCandle[]>([]);
+  const historicalLoadedRef = useRef<boolean>(false);
   const omyeCandlesRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const omyeWsRef = useRef<WebSocket | null>(null);
@@ -669,25 +709,26 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     const el = chartWrapRef.current;
     if (!el) return;
 
+    const initialChartTheme = getChartThemeOptions(themeMode);
+
     const chart = createChart(el, {
       width: el.clientWidth || 320,
       height: el.clientHeight || 340,
       layout: {
-        background: { type: ColorType.Solid, color: '#0B0E11' },
-        textColor: '#D1D4DC',
+        ...initialChartTheme.layout,
         fontSize: 10,
         attributionLogo: false,
       },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+      grid: initialChartTheme.grid,
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        ...initialChartTheme.crosshair,
       },
-      crosshair: { mode: CrosshairMode.Normal },
       handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: true,
+        mouseWheel: true,
+        pressedMouseMove: true,
       },
       handleScale: {
         mouseWheel: true,
@@ -706,35 +747,40 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         mouse: true,
       },
       timeScale: {
-        borderColor: '#2B3139',
+        ...initialChartTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
         barSpacing: 7,
+        fixLeftEdge: false,
+        fixRightEdge: false,
+        lockVisibleTimeRangeOnResize: false,
       },
       rightPriceScale: {
         visible: true,
         autoScale: true,
-        borderColor: '#2B3139',
+        ...initialChartTheme.rightPriceScale,
         ticksVisible: false,
         entireTextOnly: true,
         alignLabels: true,
-        minimumWidth: 44,
+        minimumWidth: 48,
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#00C087',
-      downColor: '#F6465D',
-      borderUpColor: '#00C087',
-      borderDownColor: '#F6465D',
-      wickUpColor: '#00C087',
-      wickDownColor: '#F6465D',
+      upColor: '#089981',
+      downColor: '#F23645',
+      borderUpColor: '#089981',
+      borderDownColor: '#F23645',
+      wickUpColor: '#089981',
+      wickDownColor: '#F23645',
+      priceLineVisible: false,
+      lastValueVisible: true,
     });
 
     const ema20Series = chart.addSeries(LineSeries, {
-      color: '#F0B90B',
+      color: '#F59E0B',
       lineWidth: 1,
       title: 'EMA20',
       priceLineVisible: false,
@@ -891,17 +937,31 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       }
     });
 
+    const syncRetinaSize = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) {
+        // Trigger Lightweight Charts fancy-canvas DPR backing store refresh on resize / Retina DPI shifts
+        void window.devicePixelRatio;
+        chart.applyOptions({ width: Math.floor(w), height: Math.floor(h) });
+        scheduleOverlayTick();
+      }
+    };
+
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
+        void window.devicePixelRatio;
         chart.applyOptions({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
         scheduleOverlayTick();
       }
     });
     ro.observe(el);
+    window.addEventListener('resize', syncRetinaSize);
 
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', syncRetinaSize);
       ro.disconnect();
       markersPlugin.detach();
       chart.remove();
@@ -918,6 +978,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       overlaySeriesRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    chartApiRef.current?.applyOptions(getChartThemeOptions(themeMode));
+  }, [themeMode]);
 
   useEffect(() => {
     candleSeriesRef.current?.applyOptions({
@@ -1003,6 +1067,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     });
   }, []);
 
+  const prevFullScreenRef = useRef<boolean>(isFullScreen);
   useEffect(() => {
     if (isFullScreen) {
       document.body.classList.add('chart-fullscreen-active');
@@ -1010,14 +1075,18 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       document.body.classList.remove('chart-fullscreen-active');
     }
 
-    const raf = window.requestAnimationFrame(() => {
-      chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
-      chartApiRef.current?.timeScale().fitContent();
-    });
+    let raf: number | null = null;
+    if (prevFullScreenRef.current !== isFullScreen) {
+      prevFullScreenRef.current = isFullScreen;
+      raf = window.requestAnimationFrame(() => {
+        chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
+        chartApiRef.current?.timeScale().fitContent();
+      });
+    }
 
     if (!isFullScreen) {
       return () => {
-        window.cancelAnimationFrame(raf);
+        if (raf !== null) window.cancelAnimationFrame(raf);
         document.body.classList.remove('chart-fullscreen-active');
       };
     }
@@ -1042,7 +1111,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => {
-      window.cancelAnimationFrame(raf);
+      if (raf !== null) window.cancelAnimationFrame(raf);
       document.body.classList.remove('chart-fullscreen-active');
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFsChange);
@@ -1765,6 +1834,17 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     [addLineSegment, clearOverlayLines]
   );
 
+  const syncTechnicalIndicatorsRef = useRef(syncTechnicalIndicators);
+  const runSmcAndAutoDrawRef = useRef(runSmcAndAutoDraw);
+
+  useEffect(() => {
+    syncTechnicalIndicatorsRef.current = syncTechnicalIndicators;
+  }, [syncTechnicalIndicators]);
+
+  useEffect(() => {
+    runSmcAndAutoDrawRef.current = runSmcAndAutoDraw;
+  }, [runSmcAndAutoDraw]);
+
   useEffect(() => {
     if (latestCandlesRef.current.length >= 12) {
       runSmcAndAutoDraw(latestCandlesRef.current, {
@@ -1864,6 +1944,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     setDraftAnchor(null);
 
     // Clear old candles, indicators, markers & overlay lines immediately on timeframe/symbol switch
+    historicalLoadedRef.current = false;
     fullCandlesRef.current = [];
     latestCandlesRef.current = [];
     candleSeriesRef.current?.setData([]);
@@ -1878,7 +1959,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     clearOverlayLines();
 
     const applyIncomingCandle = (incomingCandle: TerminalCandle, isClosed: boolean) => {
-      if (disposed || !candleSeriesRef.current) return;
+      if (disposed || !candleSeriesRef.current || !historicalLoadedRef.current) return;
 
       const fullArr = fullCandlesRef.current;
       let liveCandle = incomingCandle;
@@ -1897,7 +1978,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           fullArr[fullArr.length - 1] = liveCandle;
         } else {
           fullArr.push(liveCandle);
-          if (fullArr.length > 220) fullArr.shift();
+          if (fullArr.length > 600) fullArr.shift();
         }
       } else {
         fullArr.push(liveCandle);
@@ -1919,7 +2000,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         } else if (liveCandle.time > last.time) {
           arr.push(liveCandle);
           isNewBar = true;
-          if (arr.length > 220) arr.shift();
+          if (arr.length > 600) arr.shift();
         }
       } else {
         arr.push(liveCandle);
@@ -1949,11 +2030,11 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       }
 
       tickDrawCount += 1;
-      if ((isClosed || isNewBar || tickDrawCount % 4 === 0) && arr.length >= 2) {
-        syncTechnicalIndicators(arr);
+      if ((isClosed || isNewBar || tickDrawCount % 10 === 0) && arr.length >= 2) {
+        syncTechnicalIndicatorsRef.current(arr);
       }
-      if ((isClosed || isNewBar || tickDrawCount % 6 === 0) && arr.length >= 12) {
-        runSmcAndAutoDraw(arr, overlayPrefsRef.current);
+      if ((isClosed || isNewBar) && arr.length >= 12) {
+        runSmcAndAutoDrawRef.current(arr, overlayPrefsRef.current);
       }
     };
 
@@ -2101,14 +2182,28 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         latestCandlesRef.current = [...candles];
         setReplayTotal(candles.length);
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
-        chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
-        chartApiRef.current?.timeScale().fitContent();
-        window.requestAnimationFrame(() => {
-          chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
-          chartApiRef.current?.timeScale().fitContent();
-        });
-        syncTechnicalIndicators(candles);
-        runSmcAndAutoDraw(candles, overlayPrefsRef.current);
+        historicalLoadedRef.current = true;
+
+        const applyInitialRange = () => {
+          const chart = chartApiRef.current;
+          if (!chart || disposed) return;
+          chart.priceScale('right').applyOptions({ autoScale: true });
+          const chartWidth = chartWrapRef.current?.clientWidth || 360;
+          const visibleBars = Math.max(60, Math.min(candles.length, Math.floor(chartWidth / 6)));
+          if (candles.length > visibleBars) {
+            chart.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, candles.length - visibleBars),
+              to: candles.length - 1 + 6,
+            });
+          } else {
+            chart.timeScale().fitContent();
+          }
+        };
+
+        applyInitialRange();
+        window.requestAnimationFrame(applyInitialRange);
+        syncTechnicalIndicatorsRef.current(candles);
+        runSmcAndAutoDrawRef.current(candles, overlayPrefsRef.current);
         connectWebSocket();
       })
       .catch((err) => {
@@ -2127,7 +2222,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         wsRef.current = null;
       }
     };
-  }, [symbol, timeframe, symbolMeta.isCrypto, reloadNonce, runSmcAndAutoDraw, syncTechnicalIndicators]);
+  }, [symbol, timeframe, symbolMeta.isCrypto, reloadNonce]);
 
   // Dedicated Live OMYE (One-Minute Market Engine) WebSocket feed when main chart is > 1m
   useEffect(() => {
@@ -2270,13 +2365,13 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       aria-label="Live WebSocket Auto-Draw Trading Terminal"
       className={
         isFullScreen
-          ? 'fixed inset-0 z-[100] flex flex-col w-screen h-screen bg-[#0B0E11] text-[#EAECEF] overflow-hidden'
-          : 'rounded-xl border overflow-hidden bg-[#0B0E11] border-[#2B3139] text-[#EAECEF]'
+          ? 'fixed inset-0 z-[100] flex flex-col w-screen h-screen bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden transition-colors duration-200'
+          : 'vp-glass-card rounded-2xl overflow-hidden text-[var(--vp-text)]'
       }
       style={isFullScreen ? { width: '100vw', height: '100vh' } : undefined}
     >
       {/* Top Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#161A1E] border-b border-[#2B3139]">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-[var(--vp-header)] border-b border-[var(--vp-border)] transition-colors duration-200">
         <div className="flex flex-wrap items-center gap-1.5">
           <select
             aria-label="Select trading symbol"
@@ -2287,7 +2382,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               const found = SYMBOL_OPTIONS.find((opt) => opt.value === nextSym);
               if (found) onSelectTvSymbol?.(found.tvSymbol);
             }}
-            className="rounded bg-[#2B3139] text-[#EAECEF] px-2.5 py-1.5 text-xs font-semibold outline-none cursor-pointer"
+            className="rounded-full border border-[var(--vp-border)] bg-[var(--vp-control)] text-[var(--vp-text)] px-3 py-1.5 text-xs font-semibold outline-none cursor-pointer transition-colors hover:border-[#F59E0B]/50"
           >
             {SYMBOL_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -2304,10 +2399,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                   key={tf.value}
                   type="button"
                   onClick={() => setTimeframe(tf.value)}
-                  className={`rounded px-2 py-1 text-xs font-semibold cursor-pointer transition-colors ${
+                  className={`vp-pill-btn px-2.5 py-1 text-xs font-mono-tabular font-semibold cursor-pointer ${
                     active
-                      ? 'bg-[#F0B90B] text-[#0B0E11]'
-                      : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                      ? 'bg-[#F59E0B] text-[#0B0E14] shadow-[0_0_14px_rgba(245,158,11,0.3)]'
+                      : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:text-[#F59E0B]'
                   }`}
                 >
                   {tf.label}
@@ -2319,10 +2414,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowSupportResistance((v) => !v)}
-            className={`rounded px-2 py-1 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-1 text-[11px] font-semibold cursor-pointer border ${
               showSupportResistance
-                ? 'bg-[#00C087]/15 border-[#00C087]/50 text-[#00C087]'
-                : 'bg-[#2B3139] border-transparent text-[#848E9C]'
+                ? 'bg-[#089981]/15 border-[#089981]/55 text-[var(--vp-bull)]'
+                : 'bg-[var(--vp-control)] border-transparent text-[var(--vp-muted)]'
             }`}
           >
             S/R Lines
@@ -2331,10 +2426,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowPatterns((v) => !v)}
-            className={`rounded px-2 py-1 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-1 text-[11px] font-semibold cursor-pointer border ${
               showPatterns
-                ? 'bg-[#F0B90B]/15 border-[#F0B90B]/50 text-[#F0B90B]'
-                : 'bg-[#2B3139] border-transparent text-[#848E9C]'
+                ? 'bg-[#F59E0B]/15 border-[#F59E0B]/55 text-[var(--vp-accent-text)]'
+                : 'bg-[var(--vp-control)] border-transparent text-[var(--vp-muted)]'
             }`}
           >
             Patterns
@@ -2343,10 +2438,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowSwingLabels((v) => !v)}
-            className={`rounded px-2 py-1 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-1 text-[11px] font-semibold cursor-pointer border ${
               showSwingLabels
-                ? 'bg-[#00C087]/15 border-[#00C087]/50 text-[#00C087]'
-                : 'bg-[#2B3139] border-transparent text-[#848E9C]'
+                ? 'bg-[#089981]/15 border-[#089981]/55 text-[var(--vp-bull)]'
+                : 'bg-[var(--vp-control)] border-transparent text-[var(--vp-muted)]'
             }`}
           >
             HH/HL/LH/LL
@@ -2355,47 +2450,49 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowBosChoch((v) => !v)}
-            className={`rounded px-2 py-1 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-1 text-[11px] font-semibold cursor-pointer border ${
               showBosChoch
-                ? 'bg-[#F0B90B]/15 border-[#F0B90B]/50 text-[#F0B90B]'
-                : 'bg-[#2B3139] border-transparent text-[#848E9C]'
+                ? 'bg-[#F59E0B]/15 border-[#F59E0B]/55 text-[var(--vp-accent-text)]'
+                : 'bg-[var(--vp-control)] border-transparent text-[var(--vp-muted)]'
             }`}
           >
             BOS/CHoCH
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#00C087]">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono-tabular font-semibold text-[var(--vp-bull)]">
             <span
               className={`h-2 w-2 rounded-full ${
-                streamStatus === 'LIVE WS' ? 'bg-[#00C087] animate-pulse' : 'bg-[#F0B90B]'
+                streamStatus === 'LIVE WS'
+                  ? 'bg-[#089981] animate-pulse shadow-[0_0_8px_#089981]'
+                  : 'bg-[#F59E0B]'
               }`}
             />
             {streamStatus}
           </span>
           <div
-            className="font-mono-tabular text-[15px] font-bold"
-            style={{ color: isBullTick ? '#00C087' : '#F6465D' }}
+            className="font-mono-tabular text-[15px] font-bold tracking-tight"
+            style={{ color: isBullTick ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
           >
             ${formatTerminalPrice(livePrice, symbolMeta.precision)}
           </div>
         </div>
       </div>
 
-      {/* On-Chart Indicator Bar + Replay Mode + 2-Chart Split Toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 px-3 py-1.5 bg-[#12161C] border-b border-[#2B3139]">
-        <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#848E9C] mr-1">
+      {/* On-Chart Indicator Bar + Replay Mode + 2-Chart Split Toggle + Chart Settings */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-3.5 py-2 bg-[var(--vp-surface)] border-b border-[var(--vp-border)] transition-colors duration-200">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-muted)] mr-1">
             Indicators
           </span>
           <button
             type="button"
             onClick={() => setShowEma20((v) => !v)}
-            className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showEma20
-                ? 'bg-[#F0B90B]/15 border-[#F0B90B]/60 text-[#F0B90B]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#F59E0B]/15 border-[#F59E0B]/60 text-[var(--vp-accent-text)]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             EMA 20
@@ -2403,10 +2500,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowEma50((v) => !v)}
-            className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showEma50
-                ? 'bg-[#38BDF8]/15 border-[#38BDF8]/60 text-[#38BDF8]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#38BDF8]/15 border-[#38BDF8]/60 text-[#0284C7] dark:text-[#38BDF8]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             EMA 50
@@ -2414,10 +2511,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowEma200((v) => !v)}
-            className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showEma200
-                ? 'bg-[#C084FC]/15 border-[#C084FC]/60 text-[#C084FC]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#C084FC]/15 border-[#C084FC]/60 text-[#9333EA] dark:text-[#C084FC]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             EMA 200
@@ -2425,10 +2522,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowBollinger((v) => !v)}
-            className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showBollinger
-                ? 'bg-[#60A5FA]/15 border-[#60A5FA]/60 text-[#60A5FA]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#60A5FA]/15 border-[#60A5FA]/60 text-[#2563EB] dark:text-[#60A5FA]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             BB (20,2)
@@ -2436,22 +2533,24 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setShowRsi((v) => !v)}
-            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showRsi
-                ? 'bg-[#A78BFA]/15 border-[#A78BFA]/60 text-[#A78BFA]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#A78BFA]/15 border-[#A78BFA]/60 text-[#7C3AED] dark:text-[#A78BFA]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             <Activity className="h-3 w-3" />
-            RSI (14){showRsi && liveRsi !== null ? ` · ${liveRsi.toFixed(1)}` : ''}
+            <span className="font-mono-tabular">
+              RSI (14){showRsi && liveRsi !== null ? ` · ${liveRsi.toFixed(1)}` : ''}
+            </span>
           </button>
           <button
             type="button"
             onClick={() => setShowVolumeProfile((v) => !v)}
-            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               showVolumeProfile
-                ? 'bg-[#00C087]/15 border-[#00C087]/60 text-[#00C087]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'
+                ? 'bg-[#089981]/15 border-[#089981]/60 text-[var(--vp-bull)]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
             }`}
           >
             <BarChart2 className="h-3 w-3" />
@@ -2463,10 +2562,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={toggleReplayMode}
-            className={`inline-flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn inline-flex items-center gap-1 px-3 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               replayActive
-                ? 'bg-[#F0B90B] border-[#F0B90B] text-[#0B0E11]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#EAECEF] hover:border-[#F0B90B]/60'
+                ? 'bg-[#F59E0B] border-[#F59E0B] text-[#0B0E14] shadow-[0_0_14px_rgba(245,158,11,0.3)]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]/60'
             }`}
           >
             <Play className="h-3 w-3" />
@@ -2475,10 +2574,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <button
             type="button"
             onClick={() => setSplitView((v) => !v)}
-            className={`inline-flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn inline-flex items-center gap-1 px-3 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               splitView
-                ? 'bg-[#00C087]/15 border-[#00C087]/60 text-[#00C087]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#EAECEF] hover:border-[#00C087]/60'
+                ? 'bg-[#089981]/15 border-[#089981]/60 text-[var(--vp-bull)]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#089981]/60'
             }`}
           >
             <Columns2 className="h-3 w-3" />
@@ -2488,14 +2587,24 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             type="button"
             onClick={toggleFullScreen}
             aria-label={isFullScreen ? 'Exit Full-Screen Landscape' : 'Full-Screen Landscape'}
-            className={`inline-flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+            className={`vp-pill-btn inline-flex items-center gap-1 px-3 py-0.5 text-[11px] font-semibold cursor-pointer border ${
               isFullScreen
-                ? 'bg-[#F0B90B] border-[#F0B90B] text-[#0B0E11]'
-                : 'bg-[#1E2329] border-[#2B3139] text-[#EAECEF] hover:border-[#F0B90B]/60'
+                ? 'bg-[#F59E0B] border-[#F59E0B] text-[#0B0E14] shadow-[0_0_14px_rgba(245,158,11,0.3)]'
+                : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]/60'
             }`}
           >
             {isFullScreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
             {isFullScreen ? 'Exit Full' : 'Full Screen'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Chart Settings"
+            title="Chart Settings"
+            className="vp-pill-btn inline-flex items-center gap-1 px-3 py-0.5 text-[11px] font-semibold cursor-pointer border bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]/60"
+          >
+            <Settings className="h-3.5 w-3.5 text-[var(--vp-accent-text)]" />
+            <span className="hidden sm:inline">Settings</span>
           </button>
         </div>
       </div>
@@ -2503,7 +2612,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       {/* Main Workspace: Chart(s) + Compact Live OMYE & SMC Sidebar */}
       <div className={isFullScreen ? 'flex-1 min-h-0 flex flex-col lg:flex-row' : 'flex flex-col lg:flex-row lg:h-[560px]'}>
         <div
-          className={`flex-1 min-w-0 min-h-0 grid gap-0 border-b lg:border-b-0 lg:border-r border-[#2B3139] ${
+          className={`flex-1 min-w-0 min-h-0 grid gap-0 border-b lg:border-b-0 lg:border-r border-[var(--vp-border)] ${
             isFullScreen ? 'h-full ' : ''
           }${splitView ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}
         >
@@ -2511,7 +2620,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           <div
             className={`relative min-w-0 min-h-0 ${
               isFullScreen ? 'h-full' : 'h-[360px] sm:h-[420px] lg:h-full'
-            } ${splitView ? 'border-b md:border-b-0 md:border-r border-[#2B3139]' : ''}`}
+            } ${splitView ? 'border-b md:border-b-0 md:border-r border-[var(--vp-border)]' : ''}`}
           >
             <div ref={chartWrapRef} className="smc-chart-host touch-none w-full h-full" />
 
@@ -2565,7 +2674,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               />
             )}
 
-            {/* Projected Volume Profile + Interactive Drawing Overlay */}
+            {/* Projected Volume Profile + Glowing Price Beam + Interactive Drawing Overlay */}
             <PrimaryChartSvgOverlay
               renderTick={overlayRenderTick}
               chart={chartApiRef.current}
@@ -2578,24 +2687,27 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               hoverAnchor={hoverAnchor}
               brushStroke={brushStroke}
               activeTool={activeTool}
+              themeMode={themeMode}
+              livePrice={livePrice}
+              isBullTick={isBullTick}
             />
 
             {/* Crosshair Price Tracking HUD */}
             <div className="pointer-events-none absolute top-2 left-24 right-16 z-10 flex flex-wrap items-center gap-2 text-[10px] font-mono-tabular">
               {crosshairReadout ? (
-                <div className="inline-flex flex-wrap items-center gap-2 rounded bg-[#161A1E]/88 border border-[#2B3139] px-2 py-0.5 text-[#EAECEF] backdrop-blur-sm">
-                  <span className="font-semibold text-[#F0B90B]">
+                <div className="inline-flex flex-wrap items-center gap-2 rounded-full bg-[var(--vp-header)]/95 border border-[var(--vp-border)] px-2.5 py-0.5 text-[var(--vp-text)] backdrop-blur-md shadow-md">
+                  <span className="font-semibold text-[var(--vp-accent-text)]">
                     Track: ${formatTerminalPrice(crosshairReadout.price, symbolMeta.precision)}
                   </span>
                   {crosshairReadout.open !== undefined && (
-                    <span className="text-[#848E9C]">
+                    <span className="text-[var(--vp-muted)]">
                       O:{crosshairReadout.open.toFixed(symbolMeta.precision)} H:
                       {crosshairReadout.high?.toFixed(symbolMeta.precision)} L:
                       {crosshairReadout.low?.toFixed(symbolMeta.precision)} C:
                       {crosshairReadout.close?.toFixed(symbolMeta.precision)}
                     </span>
                   )}
-                  <span className="text-[#848E9C]">{crosshairReadout.timeLabel}</span>
+                  <span className="text-[var(--vp-muted)]">{crosshairReadout.timeLabel}</span>
                 </div>
               ) : (
                 activeTool !== 'crosshair' && (
@@ -2635,7 +2747,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                   setPendingTextValue('');
                   setActiveTool('crosshair');
                 }}
-                className="absolute top-11 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-lg border border-[#F0B90B]/60 bg-[#161A1E] px-2.5 py-1.5 shadow-xl"
+                className="absolute top-11 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-lg border border-[#F0B90B]/60 bg-[var(--vp-header)] px-2.5 py-1.5 shadow-xl"
               >
                 <input
                   type="text"
@@ -2644,7 +2756,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                   value={pendingTextValue}
                   onChange={(e) => setPendingTextValue(e.target.value)}
                   placeholder="Chart note (e.g. Buy OB)"
-                  className="w-40 rounded bg-[#2B3139] px-2 py-1 text-xs text-[#EAECEF] outline-none placeholder:text-[#848E9C]"
+                  className="w-40 rounded bg-[var(--vp-control)] px-2 py-1 text-xs text-[var(--vp-text)] outline-none placeholder:text-[var(--vp-muted)]"
                 />
                 <button
                   type="submit"
@@ -2658,7 +2770,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     setPendingTextAnchor(null);
                     setActiveTool('crosshair');
                   }}
-                  className="rounded bg-[#2B3139] px-1.5 py-1 text-[11px] text-[#848E9C] cursor-pointer"
+                  className="rounded bg-[var(--vp-control)] px-1.5 py-1 text-[11px] text-[var(--vp-muted)] cursor-pointer"
                 >
                   ✕
                 </button>
@@ -2672,10 +2784,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 onClick={() => setToolsOpen((v) => !v)}
                 aria-expanded={toolsOpen}
                 aria-label="Toggle drawing tools"
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold backdrop-blur-sm shadow-lg cursor-pointer transition-colors ${
+                className={`vp-pill-btn inline-flex items-center gap-1 border px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md shadow-lg cursor-pointer ${
                   toolsOpen || activeTool !== 'crosshair'
-                    ? 'border-[#F0B90B]/70 bg-[#161A1E]/95 text-[#F0B90B]'
-                    : 'border-[#2B3139] bg-[#161A1E]/90 text-[#EAECEF] hover:border-[#F0B90B]/50'
+                    ? 'border-[#F59E0B]/70 bg-[var(--vp-header)] text-[var(--vp-accent-text)]'
+                    : 'border-[var(--vp-border)] bg-[var(--vp-header)]/90 text-[var(--vp-text)] hover:border-[#F59E0B]/50'
                 }`}
               >
                 <span>✏️ Tools</span>
@@ -2685,7 +2797,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 <div
                   role="toolbar"
                   aria-label="Chart drawing and crosshair tools"
-                  className="flex flex-col gap-1 rounded-md border border-[#2B3139] bg-[#161A1E]/95 p-1 backdrop-blur-sm shadow-xl"
+                  className="flex flex-col gap-1 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 backdrop-blur-md shadow-xl"
                 >
                   <button
                     type="button"
@@ -2696,10 +2808,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Crosshair Price Tracking"
                     aria-label="Crosshair Price Tracking"
-                    className={`flex h-7 w-7 items-center justify-center rounded cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center cursor-pointer ${
                       activeTool === 'crosshair'
-                        ? 'bg-[#F0B90B] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#F59E0B] text-[#0B0E14] shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     <Crosshair className="h-3.5 w-3.5" />
@@ -2712,10 +2824,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Trendline Drawing"
                     aria-label="Trendline Drawing"
-                    className={`flex h-7 w-7 items-center justify-center rounded cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center cursor-pointer ${
                       activeTool === 'trendline'
-                        ? 'bg-[#F0B90B] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#F59E0B] text-[#0B0E14]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     <TrendingUp className="h-3.5 w-3.5" />
@@ -2728,10 +2840,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Horizontal Ray"
                     aria-label="Horizontal Ray"
-                    className={`flex h-7 w-7 items-center justify-center rounded cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center cursor-pointer ${
                       activeTool === 'hray'
-                        ? 'bg-[#38BDF8] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#38BDF8] text-[#0B0E14]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     <Minus className="h-3.5 w-3.5" />
@@ -2744,10 +2856,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Fibonacci Retracement"
                     aria-label="Fibonacci Retracement"
-                    className={`flex h-7 w-7 items-center justify-center rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center text-[10px] font-bold cursor-pointer ${
                       activeTool === 'fib'
-                        ? 'bg-[#F0B90B] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#F59E0B] text-[#0B0E14]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     Fib
@@ -2760,10 +2872,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Brush Freehand Draw"
                     aria-label="Brush Freehand Draw"
-                    className={`flex h-7 w-7 items-center justify-center rounded cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center cursor-pointer ${
                       activeTool === 'brush'
-                        ? 'bg-[#00C087] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#089981] text-[#0B0E14]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -2776,10 +2888,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     }}
                     title="Text Note Annotation"
                     aria-label="Text Note Annotation"
-                    className={`flex h-7 w-7 items-center justify-center rounded cursor-pointer transition-colors ${
+                    className={`vp-pill-btn flex h-7 w-7 items-center justify-center cursor-pointer ${
                       activeTool === 'text'
-                        ? 'bg-[#C084FC] text-[#0B0E11]'
-                        : 'bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46]'
+                        ? 'bg-[#C084FC] text-[#0B0E14]'
+                        : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
                     }`}
                   >
                     <Type className="h-3.5 w-3.5" />
@@ -2791,7 +2903,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                         onClick={() => setDrawings((prev) => prev.slice(0, -1))}
                         title="Undo Last Drawing"
                         aria-label="Undo Last Drawing"
-                        className="flex h-7 w-7 items-center justify-center rounded bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46] cursor-pointer transition-colors"
+                        className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
                       >
                         <Undo2 className="h-3.5 w-3.5" />
                       </button>
@@ -2805,7 +2917,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                         }}
                         title="Clear Drawings"
                         aria-label="Clear Drawings"
-                        className="flex h-7 w-7 items-center justify-center rounded bg-[#2B3139] text-[#F6465D] hover:bg-[#F6465D]/20 cursor-pointer transition-colors"
+                        className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-bear)] hover:bg-[#F23645]/20 cursor-pointer"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -2817,11 +2929,11 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
             {/* Floating Bar Replay Simulator Controls */}
             {replayActive && (
-              <div className="absolute top-9 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1.5 rounded-lg border border-[#F0B90B]/50 bg-[#161A1E]/95 px-2.5 py-1.5 backdrop-blur-sm shadow-xl">
+              <div className="absolute top-9 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1.5 rounded-full border border-[#F59E0B]/50 bg-[var(--vp-header)]/95 px-3 py-1.5 backdrop-blur-md shadow-xl">
                 <button
                   type="button"
                   onClick={() => setReplayPlaying((p) => !p)}
-                  className="inline-flex h-6 items-center gap-1 rounded bg-[#F0B90B] px-2 text-[11px] font-bold text-[#0B0E11] cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-1 bg-[#F59E0B] px-2.5 text-[11px] font-bold text-[#0B0E14] cursor-pointer"
                 >
                   {replayPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                   {replayPlaying ? 'Pause' : 'Play'}
@@ -2830,7 +2942,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={() => applyReplaySlice(replayIndex + 1)}
                   disabled={replayIndex >= replayTotal}
-                  className="inline-flex h-6 items-center gap-0.5 rounded bg-[#2B3139] px-2 text-[11px] font-semibold text-[#EAECEF] hover:bg-[#363c46] disabled:opacity-40 cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-0.5 bg-[var(--vp-control)] px-2 text-[11px] font-semibold text-[var(--vp-text)] hover:opacity-85 disabled:opacity-40 cursor-pointer"
                 >
                   <SkipForward className="h-3 w-3" />
                   +1
@@ -2838,7 +2950,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 <button
                   type="button"
                   onClick={() => setReplaySpeed((s) => (s === 1 ? 2 : s === 2 ? 4 : 1))}
-                  className="h-6 rounded bg-[#2B3139] px-1.5 text-[10px] font-bold text-[#38BDF8] cursor-pointer"
+                  className="vp-pill-btn h-6 bg-[var(--vp-control)] px-2 text-[10px] font-mono-tabular font-bold text-[#0284C7] dark:text-[#38BDF8] cursor-pointer"
                 >
                   {replaySpeed}x
                 </button>
@@ -2852,16 +2964,16 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     setReplayPlaying(false);
                     applyReplaySlice(Number(e.target.value));
                   }}
-                  className="w-20 sm:w-28 accent-[#F0B90B] cursor-pointer"
+                  className="w-20 sm:w-28 accent-[#F59E0B] cursor-pointer"
                 />
-                <span className="font-mono-tabular text-[10px] text-[#848E9C]">
+                <span className="font-mono-tabular text-[10px] text-[var(--vp-muted)]">
                   {replayIndex}/{replayTotal}
                 </span>
                 <button
                   type="button"
                   onClick={() => applyReplaySlice(Math.max(24, Math.floor(replayTotal * 0.55)))}
                   title="Restart Replay"
-                  className="flex h-6 w-6 items-center justify-center rounded bg-[#2B3139] text-[#EAECEF] hover:bg-[#363c46] cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
                 >
                   <RotateCcw className="h-3 w-3" />
                 </button>
@@ -2869,7 +2981,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={toggleReplayMode}
                   title="Exit Replay"
-                  className="flex h-6 w-6 items-center justify-center rounded bg-[#2B3139] text-[#F6465D] hover:bg-[#F6465D]/20 cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-bear)] hover:bg-[#F23645]/20 cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -2880,14 +2992,14 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             <div
               role="group"
               aria-label="Chart zoom controls"
-              className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-md border border-[#2B3139] bg-[#161A1E]/90 p-1 backdrop-blur-sm shadow-lg"
+              className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-lg"
             >
               <button
                 type="button"
                 onClick={handleZoomIn}
                 title="Zoom In"
                 aria-label="Zoom In"
-                className="flex h-7 w-7 items-center justify-center rounded bg-[#2B3139] text-sm font-bold text-[#EAECEF] hover:bg-[#363c46] active:scale-95 cursor-pointer transition-colors"
+                className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
               >
                 +
               </button>
@@ -2896,7 +3008,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 onClick={handleZoomOut}
                 title="Zoom Out"
                 aria-label="Zoom Out"
-                className="flex h-7 w-7 items-center justify-center rounded bg-[#2B3139] text-sm font-bold text-[#EAECEF] hover:bg-[#363c46] active:scale-95 cursor-pointer transition-colors"
+                className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
               >
                 -
               </button>
@@ -2905,18 +3017,18 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 onClick={handleZoomReset}
                 title="Reset Chart View"
                 aria-label="Reset Chart View"
-                className="flex h-7 items-center justify-center rounded bg-[#2B3139] px-2 text-[11px] font-semibold text-[#F0B90B] hover:bg-[#363c46] active:scale-95 cursor-pointer transition-colors"
+                className="vp-pill-btn flex h-7 items-center justify-center bg-[var(--vp-control)] px-2.5 text-[11px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
               >
                 Reset
               </button>
             </div>
             {loadError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0B0E11]/90 p-4 text-center text-xs text-[#848E9C] z-30">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[var(--vp-canvas)]/90 p-4 text-center text-xs text-[var(--vp-muted)] z-30">
                 <span>{loadError}</span>
                 <button
                   type="button"
                   onClick={() => setReloadNonce((n) => n + 1)}
-                  className="rounded bg-[#F0B90B] px-3 py-1 font-semibold text-[#0B0E11] cursor-pointer"
+                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#0B0E14] cursor-pointer"
                 >
                   Retry Chart
                 </button>
@@ -2932,6 +3044,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               showEma20={showEma20}
               showEma50={showEma50}
               showBollinger={showBollinger}
+              themeMode={themeMode}
             />
           )}
         </div>
@@ -2940,21 +3053,21 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         {!isFullScreen && (
         <aside
           aria-label="Live OMYE and Smart Money Concepts Sidebar"
-          className="w-full lg:w-[310px] shrink-0 bg-[#12161C] p-2.5 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 lg:overflow-y-auto"
+          className="w-full lg:w-[315px] shrink-0 bg-[var(--vp-surface)] p-2.5 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2.5 lg:overflow-y-auto transition-colors duration-200"
         >
           {/* 1. Live Auto-Updating Entry / Target / Stop-Loss */}
-          <div className="rounded-lg border border-[#2B3139] bg-[#1E2329] px-2.5 py-2 flex flex-col justify-between">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between shadow-sm transition-colors">
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#848E9C]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
                 Live Setup (1:2 R:R)
               </span>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                   !smc
-                    ? 'bg-[#2B3139] text-[#EAECEF]'
+                    ? 'bg-[var(--vp-control)] text-[var(--vp-text)]'
                     : smc.trend === 1
-                      ? 'bg-[#00C087]/15 text-[#00C087]'
-                      : 'bg-[#F6465D]/15 text-[#F6465D]'
+                      ? 'bg-[#089981]/15 text-[var(--vp-bull)]'
+                      : 'bg-[#F23645]/15 text-[var(--vp-bear)]'
                 }`}
               >
                 {!smc ? 'SCANNING' : smc.trend === 1 ? 'BUY SETUP' : 'SELL SETUP'}
@@ -2963,20 +3076,20 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
             <div className="space-y-1 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">Entry (Live)</span>
-                <span className="font-mono-tabular font-bold text-[#F0B90B]">
+                <span className="text-[var(--vp-muted)]">Entry (Live)</span>
+                <span className="font-mono-tabular font-bold text-[var(--vp-accent-text)]">
                   ${formatTerminalPrice(smc?.entry ?? null, symbolMeta.precision)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">Target (TP)</span>
-                <span className="font-mono-tabular font-bold text-[#00C087]">
+                <span className="text-[var(--vp-muted)]">Target (TP)</span>
+                <span className="font-mono-tabular font-bold text-[var(--vp-bull)]">
                   ${formatTerminalPrice(smc?.tp ?? null, symbolMeta.precision)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">Stop Loss (SL)</span>
-                <span className="font-mono-tabular font-bold text-[#F6465D]">
+                <span className="text-[var(--vp-muted)]">Stop Loss (SL)</span>
+                <span className="font-mono-tabular font-bold text-[var(--vp-bear)]">
                   ${formatTerminalPrice(smc?.sl ?? null, symbolMeta.precision)}
                 </span>
               </div>
@@ -2984,21 +3097,21 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           </div>
 
           {/* 2. OMYE (One-Minute Market Engine) */}
-          <div className="rounded-lg border border-[#2B3139] bg-[#1E2329] px-2.5 py-2 flex flex-col justify-between">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between shadow-sm transition-colors">
             <div className="flex items-center justify-between gap-1.5 mb-1.5">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#00C087] animate-pulse shrink-0" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#EAECEF] truncate">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-text)] truncate">
                   OMYE · 1m Engine
                 </span>
               </div>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
                   !omye || omye.signal === 'NEUTRAL'
-                    ? 'bg-[#2B3139] text-[#F0B90B]'
+                    ? 'bg-[var(--vp-control)] text-[var(--vp-accent-text)]'
                     : omye.signal.includes('BUY')
-                      ? 'bg-[#00C087]/15 text-[#00C087]'
-                      : 'bg-[#F6465D]/15 text-[#F6465D]'
+                      ? 'bg-[#089981]/15 text-[var(--vp-bull)]'
+                      : 'bg-[#F23645]/15 text-[var(--vp-bear)]'
                 }`}
               >
                 {omye?.signal ?? 'SYNCING'}
@@ -3008,35 +3121,35 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             <div className="space-y-1.5 text-[11px]">
               {/* 1m Bull vs Bear Pressure Meter */}
               <div>
-                <div className="flex items-center justify-between text-[10px] text-[#848E9C] mb-0.5 font-mono-tabular">
+                <div className="flex items-center justify-between text-[10px] text-[var(--vp-muted)] mb-0.5 font-mono-tabular">
                   <span>Bull {omye?.bullPressurePct ?? 50}%</span>
                   <span>RSI(1m): {omye ? omye.rsi1m.toFixed(1) : '--'}</span>
                   <span>Bear {100 - (omye?.bullPressurePct ?? 50)}%</span>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-[#F6465D]/60 overflow-hidden">
+                <div className="h-1.5 w-full rounded-full bg-[#F23645]/60 overflow-hidden">
                   <div
-                    className="h-full bg-[#00C087] transition-all duration-300"
+                    className="h-full bg-[#089981] transition-all duration-300"
                     style={{ width: `${omye?.bullPressurePct ?? 50}%` }}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-1 pt-0.5 text-[10px] font-mono-tabular">
-                <div className="rounded bg-[#12161C] px-1.5 py-1">
-                  <span className="block text-[#848E9C]">1m Entry</span>
-                  <span className="font-bold text-[#F0B90B]">
+                <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
+                  <span className="block text-[var(--vp-muted)]">1m Entry</span>
+                  <span className="font-bold text-[var(--vp-accent-text)]">
                     {formatTerminalPrice(omye?.entry ?? null, symbolMeta.precision)}
                   </span>
                 </div>
-                <div className="rounded bg-[#12161C] px-1.5 py-1">
-                  <span className="block text-[#848E9C]">1m TP</span>
-                  <span className="font-bold text-[#00C087]">
+                <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
+                  <span className="block text-[var(--vp-muted)]">1m TP</span>
+                  <span className="font-bold text-[var(--vp-bull)]">
                     {formatTerminalPrice(omye?.tp ?? null, symbolMeta.precision)}
                   </span>
                 </div>
-                <div className="rounded bg-[#12161C] px-1.5 py-1">
-                  <span className="block text-[#848E9C]">1m SL</span>
-                  <span className="font-bold text-[#F6465D]">
+                <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
+                  <span className="block text-[var(--vp-muted)]">1m SL</span>
+                  <span className="font-bold text-[var(--vp-bear)]">
                     {formatTerminalPrice(omye?.sl ?? null, symbolMeta.precision)}
                   </span>
                 </div>
@@ -3045,64 +3158,64 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           </div>
 
           {/* 3. Smart Money Concepts (Order Blocks, FVG, BOS & Auto Levels) */}
-          <div className="rounded-lg border border-[#2B3139] bg-[#1E2329] px-2.5 py-2 flex flex-col justify-between">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between shadow-sm transition-colors">
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#848E9C]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
                 Smart Money (SMC)
               </span>
-              <span className="text-[10px] font-bold text-[#F0B90B] truncate">
+              <span className="text-[10px] font-bold text-[var(--vp-accent-text)] truncate">
                 {smc?.pattern ? smc.pattern.name : 'Structure'}
               </span>
             </div>
 
             <div className="space-y-1 text-[11px]">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">Order Block</span>
+                <span className="text-[var(--vp-muted)]">Order Block</span>
                 {smc?.orderBlock ? (
                   <span
                     className="font-mono-tabular font-semibold"
-                    style={{ color: smc.orderBlock.type === 'Bullish' ? '#00C087' : '#F6465D' }}
+                    style={{ color: smc.orderBlock.type === 'Bullish' ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
                   >
                     {smc.orderBlock.type === 'Bullish' ? 'OB+' : 'OB-'}{' '}
                     {formatTerminalPrice(smc.orderBlock.low, symbolMeta.precision)}–
                     {formatTerminalPrice(smc.orderBlock.high, symbolMeta.precision)}
                   </span>
                 ) : (
-                  <span className="font-mono-tabular text-[#848E9C]">Forming</span>
+                  <span className="font-mono-tabular text-[var(--vp-muted)]">Forming</span>
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">FVG Zone</span>
+                <span className="text-[var(--vp-muted)]">FVG Zone</span>
                 {smc?.fvg ? (
                   <span
                     className="font-mono-tabular font-semibold"
-                    style={{ color: smc.fvg.type === 'Bullish' ? '#00C087' : '#F6465D' }}
+                    style={{ color: smc.fvg.type === 'Bullish' ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
                   >
                     {smc.fvg.type === 'Bullish' ? '+FVG' : '-FVG'}{' '}
                     {formatTerminalPrice(smc.fvg.low, symbolMeta.precision)}–
                     {formatTerminalPrice(smc.fvg.high, symbolMeta.precision)}
                   </span>
                 ) : (
-                  <span className="font-mono-tabular text-[#848E9C]">Balanced</span>
+                  <span className="font-mono-tabular text-[var(--vp-muted)]">Balanced</span>
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#848E9C]">BOS / CHoCH</span>
+                <span className="text-[var(--vp-muted)]">BOS / CHoCH</span>
                 <span
                   className="font-mono-tabular font-bold"
-                  style={{ color: smc?.trend === -1 ? '#F6465D' : '#00C087' }}
+                  style={{ color: smc?.trend === -1 ? 'var(--vp-bear)' : 'var(--vp-bull)' }}
                 >
                   {smc?.lastEvent ?? 'BOS'} ({smc ? `${smc.bosCount}/${smc.chochCount}` : '0/0'})
                 </span>
               </div>
 
-              <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-[#2B3139]">
-                <span className="font-mono-tabular text-[#00C087]">
+              <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-[var(--vp-border)]">
+                <span className="font-mono-tabular text-[var(--vp-bull)]">
                   S1: {formatTerminalPrice(smc?.supportPrice ?? null, symbolMeta.precision)}
                 </span>
-                <span className="font-mono-tabular text-[#F6465D]">
+                <span className="font-mono-tabular text-[var(--vp-bear)]">
                   R1: {formatTerminalPrice(smc?.resistancePrice ?? null, symbolMeta.precision)}
                 </span>
               </div>
@@ -3111,6 +3224,35 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         </aside>
         )}
       </div>
+
+      <ChartSettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        themeMode={themeMode}
+        onChangeThemeMode={(mode) => onChangeThemeMode?.(mode)}
+        overlays={{
+          showSupportResistance,
+          onToggleSupportResistance: () => setShowSupportResistance((v) => !v),
+          showPatterns,
+          onTogglePatterns: () => setShowPatterns((v) => !v),
+          showSwingLabels,
+          onToggleSwingLabels: () => setShowSwingLabels((v) => !v),
+          showBosChoch,
+          onToggleBosChoch: () => setShowBosChoch((v) => !v),
+          showEma20,
+          onToggleEma20: () => setShowEma20((v) => !v),
+          showEma50,
+          onToggleEma50: () => setShowEma50((v) => !v),
+          showEma200,
+          onToggleEma200: () => setShowEma200((v) => !v),
+          showBollinger,
+          onToggleBollinger: () => setShowBollinger((v) => !v),
+          showRsi,
+          onToggleRsi: () => setShowRsi((v) => !v),
+          showVolumeProfile,
+          onToggleVolumeProfile: () => setShowVolumeProfile((v) => !v),
+        }}
+      />
     </section>
   );
 };
@@ -3127,6 +3269,9 @@ interface PrimaryChartSvgOverlayProps {
   hoverAnchor: ChartAnchor | null;
   brushStroke: ChartAnchor[] | null;
   activeTool: DrawingTool;
+  themeMode: ThemeMode;
+  livePrice: number | null;
+  isBullTick: boolean;
 }
 
 const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
@@ -3141,6 +3286,9 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
   hoverAnchor,
   brushStroke,
   activeTool,
+  themeMode,
+  livePrice,
+  isBullTick,
 }) => {
   const projected = useMemo(() => {
     void renderTick;
@@ -3157,6 +3305,10 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
       if (x === null || y === null) return null;
       return { x: Number(x), y: Number(y), price: pt.price };
     };
+
+    const rawPriceY = livePrice !== null ? candleSeries.priceToCoordinate(livePrice) : null;
+    const livePriceY =
+      rawPriceY !== null && Number.isFinite(Number(rawPriceY)) ? Number(rawPriceY) : null;
 
     let vpBars: Array<{
       y: number;
@@ -3213,6 +3365,7 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
       width: pane.width,
       height: pane.height,
       plotRight,
+      livePriceY,
       vpBars,
       pocY,
       pocPrice,
@@ -3230,9 +3383,12 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
     hoverAnchor,
     brushStroke,
     activeTool,
+    livePrice,
   ]);
 
   if (!projected) return null;
+
+  const liveColor = isBullTick ? '#089981' : '#F23645';
 
   return (
     <svg
@@ -3240,6 +3396,62 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
       height={projected.height}
       className="pointer-events-none absolute top-0 left-0 z-10 overflow-hidden"
     >
+      <defs>
+        <filter id="vpLivePriceGlow" x="-20%" y="-400%" width="140%" height="900%">
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      {/* Smooth Glowing Current-Price Line (60fps GPU-composited glide) */}
+      {projected.livePriceY !== null &&
+        projected.livePriceY >= 0 &&
+        projected.livePriceY <= projected.height && (
+          <g
+            style={{
+              transform: `translateY(${projected.livePriceY}px)`,
+              transition: 'transform 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            <line
+              x1={0}
+              y1={0}
+              x2={projected.plotRight}
+              y2={0}
+              stroke={liveColor}
+              strokeOpacity={0.34}
+              strokeWidth={3.5}
+              filter="url(#vpLivePriceGlow)"
+            />
+            <line
+              x1={0}
+              y1={0}
+              x2={projected.plotRight}
+              y2={0}
+              stroke={liveColor}
+              strokeOpacity={0.95}
+              strokeWidth={1.25}
+              strokeDasharray="4 3"
+            />
+            <circle
+              cx={Math.max(8, projected.plotRight - 5)}
+              cy={0}
+              r={5.5}
+              fill={liveColor}
+              fillOpacity={0.25}
+            />
+            <circle
+              cx={Math.max(8, projected.plotRight - 5)}
+              cy={0}
+              r={2.5}
+              fill={liveColor}
+            />
+          </g>
+        )}
+
       {/* Visible Range Volume Profile */}
       {projected.vpBars.map((bar, idx) => (
         <g key={`vp-${idx}`}>
@@ -3321,14 +3533,14 @@ const PrimaryChartSvgOverlay: React.FC<PrimaryChartSvgOverlayProps> = ({
                 width={Math.max(44, d.text.length * 6.8 + 12)}
                 height={18}
                 rx={4}
-                fill="rgba(22, 26, 30, 0.92)"
+                fill={themeMode === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(22, 26, 30, 0.92)'}
                 stroke="#C084FC"
                 strokeWidth={1}
               />
               <text
                 x={p1.x + 12}
                 y={p1.y - 4}
-                fill="#EAECEF"
+                fill={themeMode === 'light' ? '#0F172A' : '#EAECEF'}
                 fontSize="10"
                 fontWeight="600"
               >
@@ -3442,6 +3654,7 @@ interface SecondarySplitChartProps {
   showEma20: boolean;
   showEma50: boolean;
   showBollinger: boolean;
+  themeMode: ThemeMode;
 }
 
 const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
@@ -3450,6 +3663,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
   showEma20,
   showEma50,
   showBollinger,
+  themeMode,
 }) => {
   const [subSymbol, setSubSymbol] = useState<SmcSymbol>(defaultSymbol);
   const [subTf, setSubTf] = useState<SmcTimeframe>(defaultTimeframe);
@@ -3464,6 +3678,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
   const bbUpRef = useRef<ISeriesApi<'Line', Time> | null>(null);
   const bbLowRef = useRef<ISeriesApi<'Line', Time> | null>(null);
   const candlesRef = useRef<TerminalCandle[]>([]);
+  const subHistoricalLoadedRef = useRef<boolean>(false);
 
   const subMeta = SYMBOL_OPTIONS.find((s) => s.value === subSymbol) ?? SYMBOL_OPTIONS[2];
 
@@ -3471,25 +3686,26 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     const el = wrapRef.current;
     if (!el) return;
 
+    const initialSubTheme = getChartThemeOptions(themeMode);
+
     const chart = createChart(el, {
       width: el.clientWidth || 300,
       height: el.clientHeight || 320,
       layout: {
-        background: { type: ColorType.Solid, color: '#0B0E11' },
-        textColor: '#D1D4DC',
+        ...initialSubTheme.layout,
         fontSize: 10,
         attributionLogo: false,
       },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+      grid: initialSubTheme.grid,
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        ...initialSubTheme.crosshair,
       },
-      crosshair: { mode: CrosshairMode.Normal },
       handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: true,
+        mouseWheel: true,
+        pressedMouseMove: true,
       },
       handleScale: {
         mouseWheel: true,
@@ -3499,34 +3715,37 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
       },
       kineticScroll: { touch: true, mouse: true },
       timeScale: {
-        borderColor: '#2B3139',
+        ...initialSubTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 6,
         barSpacing: 6,
+        fixLeftEdge: false,
+        fixRightEdge: false,
+        lockVisibleTimeRangeOnResize: false,
       },
       rightPriceScale: {
         visible: true,
         autoScale: true,
-        borderColor: '#2B3139',
+        ...initialSubTheme.rightPriceScale,
         ticksVisible: false,
         entireTextOnly: true,
         alignLabels: true,
-        minimumWidth: 44,
+        minimumWidth: 48,
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#00C087',
-      downColor: '#F6465D',
-      borderUpColor: '#00C087',
-      borderDownColor: '#F6465D',
-      wickUpColor: '#00C087',
-      wickDownColor: '#F6465D',
+      upColor: '#089981',
+      downColor: '#F23645',
+      borderUpColor: '#089981',
+      borderDownColor: '#F23645',
+      wickUpColor: '#089981',
+      wickDownColor: '#F23645',
     });
     ema20Ref.current = chart.addSeries(LineSeries, {
-      color: '#F0B90B',
+      color: '#F59E0B',
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -3594,9 +3813,15 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     [showEma20, showEma50, showBollinger]
   );
 
+  const syncSubIndicatorsRef = useRef(syncSubIndicators);
   useEffect(() => {
+    syncSubIndicatorsRef.current = syncSubIndicators;
     syncSubIndicators(candlesRef.current);
   }, [syncSubIndicators]);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions(getChartThemeOptions(themeMode));
+  }, [themeMode]);
 
   useEffect(() => {
     candleRef.current?.applyOptions({
@@ -3610,6 +3835,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     let ws: WebSocket | null = null;
 
     // Clear old candles and indicators on secondary chart timeframe/symbol switch
+    subHistoricalLoadedRef.current = false;
     candlesRef.current = [];
     candleRef.current?.setData([]);
     ema20Ref.current?.setData([]);
@@ -3618,15 +3844,19 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     bbLowRef.current?.setData([]);
 
     const applyBar = (bar: TerminalCandle) => {
-      if (disposed || !candleRef.current) return;
+      if (disposed || !candleRef.current || !subHistoricalLoadedRef.current) return;
       const arr = candlesRef.current;
       if (arr.length > 0 && bar.time < arr[arr.length - 1].time) return;
       candleRef.current.update(toPureCandle(bar));
-      if (arr.length > 0 && arr[arr.length - 1].time === bar.time) arr[arr.length - 1] = bar;
-      else if (arr.length === 0 || bar.time > arr[arr.length - 1].time) arr.push(bar);
+      if (arr.length > 0 && arr[arr.length - 1].time === bar.time) {
+        arr[arr.length - 1] = bar;
+      } else if (arr.length === 0 || bar.time > arr[arr.length - 1].time) {
+        arr.push(bar);
+        if (arr.length > 600) arr.shift();
+      }
       setSubPrice(bar.close);
       setSubBull(bar.close >= bar.open);
-      syncSubIndicators(arr);
+      syncSubIndicatorsRef.current(arr);
     };
 
     const connectWs = () => {
@@ -3676,17 +3906,31 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     fetchCandles(subSymbol, subTf, controller.signal)
       .then((bars) => {
         if (disposed || bars.length === 0) return;
-        candlesRef.current = bars;
+        candlesRef.current = [...bars];
         candleRef.current?.setData(bars.map(toPureCandle));
+        subHistoricalLoadedRef.current = true;
         setSubPrice(bars[bars.length - 1].close);
         setSubBull(bars[bars.length - 1].close >= bars[bars.length - 1].open);
-        chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-        chartRef.current?.timeScale().fitContent();
-        window.requestAnimationFrame(() => {
-          chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-          chartRef.current?.timeScale().fitContent();
-        });
-        syncSubIndicators(bars);
+
+        const applySubRange = () => {
+          const chart = chartRef.current;
+          if (!chart || disposed) return;
+          chart.priceScale('right').applyOptions({ autoScale: true });
+          const chartWidth = wrapRef.current?.clientWidth || 320;
+          const visibleBars = Math.max(45, Math.min(bars.length, Math.floor(chartWidth / 6)));
+          if (bars.length > visibleBars) {
+            chart.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, bars.length - visibleBars),
+              to: bars.length - 1 + 5,
+            });
+          } else {
+            chart.timeScale().fitContent();
+          }
+        };
+
+        applySubRange();
+        window.requestAnimationFrame(applySubRange);
+        syncSubIndicatorsRef.current(bars);
         connectWs();
       })
       .catch(() => {
@@ -3698,26 +3942,27 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
       controller.abort();
       ws?.close();
     };
-  }, [subSymbol, subTf, subMeta.isCrypto, syncSubIndicators]);
+  }, [subSymbol, subTf, subMeta.isCrypto]);
 
   const zoomSecondary = (factor: number) => {
     const ts = chartRef.current?.timeScale();
     const range = ts?.getVisibleLogicalRange();
     if (!ts || !range) return;
     const span = range.to - range.from;
-    const nextSpan = Math.max(10, Math.min(200, span * factor));
+    const maxSpan = Math.max(180, candlesRef.current.length + 20);
+    const nextSpan = Math.max(10, Math.min(maxSpan, span * factor));
     ts.setVisibleLogicalRange({ from: range.to - nextSpan, to: range.to });
   };
 
   return (
-    <div className="relative flex flex-col h-[320px] sm:h-[380px] lg:h-full min-w-0 bg-[#0B0E11]">
-      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[#161A1E] border-b border-[#2B3139]">
+    <div className="relative flex flex-col h-[320px] sm:h-[380px] lg:h-full min-w-0 bg-[var(--vp-canvas)] transition-colors duration-200">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[var(--vp-header)] border-b border-[var(--vp-border)] transition-colors">
         <div className="flex items-center gap-1.5">
           <select
             aria-label="Secondary chart symbol"
             value={subSymbol}
             onChange={(e) => setSubSymbol(e.target.value as SmcSymbol)}
-            className="rounded bg-[#2B3139] text-[#EAECEF] px-2 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
+            className="rounded bg-[var(--vp-control)] text-[var(--vp-text)] px-2 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
           >
             {SYMBOL_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -3729,7 +3974,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
             aria-label="Secondary chart timeframe"
             value={subTf}
             onChange={(e) => setSubTf(e.target.value as SmcTimeframe)}
-            className="rounded bg-[#2B3139] text-[#F0B90B] px-1.5 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
+            className="rounded bg-[var(--vp-control)] text-[var(--vp-accent-text)] px-1.5 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
           >
             {TIMEFRAME_OPTIONS.map((tf) => (
               <option key={tf.value} value={tf.value}>
@@ -3740,7 +3985,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         </div>
         <span
           className="font-mono-tabular text-xs font-bold"
-          style={{ color: subBull ? '#00C087' : '#F6465D' }}
+          style={{ color: subBull ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
         >
           ${formatTerminalPrice(subPrice, subMeta.precision)}
         </span>
@@ -3748,12 +3993,12 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
 
       <div className="relative flex-1 min-h-0">
         <div ref={wrapRef} className="smc-chart-host touch-none w-full h-full" />
-        <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-md border border-[#2B3139] bg-[#161A1E]/90 p-1 backdrop-blur-sm">
+        <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-lg">
           <button
             type="button"
             onClick={() => zoomSecondary(0.72)}
             aria-label="Secondary Zoom In"
-            className="flex h-6 w-6 items-center justify-center rounded bg-[#2B3139] text-xs font-bold text-[#EAECEF] hover:bg-[#363c46] cursor-pointer"
+            className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
           >
             +
           </button>
@@ -3761,7 +4006,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
             type="button"
             onClick={() => zoomSecondary(1.38)}
             aria-label="Secondary Zoom Out"
-            className="flex h-6 w-6 items-center justify-center rounded bg-[#2B3139] text-xs font-bold text-[#EAECEF] hover:bg-[#363c46] cursor-pointer"
+            className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
           >
             -
           </button>
@@ -3772,7 +4017,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
               chartRef.current?.timeScale().fitContent();
             }}
             aria-label="Secondary Reset"
-            className="flex h-6 items-center justify-center rounded bg-[#2B3139] px-1.5 text-[10px] font-semibold text-[#F0B90B] hover:bg-[#363c46] cursor-pointer"
+            className="vp-pill-btn flex h-6 items-center justify-center bg-[var(--vp-control)] px-2 text-[10px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
           >
             Reset
           </button>

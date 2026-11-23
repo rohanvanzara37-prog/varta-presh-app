@@ -39,14 +39,15 @@ export const LiveMarketWatchlist: React.FC<LiveMarketWatchlistProps> = ({
               key={asset.id}
               type="button"
               onClick={() => onSelectAsset(asset)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              className="vp-pill-btn inline-flex items-center gap-1.5 border px-3 py-1.5 text-[11px] leading-none whitespace-nowrap shrink-0 cursor-pointer"
               style={{
                 backgroundColor: isSelected ? 'var(--vp-elevated)' : 'var(--vp-surface)',
                 borderColor: isSelected
                   ? 'var(--vp-primary)'
                   : isGold
-                    ? 'var(--vp-accent)'
+                    ? 'rgba(245, 158, 11, 0.45)'
                     : 'var(--vp-border)',
+                boxShadow: isSelected ? 'var(--vp-glow-gold)' : 'none',
               }}
             >
               <span className="font-bold text-[11px]">{getShortSymbol(asset.displayPair)}</span>
@@ -55,7 +56,7 @@ export const LiveMarketWatchlist: React.FC<LiveMarketWatchlistProps> = ({
               </span>
               <span
                 className="font-mono-tabular font-semibold text-[11px]"
-                style={{ color: up ? '#10b981' : '#ef4444' }}
+                style={{ color: up ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
               >
                 {up ? '+' : ''}
                 {asset.changePct24h.toFixed(2)}%

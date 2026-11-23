@@ -5,11 +5,13 @@ import {
   ChevronDown,
   Maximize2,
   Minimize2,
+  Settings,
   SlidersHorizontal,
 } from 'lucide-react';
 import type { AppTab, MarketAsset, ThemeMode, TypographySettings } from '../types/news';
 import { fetchBinanceKlines, type LiveCandleBar } from '../utils/marketFeeds';
 import { computeSmartChartSummary, type CandleInput } from '../utils/technicalIndicators';
+import { ChartSettingsModal } from './ChartSettingsModal';
 import { LiveMarketWatchlist } from './LiveMarketWatchlist';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
 import { ProSmcTerminal, type SmcTelemetrySnapshot } from './ProSmcTerminal';
@@ -19,6 +21,7 @@ import { TradingViewEmbedChart } from './TradingViewEmbedChart';
 interface ForexMarketViewProps {
   typography?: TypographySettings;
   themeMode: ThemeMode;
+  onChangeThemeMode?: (mode: ThemeMode) => void;
   marketAssets?: MarketAsset[];
   watchlistSymbols?: string[];
   selectedSymbol?: string;
@@ -116,6 +119,7 @@ function buildSpotAnchoredBars(basePrice: number, seedKey: string, count = 42): 
 
 export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   themeMode,
+  onChangeThemeMode,
   marketAssets = [],
   watchlistSymbols: _watchlistSymbols = [],
   selectedSymbol,
@@ -131,6 +135,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     'RSI@tv-basicstudies',
   ]);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [tvSettingsOpen, setTvSettingsOpen] = useState(false);
   const [liveCryptoBars, setLiveCryptoBars] = useState<LiveCandleBar[] | null>(null);
   const [isChartFullScreen, setIsChartFullScreen] = useState(false);
   const [liveTelemetry, setLiveTelemetry] = useState<SmcTelemetrySnapshot | null>(null);
@@ -336,19 +341,16 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
       {/* Compact Top Mode Switcher + Active Pair Readout & Live Refresh */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
         <div
-          className="flex items-center gap-1 rounded-xl border p-1 shrink-0"
-          style={{
-            backgroundColor: 'var(--vp-surface)',
-            borderColor: 'var(--vp-border)',
-          }}
+          className="vp-glass-card flex items-center gap-1 rounded-full p-1 shrink-0"
         >
           <button
             type="button"
             onClick={() => setMarketSubTab('smc')}
-            className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="vp-pill-btn min-h-[34px] px-3.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
             style={{
               backgroundColor: marketSubTab === 'smc' ? 'var(--vp-primary)' : 'transparent',
               color: marketSubTab === 'smc' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+              boxShadow: marketSubTab === 'smc' ? 'var(--vp-glow-gold)' : 'none',
             }}
           >
             Live WS + Auto-Draw
@@ -356,10 +358,11 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
           <button
             type="button"
             onClick={() => setMarketSubTab('terminal')}
-            className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="vp-pill-btn min-h-[34px] px-3.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
             style={{
               backgroundColor: marketSubTab === 'terminal' ? 'var(--vp-primary)' : 'transparent',
               color: marketSubTab === 'terminal' ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+              boxShadow: marketSubTab === 'terminal' ? 'var(--vp-glow-gold)' : 'none',
             }}
           >
             TradingView Pro
@@ -367,12 +370,17 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         </div>
 
         {liveTelemetry?.price != null && Number.isFinite(liveTelemetry.price) && (
-          <div className="flex items-center gap-2 text-xs font-mono-tabular whitespace-nowrap shrink-0">
-            <span className="inline-flex items-center gap-1.5 font-bold text-[#00C087]">
-              <span className="h-2 w-2 rounded-full bg-[#00C087] animate-pulse" />
+          <div className="vp-glass-card flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-mono-tabular whitespace-nowrap shrink-0">
+            <span className="inline-flex items-center gap-1.5 font-bold" style={{ color: 'var(--vp-bull)' }}>
+              <span
+                className="h-2 w-2 rounded-full animate-pulse shadow-[0_0_8px_#089981]"
+                style={{ backgroundColor: 'var(--vp-bull)' }}
+              />
               <span>LIVE WS</span>
             </span>
-            <span className="font-bold text-[#EAECEF]">${formatPrice(liveTelemetry.price)}</span>
+            <span className="font-bold" style={{ color: 'var(--vp-text)' }}>
+              ${formatPrice(liveTelemetry.price)}
+            </span>
           </div>
         )}
       </div>
@@ -383,6 +391,8 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             externalTvSymbol={tvWidgetSymbol}
             onSelectTvSymbol={handleChooseSymbol}
             onTelemetryChange={setLiveTelemetry}
+            themeMode={themeMode}
+            onChangeThemeMode={onChangeThemeMode}
           />
         </div>
       ) : (
@@ -412,11 +422,12 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                       key={pair.symbol}
                       type="button"
                       onClick={() => handleChooseSymbol(pair.symbol)}
-                      className="min-h-[34px] rounded-lg border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      className="vp-pill-btn min-h-[34px] border px-3.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                       style={{
                         backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
                         color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
                         borderColor: active ? 'var(--vp-primary)' : 'var(--vp-border)',
+                        boxShadow: active ? 'var(--vp-glow-gold)' : 'none',
                       }}
                     >
                       {pair.label}
@@ -427,11 +438,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
 
               <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
                 <div
-                  className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-nowrap rounded-lg p-0.5 border"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
+                  className="vp-glass-card flex items-center gap-1 overflow-x-auto no-scrollbar flex-nowrap rounded-full p-0.5"
                 >
                   {COMPACT_TIMEFRAMES.map((tf) => {
                     const active = tvWidgetInterval === tf.id;
@@ -440,7 +447,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                         key={tf.id}
                         type="button"
                         onClick={() => setTvWidgetInterval(tf.id)}
-                        className="min-h-[30px] rounded-md px-2.5 text-xs font-mono-tabular font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                        className="vp-pill-btn min-h-[30px] px-2.5 text-xs font-mono-tabular font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                         style={{
                           backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
                           color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
@@ -458,7 +465,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                     type="button"
                     onClick={() => setIndicatorsOpen((prev) => !prev)}
                     aria-expanded={indicatorsOpen}
-                    className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap cursor-pointer"
+                    className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1.5 border px-3 text-xs font-semibold whitespace-nowrap cursor-pointer"
                     style={{
                       backgroundColor: indicatorsOpen ? 'var(--vp-secondary)' : 'var(--vp-surface)',
                       borderColor: indicatorsOpen ? 'var(--vp-primary)' : 'var(--vp-border)',
@@ -472,11 +479,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
 
                   {indicatorsOpen && (
                     <div
-                      className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-xl border p-3 shadow-xl space-y-2.5"
-                      style={{
-                        backgroundColor: 'var(--vp-surface)',
-                        borderColor: 'var(--vp-border)',
-                      }}
+                      className="vp-glass-card vp-modal-in absolute right-0 top-full mt-1.5 z-40 w-64 rounded-2xl p-3 space-y-2.5"
                     >
                       <div className="flex flex-wrap gap-1">
                         {SMART_PRESETS.map((preset) => {
@@ -530,7 +533,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   type="button"
                   onClick={toggleFullScreen}
                   aria-label={isChartFullScreen ? 'Exit full screen chart' : 'Zoom chart full screen'}
-                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1 border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                   style={{
                     backgroundColor: isChartFullScreen ? 'var(--vp-primary)' : 'var(--vp-surface)',
                     color: isChartFullScreen ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -548,6 +551,21 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                       <span className="hidden sm:inline">Full Screen</span>
                     </>
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTvSettingsOpen(true)}
+                  aria-label="Chart Settings"
+                  title="Chart Settings"
+                  className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1 border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--vp-surface)',
+                    color: 'var(--vp-text)',
+                    borderColor: 'var(--vp-border)',
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" style={{ color: 'var(--vp-accent-text)' }} />
                 </button>
               </div>
             </div>
@@ -571,16 +589,10 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 className={
                   isChartFullScreen
                     ? 'hidden sm:grid sm:grid-cols-3 lg:grid-cols-6 gap-2 shrink-0'
-                    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1'
+                    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1'
                 }
               >
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     <Activity className="h-3 w-3" style={{ color: ratingColor }} />
                     <span>Smart Signal</span>
@@ -593,13 +605,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   </span>
                 </div>
 
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     RSI (14)
                   </span>
@@ -615,19 +621,13 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   </span>
                 </div>
 
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     MACD Hist
                   </span>
                   <span
                     className="block font-mono-tabular text-sm font-bold mt-0.5"
-                    style={{ color: smartSummary.macdHist >= 0 ? '#10b981' : '#ef4444' }}
+                    style={{ color: smartSummary.macdHist >= 0 ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
                   >
                     {smartSummary.macdHist >= 0 ? '+' : ''}
                     {smartSummary.macdHist.toFixed(2)}
@@ -637,13 +637,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   </span>
                 </div>
 
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     VWAP Anchor
                   </span>
@@ -655,17 +649,11 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   </span>
                 </div>
 
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     Support (S1)
                   </span>
-                  <span className="block font-mono-tabular text-sm font-bold mt-0.5 text-emerald-500">
+                  <span className="block font-mono-tabular text-sm font-bold mt-0.5" style={{ color: 'var(--vp-bull)' }}>
                     ${formatPrice(smartSummary.supportS1)}
                   </span>
                   <span className="block text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
@@ -673,17 +661,11 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                   </span>
                 </div>
 
-                <div
-                  className="rounded-xl border px-3 py-2.5"
-                  style={{
-                    backgroundColor: 'var(--vp-surface)',
-                    borderColor: 'var(--vp-border)',
-                  }}
-                >
+                <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     Resistance (R1)
                   </span>
-                  <span className="block font-mono-tabular text-sm font-bold mt-0.5 text-rose-500">
+                  <span className="block font-mono-tabular text-sm font-bold mt-0.5" style={{ color: 'var(--vp-bear)' }}>
                     ${formatPrice(smartSummary.resistanceR1)}
                   </span>
                   <span className="block text-[11px] font-mono-tabular" style={{ color: 'var(--vp-muted)' }}>
@@ -740,6 +722,13 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
           handleChooseSymbol(asset.tvSymbol);
           onOpenMarketDetails?.(asset);
         }}
+      />
+
+      <ChartSettingsModal
+        isOpen={tvSettingsOpen}
+        onClose={() => setTvSettingsOpen(false)}
+        themeMode={themeMode}
+        onChangeThemeMode={(mode) => onChangeThemeMode?.(mode)}
       />
     </div>
   );

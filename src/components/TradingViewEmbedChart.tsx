@@ -29,8 +29,8 @@ function buildWidgetConfig(params: {
   showTopToolbar: boolean;
 }) {
   const isDark = params.themeMode === 'dark';
-  const bg = isDark ? '#0B0E11' : '#FFFFFF';
-  const grid = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)';
+  const bg = isDark ? '#0B0E14' : '#FFFFFF';
+  const grid = isDark ? 'rgba(255, 255, 255, 0.035)' : 'rgba(15, 23, 42, 0.05)';
 
   return {
     autosize: true,
@@ -53,12 +53,12 @@ function buildWidgetConfig(params: {
       'paneProperties.background': bg,
       'paneProperties.vertGridProperties.color': grid,
       'paneProperties.horzGridProperties.color': grid,
-      'mainSeriesProperties.candleStyle.upColor': '#00C087',
-      'mainSeriesProperties.candleStyle.downColor': '#F6465D',
-      'mainSeriesProperties.candleStyle.borderUpColor': '#00C087',
-      'mainSeriesProperties.candleStyle.borderDownColor': '#F6465D',
-      'mainSeriesProperties.candleStyle.wickUpColor': '#00C087',
-      'mainSeriesProperties.candleStyle.wickDownColor': '#F6465D',
+      'mainSeriesProperties.candleStyle.upColor': '#089981',
+      'mainSeriesProperties.candleStyle.downColor': '#F23645',
+      'mainSeriesProperties.candleStyle.borderUpColor': '#089981',
+      'mainSeriesProperties.candleStyle.borderDownColor': '#F23645',
+      'mainSeriesProperties.candleStyle.wickUpColor': '#089981',
+      'mainSeriesProperties.candleStyle.wickDownColor': '#F23645',
     },
   };
 }
@@ -168,22 +168,21 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
 
   return (
     <div
-      className={`tradingview-widget-container relative flex flex-col w-full overflow-hidden rounded-xl border touch-pan-y ${className}`}
+      className={`tradingview-widget-container vp-glass-card relative flex flex-col w-full overflow-hidden rounded-2xl touch-pan-y ${className}`}
       style={{
         height: resolvedHeight,
         width: '100%',
         touchAction: 'pan-y',
-        borderColor: 'var(--vp-border)',
-        backgroundColor: themeMode === 'dark' ? '#0B0E11' : 'var(--vp-surface)',
+        backgroundColor: themeMode === 'dark' ? '#0B0E14' : 'var(--vp-surface)',
       }}
     >
       {/* Slim Mobile Page-Scroll Grip + Toolbar Toggles */}
       <div
-        className="flex items-center justify-between gap-2 px-2.5 py-1 border-b shrink-0 touch-pan-y select-none"
+        className="flex items-center justify-between gap-2 px-3 py-1.5 border-b shrink-0 touch-pan-y select-none"
         style={{
           touchAction: 'pan-y',
           borderColor: 'var(--vp-border)',
-          backgroundColor: themeMode === 'dark' ? '#12161C' : 'var(--vp-elevated)',
+          backgroundColor: 'var(--vp-header)',
         }}
       >
         <div
@@ -202,11 +201,12 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
             onClick={() => setShowTopToolbar((v) => !v)}
             aria-pressed={showTopToolbar}
             aria-label="Toggle TradingView top toolbar"
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${
-              showTopToolbar
-                ? 'border-[#00C087]/70 bg-[#00C087]/15 text-[#00C087]'
-                : 'border-[#2B3139] bg-[#1E2329] text-[#848E9C] hover:text-[#EAECEF]'
-            }`}
+            className="vp-pill-btn inline-flex items-center gap-1 border px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer"
+            style={{
+              backgroundColor: showTopToolbar ? 'rgba(8, 153, 129, 0.15)' : 'var(--vp-control)',
+              borderColor: showTopToolbar ? 'var(--vp-bull)' : 'var(--vp-border)',
+              color: showTopToolbar ? 'var(--vp-bull)' : 'var(--vp-muted)',
+            }}
           >
             <span>Top Bar</span>
           </button>
@@ -216,11 +216,12 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
             onClick={() => setShowTvToolbar((v) => !v)}
             aria-pressed={showTvToolbar}
             aria-label="Toggle TradingView drawing toolbar"
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${
-              showTvToolbar
-                ? 'border-[#F0B90B]/70 bg-[#F0B90B]/15 text-[#F0B90B]'
-                : 'border-[#2B3139] bg-[#1E2329] text-[#EAECEF] hover:border-[#F0B90B]/50'
-            }`}
+            className="vp-pill-btn inline-flex items-center gap-1 border px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer"
+            style={{
+              backgroundColor: showTvToolbar ? 'rgba(245, 158, 11, 0.15)' : 'var(--vp-control)',
+              borderColor: showTvToolbar ? 'var(--vp-primary)' : 'var(--vp-border)',
+              color: showTvToolbar ? 'var(--vp-accent-text)' : 'var(--vp-text)',
+            }}
           >
             <span>✏️ Draw Tools</span>
           </button>

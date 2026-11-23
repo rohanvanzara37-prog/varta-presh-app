@@ -287,7 +287,7 @@ function getCalendarAssetImpacts(
       );
     }
   } else {
-    if (ev.impact !== 'High') {
+    if (!badges.some((b) => b.key === 'vol')) {
       badges.push({ key: 'vol', label: '⚡ Watch Reaction', tone: 'volatile' });
     }
     badges.push(
@@ -803,9 +803,9 @@ export const NewsTerminalView: React.FC = () => {
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-24 md:pb-8">
       {/* Sticky Top Live Mini Price Move Strip (Gold, Silver, BTC, ETH via WebSocket) */}
-      <div className="sticky top-[53px] md:top-[61px] z-20 rounded-xl border border-[#2B3139] bg-[#0B0E11]/95 backdrop-blur-md px-3 py-2 shadow-lg">
+      <div className="sticky top-[53px] md:top-[61px] z-20 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)]/95 backdrop-blur-md px-3 py-2 shadow-lg transition-colors">
         <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-[#00C087]/35 bg-[#00C087]/10 px-2 py-1 text-[10px] font-bold font-mono-tabular text-[#00C087] shrink-0">
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--vp-bull)]/35 bg-[var(--vp-bull)]/10 px-2 py-1 text-[10px] font-bold font-mono-tabular text-[var(--vp-bull)] shrink-0">
             <span className="animate-pulse">●</span>
             <span>LIVE WS</span>
           </div>
@@ -821,15 +821,15 @@ export const NewsTerminalView: React.FC = () => {
             return (
               <div
                 key={asset.id}
-                className="flex items-center gap-2 rounded-lg border border-[#2B3139] bg-[#12161C] px-2.5 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0"
+                className="flex items-center gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 transition-colors"
               >
-                <span className="font-semibold text-[#EAECEF]">
+                <span className="font-semibold text-[var(--vp-text)]">
                   {asset.icon} {asset.label}
                 </span>
-                <span className="font-bold text-[#EAECEF]">${formattedPrice}</span>
+                <span className="font-bold text-[var(--vp-text)]">${formattedPrice}</span>
                 <span
                   className="font-bold"
-                  style={{ color: isUp ? '#00C087' : '#F6465D' }}
+                  style={{ color: isUp ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
                 >
                   {isUp ? '▲' : '▼'} {isUp ? '+' : ''}
                   {asset.changePct24h.toFixed(2)}%
@@ -841,26 +841,26 @@ export const NewsTerminalView: React.FC = () => {
       </div>
 
       {/* Live Economic Calendar + Auto-Sync Status Header */}
-      <section className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 sm:p-5 space-y-4">
+      <section className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 sm:p-5 space-y-4 transition-colors">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#00C087]/35 bg-[#00C087]/10 px-2.5 py-0.5 font-bold tracking-wide text-[#00C087]">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#00C087]/35 bg-[#00C087]/10 px-2.5 py-0.5 font-bold tracking-wide text-[var(--vp-bull)]">
                 <span className="animate-pulse">●</span>
                 <span>LIVE AUTO-SYNC</span>
               </span>
-              <span className="text-[#848E9C]">
+              <span className="text-[var(--vp-muted)]">
                 Last Updated:{' '}
-                <strong className="text-[#EAECEF]">{formatIstTimestamp(lastUpdatedMs)}</strong>
+                <strong className="text-[var(--vp-text)]">{formatIstTimestamp(lastUpdatedMs)}</strong>
               </span>
-              <span className="text-[#848E9C] hidden sm:inline">
+              <span className="text-[var(--vp-muted)] hidden sm:inline">
                 · {isSyncing ? 'Syncing feeds...' : `Next sync in ${secondsUntilNextSync}s`}
               </span>
             </div>
 
             <div className="flex items-center gap-2">
-              <CalendarClock className="h-5 w-5 text-[#F0B90B] shrink-0" />
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-[#EAECEF]">
+              <CalendarClock className="h-5 w-5 text-[var(--vp-accent-text)] shrink-0" />
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-[var(--vp-text)]">
                 Live Economic Calendar &amp; Macro Release Tracker
               </h1>
             </div>
@@ -883,8 +883,8 @@ export const NewsTerminalView: React.FC = () => {
                   onClick={() => setCalendarFilter(tab.id)}
                   className="min-h-[34px] rounded-lg px-3 text-xs font-semibold cursor-pointer transition-colors"
                   style={{
-                    backgroundColor: active ? '#F0B90B' : '#1E2329',
-                    color: active ? '#0B0E11' : '#848E9C',
+                    backgroundColor: active ? '#F0B90B' : 'var(--vp-elevated)',
+                    color: active ? '#0B0E11' : 'var(--vp-muted)',
                   }}
                 >
                   {tab.label}
@@ -896,61 +896,61 @@ export const NewsTerminalView: React.FC = () => {
 
         {/* Real-Time 1-Second Countdown Banner to Next High-Impact Event */}
         {nextHighImpactEvent ? (
-          <div className="rounded-xl border border-[#F0B90B]/35 bg-[#181D24] px-3.5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="rounded-xl border border-[#F0B90B]/35 bg-[var(--vp-elevated)] px-3.5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-colors">
             <div className="space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
-                <span className="inline-flex items-center gap-1 rounded bg-[#F6465D]/15 px-1.5 py-0.5 font-bold text-[#F6465D]">
+                <span className="inline-flex items-center gap-1 rounded bg-[#F6465D]/15 px-1.5 py-0.5 font-bold text-[var(--vp-bear)]">
                   <Flame className="h-3 w-3" />
                   NEXT HIGH-IMPACT
                 </span>
-                <span className="font-bold text-[#EAECEF]">
+                <span className="font-bold text-[var(--vp-text)]">
                   {CURRENCY_BADGES[nextHighImpactEvent.currency] ?? nextHighImpactEvent.currency}
                 </span>
-                <span className="text-[#848E9C]">
+                <span className="text-[var(--vp-muted)]">
                   {formatEventIstDateTime(nextHighImpactEvent.timestampMs)} IST
                 </span>
               </div>
-              <p className="text-sm font-bold text-[#EAECEF] truncate">
+              <p className="text-sm font-bold text-[var(--vp-text)] truncate">
                 {nextHighImpactEvent.title}
               </p>
-              <div className="flex items-center gap-3 text-xs font-mono-tabular text-[#848E9C]">
+              <div className="flex items-center gap-3 text-xs font-mono-tabular text-[var(--vp-muted)]">
                 <span>
                   Forecast:{' '}
-                  <strong className="text-[#EAECEF]">
+                  <strong className="text-[var(--vp-text)]">
                     {nextHighImpactEvent.forecast || '—'}
                   </strong>
                 </span>
                 <span>
                   Previous:{' '}
-                  <strong className="text-[#EAECEF]">
+                  <strong className="text-[var(--vp-text)]">
                     {nextHighImpactEvent.previous || '—'}
                   </strong>
                 </span>
               </div>
             </div>
 
-            <div className="shrink-0 flex items-center gap-2.5 rounded-xl border border-[#2B3139] bg-[#0B0E11] px-3.5 py-2 self-start sm:self-center">
-              <Clock className="h-4 w-4 text-[#F0B90B]" />
+            <div className="shrink-0 flex items-center gap-2.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-3.5 py-2 self-start sm:self-center transition-colors">
+              <Clock className="h-4 w-4 text-[var(--vp-accent-text)]" />
               <div>
-                <div className="text-[10px] font-mono-tabular uppercase tracking-wider text-[#848E9C]">
+                <div className="text-[10px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
                   Countdown
                 </div>
-                <div className="text-base sm:text-lg font-extrabold font-mono-tabular text-[#F0B90B] tracking-tight">
+                <div className="text-base sm:text-lg font-extrabold font-mono-tabular text-[var(--vp-accent-text)] tracking-tight">
                   {formatCountdown(nextHighImpactEvent.timestampMs - nowMs)}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-[#2B3139] bg-[#181D24] px-3.5 py-2.5 text-xs text-[#848E9C] flex items-center justify-between">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3.5 py-2.5 text-xs text-[var(--vp-muted)] flex items-center justify-between">
             <span>All scheduled high-impact releases for this week have completed.</span>
-            <span className="font-mono-tabular text-[#00C087]">Auto-monitoring next feed</span>
+            <span className="font-mono-tabular text-[var(--vp-bull)]">Auto-monitoring next feed</span>
           </div>
         )}
 
         {/* Economic Calendar Events Table */}
         {calendarError && calendarEvents.length === 0 ? (
-          <div className="rounded-xl border border-[#2B3139] bg-[#181D24] p-4 text-xs text-[#848E9C] flex items-center justify-between gap-3">
+          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-4 text-xs text-[var(--vp-muted)] flex items-center justify-between gap-3">
             <span>{calendarError}</span>
             <button
               type="button"
@@ -961,10 +961,10 @@ export const NewsTerminalView: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-[#2B3139] bg-[#0B0E11]/60">
+          <div className="overflow-x-auto rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] transition-colors">
             <table className="w-full text-left border-collapse min-w-[620px]">
               <thead>
-                <tr className="border-b border-[#2B3139] text-[11px] font-mono-tabular uppercase tracking-wider text-[#848E9C]">
+                <tr className="border-b border-[var(--vp-border)] text-[11px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
                   <th className="py-2.5 px-3">Time (IST)</th>
                   <th className="py-2.5 px-2">CCY</th>
                   <th className="py-2.5 px-2">Impact</th>
@@ -974,7 +974,7 @@ export const NewsTerminalView: React.FC = () => {
                   <th className="py-2.5 px-3 text-right">Previous</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#2B3139]/60 text-xs">
+              <tbody className="divide-y divide-[var(--vp-border)] text-xs">
                 {visibleCalendarEvents.map((ev) => {
                   const status = evaluateActualStatus(ev, nowMs);
                   const diffMs = ev.timestampMs - nowMs;
@@ -986,20 +986,20 @@ export const NewsTerminalView: React.FC = () => {
                     <tr
                       key={ev.id}
                       className={`transition-colors ${
-                        justReleased ? 'bg-[#F0B90B]/[0.05]' : 'hover:bg-[#1E2329]/50'
+                        justReleased ? 'bg-[#F0B90B]/[0.06]' : 'hover:bg-[var(--vp-elevated)]/60'
                       }`}
                     >
-                      <td className="py-2.5 px-3 font-mono-tabular whitespace-nowrap text-[#848E9C] align-middle">
+                      <td className="py-2.5 px-3 font-mono-tabular whitespace-nowrap text-[var(--vp-muted)] align-middle">
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <span>{formatEventIstDateTime(ev.timestampMs)}</span>
                           {isSoon && (
-                            <span className="text-[10px] font-bold text-[#F0B90B]">
+                            <span className="text-[10px] font-bold text-[var(--vp-accent-text)]">
                               ({formatCountdown(diffMs)})
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-2.5 px-2 font-mono-tabular font-bold text-[#EAECEF] whitespace-nowrap align-top">
+                      <td className="py-2.5 px-2 font-mono-tabular font-bold text-[var(--vp-text)] whitespace-nowrap align-top">
                         {CURRENCY_BADGES[ev.currency] ?? ev.currency}
                       </td>
                       <td className="py-2.5 px-2 whitespace-nowrap align-top">
@@ -1014,17 +1014,17 @@ export const NewsTerminalView: React.FC = () => {
                                   : 'rgba(132, 142, 156, 0.14)',
                             color:
                               ev.impact === 'High'
-                                ? '#F6465D'
+                                ? 'var(--vp-bear)'
                                 : ev.impact === 'Medium'
-                                  ? '#F0B90B'
-                                  : '#848E9C',
+                                  ? 'var(--vp-accent-text)'
+                                  : 'var(--vp-muted)',
                           }}
                         >
                           {ev.impact}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 align-top">
-                        <div className="font-semibold text-[#EAECEF]">{ev.title}</div>
+                        <div className="font-semibold text-[var(--vp-text)]">{ev.title}</div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           {assetImpacts.map((badge) => (
                             <span
@@ -1039,29 +1039,29 @@ export const NewsTerminalView: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono-tabular whitespace-nowrap align-top">
                         {status === 'beat' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#00C087]/40 bg-[#00C087]/15 px-2 py-0.5 font-extrabold text-[#00C087]">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[#00C087]/40 bg-[#00C087]/15 px-2 py-0.5 font-extrabold text-[var(--vp-bull)]">
                             ▲ {ev.actual}
                           </span>
                         ) : status === 'miss' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F6465D]/40 bg-[#F6465D]/15 px-2 py-0.5 font-extrabold text-[#F6465D]">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F6465D]/40 bg-[#F6465D]/15 px-2 py-0.5 font-extrabold text-[var(--vp-bear)]">
                             ▼ {ev.actual}
                           </span>
                         ) : status === 'inline' ? (
-                          <span className="inline-flex items-center rounded-md border border-[#EAECEF]/20 bg-[#1E2329] px-2 py-0.5 font-bold text-[#EAECEF]">
+                          <span className="inline-flex items-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2 py-0.5 font-bold text-[var(--vp-text)]">
                             {ev.actual}
                           </span>
                         ) : status === 'released-pending' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F0B90B]/35 bg-[#F0B90B]/10 px-2 py-0.5 text-[11px] font-semibold text-[#F0B90B]">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F0B90B]/35 bg-[#F0B90B]/10 px-2 py-0.5 text-[11px] font-semibold text-[var(--vp-accent-text)]">
                             <span className="animate-pulse">●</span> Fetching Actual...
                           </span>
                         ) : (
-                          <span className="text-[#848E9C]">—</span>
+                          <span className="text-[var(--vp-muted)]">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[#EAECEF]/85 align-top">
+                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[var(--vp-text)] opacity-85 align-top">
                         {ev.forecast || '—'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[#848E9C] align-top">
+                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[var(--vp-muted)] align-top">
                         {ev.previous || '—'}
                       </td>
                     </tr>
@@ -1069,7 +1069,7 @@ export const NewsTerminalView: React.FC = () => {
                 })}
                 {visibleCalendarEvents.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-xs text-[#848E9C]">
+                    <td colSpan={7} className="py-6 text-center text-xs text-[var(--vp-muted)]">
                       Loading live economic events...
                     </td>
                   </tr>
@@ -1081,29 +1081,29 @@ export const NewsTerminalView: React.FC = () => {
       </section>
 
       {/* Top Macro Sentiment Summary + Search/Refresh */}
-      <section className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 sm:p-5 space-y-4">
+      <section className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 sm:p-5 space-y-4 transition-colors">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs font-mono-tabular text-[#848E9C]">
-              <span className="font-bold text-[#F0B90B]">LIVE MACRO WIRE</span>
+            <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--vp-muted)]">
+              <span className="font-bold text-[var(--vp-accent-text)]">LIVE MACRO WIRE</span>
               <span aria-hidden="true">·</span>
               <span>{data?.globalSentiment.label ?? 'Scanning Wire'}</span>
             </div>
-            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-[#EAECEF]">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-[var(--vp-text)]">
               {data?.globalSentiment.summary ?? 'Global Gold, Macro & Crypto Headlines'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <div className="relative flex-1 sm:w-56">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#848E9C]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--vp-muted)]" />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search CPI, Gold, BTC..."
                 aria-label="Search market news"
-                className="w-full min-h-[40px] rounded-xl border border-[#2B3139] bg-[#1E2329] pl-9 pr-3 text-xs text-[#EAECEF] placeholder-[#848E9C] outline-none focus:border-[#F0B90B]"
+                className="w-full min-h-[40px] rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] pl-9 pr-3 text-xs text-[var(--vp-text)] placeholder:text-[var(--vp-muted)] outline-none focus:border-[#F0B90B] transition-colors"
               />
             </div>
 
@@ -1112,10 +1112,10 @@ export const NewsTerminalView: React.FC = () => {
               onClick={() => loadAllFeeds(true, false)}
               disabled={loading || isSyncing}
               aria-label="Refresh market news and calendar"
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[#2B3139] bg-[#1E2329] px-3 text-xs font-semibold text-[#EAECEF] hover:border-[#F0B90B]/60 cursor-pointer shrink-0"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 text-xs font-semibold text-[var(--vp-text)] hover:border-[#F0B90B]/60 cursor-pointer shrink-0 transition-colors"
             >
               <RefreshCw
-                className={`h-3.5 w-3.5 text-[#F0B90B] ${loading || isSyncing ? 'animate-spin' : ''}`}
+                className={`h-3.5 w-3.5 text-[var(--vp-accent-text)] ${loading || isSyncing ? 'animate-spin' : ''}`}
               />
               <span className="hidden sm:inline">Sync Now</span>
             </button>
@@ -1133,8 +1133,8 @@ export const NewsTerminalView: React.FC = () => {
                 onClick={() => setTopic(t.id)}
                 className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                 style={{
-                  backgroundColor: active ? '#F0B90B' : '#1E2329',
-                  color: active ? '#0B0E11' : '#848E9C',
+                  backgroundColor: active ? '#F0B90B' : 'var(--vp-elevated)',
+                  color: active ? '#0B0E11' : 'var(--vp-muted)',
                 }}
               >
                 {t.label}
@@ -1150,13 +1150,13 @@ export const NewsTerminalView: React.FC = () => {
           {[1, 2, 3, 4].map((n) => (
             <div
               key={n}
-              className="h-32 rounded-2xl border border-[#2B3139] bg-[#12161C] animate-pulse p-4"
+              className="h-32 rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] animate-pulse p-4"
             />
           ))}
         </div>
       ) : errorMsg && !data ? (
-        <div className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-6 text-center space-y-3">
-          <p className="text-sm text-[#848E9C]">{errorMsg}</p>
+        <div className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-6 text-center space-y-3">
+          <p className="text-sm text-[var(--vp-muted)]">{errorMsg}</p>
           <button
             type="button"
             onClick={() => loadAllFeeds(true, false)}
@@ -1166,15 +1166,15 @@ export const NewsTerminalView: React.FC = () => {
           </button>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-6 text-center space-y-2">
-          <p className="text-sm font-semibold text-[#EAECEF]">No headlines match this filter.</p>
+        <div className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-6 text-center space-y-2">
+          <p className="text-sm font-semibold text-[var(--vp-text)]">No headlines match this filter.</p>
           <button
             type="button"
             onClick={() => {
               setTopic('ALL');
               setQuery('');
             }}
-            className="min-h-[40px] rounded-xl bg-[#1E2329] border border-[#2B3139] px-4 text-xs font-semibold text-[#F0B90B] cursor-pointer"
+            className="min-h-[40px] rounded-xl bg-[var(--vp-elevated)] border border-[var(--vp-border)] px-4 text-xs font-semibold text-[var(--vp-accent-text)] cursor-pointer"
           >
             Show All Wire Headlines
           </button>
@@ -1190,16 +1190,16 @@ export const NewsTerminalView: React.FC = () => {
             return (
               <article
                 key={item.id}
-                className="rounded-2xl border border-[#2B3139] bg-[#12161C] p-4 flex flex-col justify-between gap-3 hover:border-[#3c434e] transition-colors"
+                className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 flex flex-col justify-between gap-3 hover:border-[#F0B90B]/50 transition-colors"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-[11px] font-mono-tabular">
-                    <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap text-[#848E9C]">
-                      <span className="font-bold text-[#F0B90B] shrink-0">{item.category}</span>
+                    <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap text-[var(--vp-muted)]">
+                      <span className="font-bold text-[var(--vp-accent-text)] shrink-0">{item.category}</span>
                       <span aria-hidden="true">·</span>
                       <span className="truncate">{item.source}</span>
                       <span aria-hidden="true">·</span>
-                      <span className="shrink-0 text-[#EAECEF]/80">
+                      <span className="shrink-0 text-[var(--vp-text)] opacity-80">
                         {item.publishedAtMs
                           ? formatEventIstDateTime(item.publishedAtMs)
                           : item.publishedAt}
@@ -1215,7 +1215,7 @@ export const NewsTerminalView: React.FC = () => {
                     </span>
                   </div>
 
-                  <h3 className="text-sm sm:text-[15px] font-semibold leading-snug text-[#EAECEF]">
+                  <h3 className="text-sm sm:text-[15px] font-semibold leading-snug text-[var(--vp-text)]">
                     {item.headline}
                   </h3>
 
@@ -1234,12 +1234,12 @@ export const NewsTerminalView: React.FC = () => {
                 </div>
 
                 {hasUrl && (
-                  <div className="flex items-center justify-end pt-1 border-t border-[#2B3139]/70">
+                  <div className="flex items-center justify-end pt-1 border-t border-[var(--vp-border)]">
                     <a
                       href={item.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex min-h-[36px] items-center gap-1.5 text-xs font-semibold text-[#F0B90B] hover:underline"
+                      className="inline-flex min-h-[36px] items-center gap-1.5 text-xs font-semibold text-[var(--vp-accent-text)] hover:underline"
                     >
                       <span>Read Source</span>
                       <ExternalLink className="h-3.5 w-3.5" />
