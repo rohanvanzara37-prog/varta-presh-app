@@ -102,18 +102,19 @@
   pointer-events: none !important;
 }
 
-/* Allow smooth vertical page scroll over candles, while keeping right price-scale touch scaling unlocked */
+/* Lock touch gestures to chart so zooming/moving up-down inside chart never scrolls the outer page */
 .smc-chart-host,
-.smc-chart-host canvas {
-  touch-action: pan-y !important;
-}
-
-.smc-chart-host td:last-child,
-.smc-chart-host td:last-child canvas,
-.smc-chart-host tr:last-child,
-.smc-chart-host tr:last-child canvas {
+.smc-chart-host * {
   touch-action: none !important;
 }
 
+/* Hide app headers and bottom navigation in Full-Screen Landscape chart mode */
+body.chart-fullscreen-active {
+  overflow: hidden !important;
+}
 
+body.chart-fullscreen-active header,
+body.chart-fullscreen-active nav[aria-label="Primary bottom navigation"] {
+  display: none !important;
+}
 

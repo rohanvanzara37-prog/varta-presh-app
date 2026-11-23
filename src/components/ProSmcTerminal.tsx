@@ -21,6 +21,8 @@ import {
   BarChart2,
   Columns2,
   Crosshair,
+  Maximize2,
+  Minimize2,
   Minus,
   Pause,
   Pencil,
@@ -330,14 +332,28 @@ function formatUtcShort(ts: number): string {
   return `${d.getDate()} ${mon} ${hh}:${mm}`;
 }
 
+const GOLD_CFD_PARAMS: Record<SmcTimeframe, { interval: string; range: string }> = {
+  '1m': { interval: '1m', range: '1d' },
+  '5m': { interval: '5m', range: '5d' },
+  '15m': { interval: '15m', range: '5d' },
+  '30m': { interval: '30m', range: '1mo' },
+  '1h': { interval: '60m', range: '1mo' },
+  '4h': { interval: '4h', range: '3mo' },
+  '1d': { interval: '1d', range: '1y' },
+};
+
 async function fetchCandles(
   symbol: SmcSymbol,
   tf: SmcTimeframe,
   signal: AbortSignal
 ): Promise<TerminalCandle[]> {
+  const goldSpec = GOLD_CFD_PARAMS[tf];
   const endpointsToTry =
     symbol === 'XAUUSD'
-      ? [`/api/gold?interval=${tf}`, `/api/klines?symbol=${symbol}&interval=${tf}`]
+      ? [
+          `/api/gold?interval=${goldSpec.interval}&range=${goldSpec.range}`,
+          `/api/klines?symbol=${symbol}&interval=${tf}`,
+        ]
       : [`/api/klines?symbol=${symbol}&interval=${tf}`];
 
   for (const endpoint of endpointsToTry) {
@@ -561,13 +577,14 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const [crosshairReadout, setCrosshairReadout] = useState<CrosshairReadout | null>(null);
   const [overlayRenderTick, setOverlayRenderTick] = useState(0);
 
-  // Bar Replay & 2-Chart Split View
+  // Bar Replay, Full-Screen Landscape & 2-Chart Split View
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
   const [replayTotal, setReplayTotal] = useState(0);
   const [replaySpeed, setReplaySpeed] = useState<1 | 2 | 4>(1);
   const [splitView, setSplitView] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [isBullTick, setIsBullTick] = useState<boolean>(true);
@@ -577,6 +594,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const [omye, setOmye] = useState<OmyeEngineState | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
+  const terminalSectionRef = useRef<HTMLElement | null>(null);
+  const enteredNativeFsRef = useRef(false);
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
@@ -668,7 +687,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         mouseWheel: true,
         pressedMouseMove: true,
         horzTouchDrag: true,
-        vertTouchDrag: false,
+        vertTouchDrag: true,
       },
       handleScale: {
         mouseWheel: true,
@@ -872,27 +891,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       }
     });
 
-    const unlockRightScaleOnTouchStart = (ev: TouchEvent) => {
-      const touch = ev.touches[0];
-      if (!touch) return;
-      const rect = el.getBoundingClientRect();
-      const scaleWidth = Math.max(44, chart.priceScale('right').width() || 50);
-      const targetEl = ev.target as HTMLElement | null;
-      const isOnRightScale =
-        targetEl?.closest('td:last-child') !== null ||
-        touch.clientX >= rect.right - scaleWidth - 8;
-      if (isOnRightScale) {
-        chart.applyOptions({ handleScroll: { vertTouchDrag: true } });
-      }
-    };
-    const restorePageScrollOnTouchEnd = () => {
-      chart.applyOptions({ handleScroll: { vertTouchDrag: false } });
-    };
-
-    el.addEventListener('touchstart', unlockRightScaleOnTouchStart, { capture: true, passive: true });
-    el.addEventListener('touchend', restorePageScrollOnTouchEnd, { capture: true, passive: true });
-    el.addEventListener('touchcancel', restorePageScrollOnTouchEnd, { capture: true, passive: true });
-
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
@@ -904,9 +902,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
-      el.removeEventListener('touchstart', unlockRightScaleOnTouchStart, { capture: true });
-      el.removeEventListener('touchend', restorePageScrollOnTouchEnd, { capture: true });
-      el.removeEventListener('touchcancel', restorePageScrollOnTouchEnd, { capture: true });
       ro.disconnect();
       markersPlugin.detach();
       chart.remove();
@@ -967,8 +962,92 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     const chart = chartApiRef.current;
     if (!chart) return;
     chart.priceScale('right').applyOptions({ autoScale: true });
-    chart.timeScale().resetTimeScale();
+    chart.timeScale().fitContent();
   }, []);
+
+  const toggleFullScreen = useCallback(() => {
+    setIsFullScreen((prev) => {
+      const next = !prev;
+      const orientation = (
+        window.screen as Screen & {
+          orientation?: { lock?: (mode: string) => Promise<void>; unlock?: () => void };
+        }
+      )?.orientation;
+
+      if (next) {
+        const el = terminalSectionRef.current;
+        if (el?.requestFullscreen) {
+          el.requestFullscreen()
+            .then(() => {
+              enteredNativeFsRef.current = true;
+              orientation?.lock?.('landscape')?.catch(() => {});
+            })
+            .catch(() => {
+              enteredNativeFsRef.current = false;
+            });
+        } else {
+          orientation?.lock?.('landscape')?.catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.().catch(() => {});
+        }
+        enteredNativeFsRef.current = false;
+        try {
+          orientation?.unlock?.();
+        } catch {
+          // ignore orientation unlock failure
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isFullScreen) {
+      document.body.classList.add('chart-fullscreen-active');
+    } else {
+      document.body.classList.remove('chart-fullscreen-active');
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
+      chartApiRef.current?.timeScale().fitContent();
+    });
+
+    if (!isFullScreen) {
+      return () => {
+        window.cancelAnimationFrame(raf);
+        document.body.classList.remove('chart-fullscreen-active');
+      };
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.().catch(() => {});
+        }
+        enteredNativeFsRef.current = false;
+        setIsFullScreen(false);
+      }
+    };
+
+    const handleFsChange = () => {
+      if (enteredNativeFsRef.current && !document.fullscreenElement) {
+        enteredNativeFsRef.current = false;
+        setIsFullScreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      document.body.classList.remove('chart-fullscreen-active');
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+    };
+  }, [isFullScreen]);
 
   const syncTechnicalIndicators = useCallback(
     (candles: TerminalCandle[]) => {
@@ -1784,6 +1863,20 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     setDrawings([]);
     setDraftAnchor(null);
 
+    // Clear old candles, indicators, markers & overlay lines immediately on timeframe/symbol switch
+    fullCandlesRef.current = [];
+    latestCandlesRef.current = [];
+    candleSeriesRef.current?.setData([]);
+    ema20SeriesRef.current?.setData([]);
+    ema50SeriesRef.current?.setData([]);
+    ema200SeriesRef.current?.setData([]);
+    bbUpperSeriesRef.current?.setData([]);
+    bbBasisSeriesRef.current?.setData([]);
+    bbLowerSeriesRef.current?.setData([]);
+    rsiSeriesRef.current?.setData([]);
+    markersPluginRef.current?.setMarkers([]);
+    clearOverlayLines();
+
     const applyIncomingCandle = (incomingCandle: TerminalCandle, isClosed: boolean) => {
       if (disposed || !candleSeriesRef.current) return;
 
@@ -2008,9 +2101,11 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         latestCandlesRef.current = [...candles];
         setReplayTotal(candles.length);
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
-        chartApiRef.current?.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, candles.length - 72),
-          to: candles.length + 5,
+        chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
+        chartApiRef.current?.timeScale().fitContent();
+        window.requestAnimationFrame(() => {
+          chartApiRef.current?.priceScale('right').applyOptions({ autoScale: true });
+          chartApiRef.current?.timeScale().fitContent();
         });
         syncTechnicalIndicators(candles);
         runSmcAndAutoDraw(candles, overlayPrefsRef.current);
@@ -2171,8 +2266,14 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
   return (
     <section
+      ref={terminalSectionRef}
       aria-label="Live WebSocket Auto-Draw Trading Terminal"
-      className="rounded-xl border overflow-hidden bg-[#0B0E11] border-[#2B3139] text-[#EAECEF]"
+      className={
+        isFullScreen
+          ? 'fixed inset-0 z-[100] flex flex-col w-screen h-screen bg-[#0B0E11] text-[#EAECEF] overflow-hidden'
+          : 'rounded-xl border overflow-hidden bg-[#0B0E11] border-[#2B3139] text-[#EAECEF]'
+      }
+      style={isFullScreen ? { width: '100vw', height: '100vh' } : undefined}
     >
       {/* Top Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#161A1E] border-b border-[#2B3139]">
@@ -2383,23 +2484,36 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             <Columns2 className="h-3 w-3" />
             2-Chart Split View
           </button>
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            aria-label={isFullScreen ? 'Exit Full-Screen Landscape' : 'Full-Screen Landscape'}
+            className={`inline-flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-semibold cursor-pointer border transition-colors ${
+              isFullScreen
+                ? 'bg-[#F0B90B] border-[#F0B90B] text-[#0B0E11]'
+                : 'bg-[#1E2329] border-[#2B3139] text-[#EAECEF] hover:border-[#F0B90B]/60'
+            }`}
+          >
+            {isFullScreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            {isFullScreen ? 'Exit Full' : 'Full Screen'}
+          </button>
         </div>
       </div>
 
       {/* Main Workspace: Chart(s) + Compact Live OMYE & SMC Sidebar */}
-      <div className="flex flex-col lg:flex-row lg:h-[560px]">
+      <div className={isFullScreen ? 'flex-1 min-h-0 flex flex-col lg:flex-row' : 'flex flex-col lg:flex-row lg:h-[560px]'}>
         <div
-          className={`flex-1 min-w-0 grid gap-0 border-b lg:border-b-0 lg:border-r border-[#2B3139] ${
-            splitView ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'
-          }`}
+          className={`flex-1 min-w-0 min-h-0 grid gap-0 border-b lg:border-b-0 lg:border-r border-[#2B3139] ${
+            isFullScreen ? 'h-full ' : ''
+          }${splitView ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}
         >
           {/* Primary Chart Pane */}
           <div
-            className={`relative h-[360px] sm:h-[420px] lg:h-full min-w-0 ${
-              splitView ? 'border-b md:border-b-0 md:border-r border-[#2B3139]' : ''
-            }`}
+            className={`relative min-w-0 min-h-0 ${
+              isFullScreen ? 'h-full' : 'h-[360px] sm:h-[420px] lg:h-full'
+            } ${splitView ? 'border-b md:border-b-0 md:border-r border-[#2B3139]' : ''}`}
           >
-            <div ref={chartWrapRef} className="smc-chart-host touch-pan-y w-full h-full" />
+            <div ref={chartWrapRef} className="smc-chart-host touch-none w-full h-full" />
 
             {/* Freehand Brush Capture Layer (active only when Brush tool is selected) */}
             {activeTool === 'brush' && (
@@ -2823,6 +2937,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         </div>
 
         {/* Compact Live Sidebar: OMYE + Smart Money Concepts + Auto Entry/TP/SL */}
+        {!isFullScreen && (
         <aside
           aria-label="Live OMYE and Smart Money Concepts Sidebar"
           className="w-full lg:w-[310px] shrink-0 bg-[#12161C] p-2.5 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 lg:overflow-y-auto"
@@ -2994,6 +3109,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             </div>
           </div>
         </aside>
+        )}
       </div>
     </section>
   );
@@ -3373,7 +3489,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         mouseWheel: true,
         pressedMouseMove: true,
         horzTouchDrag: true,
-        vertTouchDrag: false,
+        vertTouchDrag: true,
       },
       handleScale: {
         mouseWheel: true,
@@ -3441,27 +3557,6 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     chartRef.current = chart;
     candleRef.current = candles;
 
-    const unlockRightScaleOnTouchStart = (ev: TouchEvent) => {
-      const touch = ev.touches[0];
-      if (!touch) return;
-      const rect = el.getBoundingClientRect();
-      const scaleWidth = Math.max(44, chart.priceScale('right').width() || 50);
-      const targetEl = ev.target as HTMLElement | null;
-      const isOnRightScale =
-        targetEl?.closest('td:last-child') !== null ||
-        touch.clientX >= rect.right - scaleWidth - 8;
-      if (isOnRightScale) {
-        chart.applyOptions({ handleScroll: { vertTouchDrag: true } });
-      }
-    };
-    const restorePageScrollOnTouchEnd = () => {
-      chart.applyOptions({ handleScroll: { vertTouchDrag: false } });
-    };
-
-    el.addEventListener('touchstart', unlockRightScaleOnTouchStart, { capture: true, passive: true });
-    el.addEventListener('touchend', restorePageScrollOnTouchEnd, { capture: true, passive: true });
-    el.addEventListener('touchcancel', restorePageScrollOnTouchEnd, { capture: true, passive: true });
-
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
@@ -3471,9 +3566,6 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     ro.observe(el);
 
     return () => {
-      el.removeEventListener('touchstart', unlockRightScaleOnTouchStart, { capture: true });
-      el.removeEventListener('touchend', restorePageScrollOnTouchEnd, { capture: true });
-      el.removeEventListener('touchcancel', restorePageScrollOnTouchEnd, { capture: true });
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -3517,10 +3609,19 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     let disposed = false;
     let ws: WebSocket | null = null;
 
+    // Clear old candles and indicators on secondary chart timeframe/symbol switch
+    candlesRef.current = [];
+    candleRef.current?.setData([]);
+    ema20Ref.current?.setData([]);
+    ema50Ref.current?.setData([]);
+    bbUpRef.current?.setData([]);
+    bbLowRef.current?.setData([]);
+
     const applyBar = (bar: TerminalCandle) => {
       if (disposed || !candleRef.current) return;
-      candleRef.current.update(toPureCandle(bar));
       const arr = candlesRef.current;
+      if (arr.length > 0 && bar.time < arr[arr.length - 1].time) return;
+      candleRef.current.update(toPureCandle(bar));
       if (arr.length > 0 && arr[arr.length - 1].time === bar.time) arr[arr.length - 1] = bar;
       else if (arr.length === 0 || bar.time > arr[arr.length - 1].time) arr.push(bar);
       setSubPrice(bar.close);
@@ -3579,9 +3680,11 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         candleRef.current?.setData(bars.map(toPureCandle));
         setSubPrice(bars[bars.length - 1].close);
         setSubBull(bars[bars.length - 1].close >= bars[bars.length - 1].open);
-        chartRef.current?.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, bars.length - 64),
-          to: bars.length + 4,
+        chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
+        chartRef.current?.timeScale().fitContent();
+        window.requestAnimationFrame(() => {
+          chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
+          chartRef.current?.timeScale().fitContent();
         });
         syncSubIndicators(bars);
         connectWs();
@@ -3644,7 +3747,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
       </div>
 
       <div className="relative flex-1 min-h-0">
-        <div ref={wrapRef} className="smc-chart-host touch-pan-y w-full h-full" />
+        <div ref={wrapRef} className="smc-chart-host touch-none w-full h-full" />
         <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-md border border-[#2B3139] bg-[#161A1E]/90 p-1 backdrop-blur-sm">
           <button
             type="button"
@@ -3666,7 +3769,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
             type="button"
             onClick={() => {
               chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-              chartRef.current?.timeScale().resetTimeScale();
+              chartRef.current?.timeScale().fitContent();
             }}
             aria-label="Secondary Reset"
             className="flex h-6 items-center justify-center rounded bg-[#2B3139] px-1.5 text-[10px] font-semibold text-[#F0B90B] hover:bg-[#363c46] cursor-pointer"

@@ -998,9 +998,9 @@ async function startServer() {
 
   const KLINE_SYMBOL_MAP: Record<
     string,
-    { source: 'yahoo' | 'binance'; ticker: string; spotAnchor?: 'XAU' | 'XAG' | 'US500'; precision: number }
+    { source: 'yahoo' | 'binance' | 'spot-cfd'; ticker: string; spotAnchor?: 'XAU' | 'XAG' | 'US500'; precision: number }
   > = {
-    XAUUSD: { source: 'yahoo', ticker: 'GC=F', spotAnchor: 'XAU', precision: 2 },
+    XAUUSD: { source: 'spot-cfd', ticker: 'XAU/USD', spotAnchor: 'XAU', precision: 2 },
     XAGUSD: { source: 'yahoo', ticker: 'SI=F', spotAnchor: 'XAG', precision: 2 },
     US500: { source: 'yahoo', ticker: 'ES=F', spotAnchor: 'US500', precision: 2 },
     USOIL: { source: 'yahoo', ticker: 'CL=F', precision: 2 },
@@ -1021,16 +1021,388 @@ async function startServer() {
   };
   const ALLOWED_KLINE_INTERVALS = new Set(Object.keys(INTERVAL_SECONDS));
   type OhlcBar = { time: number; open: number; high: number; low: number; close: number };
-  const klineCache = new Map<string, { expiresAt: number; candles: OhlcBar[] }>();
+  const klineCache = new Map<string, { expiresAt: number; source: string; candles: OhlcBar[] }>();
+
+  const GOLD_CFD_INTERVAL_MAP: Record<
+    string,
+    {
+      sec: number;
+      tdInterval: string;
+      fhResolution: string;
+      fhLookbackSec: number;
+      bybitInterval: string;
+      okxBar: string;
+      binanceInterval: string;
+    }
+  > = {
+    '1m': {
+      sec: 60,
+      tdInterval: '1min',
+      fhResolution: '1',
+      fhLookbackSec: 6 * 3600,
+      bybitInterval: '1',
+      okxBar: '1m',
+      binanceInterval: '1m',
+    },
+    '5m': {
+      sec: 300,
+      tdInterval: '5min',
+      fhResolution: '5',
+      fhLookbackSec: 24 * 3600,
+      bybitInterval: '5',
+      okxBar: '5m',
+      binanceInterval: '5m',
+    },
+    '15m': {
+      sec: 900,
+      tdInterval: '15min',
+      fhResolution: '15',
+      fhLookbackSec: 4 * 86400,
+      bybitInterval: '15',
+      okxBar: '15m',
+      binanceInterval: '15m',
+    },
+    '30m': {
+      sec: 1800,
+      tdInterval: '30min',
+      fhResolution: '30',
+      fhLookbackSec: 7 * 86400,
+      bybitInterval: '30',
+      okxBar: '30m',
+      binanceInterval: '30m',
+    },
+    '1h': {
+      sec: 3600,
+      tdInterval: '1h',
+      fhResolution: '60',
+      fhLookbackSec: 14 * 86400,
+      bybitInterval: '60',
+      okxBar: '1H',
+      binanceInterval: '1h',
+    },
+    '4h': {
+      sec: 14400,
+      tdInterval: '4h',
+      fhResolution: '60',
+      fhLookbackSec: 45 * 86400,
+      bybitInterval: '240',
+      okxBar: '4H',
+      binanceInterval: '4h',
+    },
+    '1d': {
+      sec: 86400,
+      tdInterval: '1day',
+      fhResolution: 'D',
+      fhLookbackSec: 260 * 86400,
+      bybitInterval: 'D',
+      okxBar: '1Dutc',
+      binanceInterval: '1d',
+    },
+  };
+
+  function parseUtcTimestampSec(raw: string | number | undefined): number | null {
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw);
+    }
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      const num = Number(trimmed);
+      return num > 1e12 ? Math.floor(num / 1000) : Math.floor(num);
+    }
+    const isoUtc = trimmed.includes('T')
+      ? trimmed.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(trimmed)
+        ? trimmed
+        : `${trimmed}Z`
+      : trimmed.includes(' ')
+        ? `${trimmed.replace(' ', 'T')}Z`
+        : `${trimmed}T00:00:00Z`;
+    const ms = Date.parse(isoUtc);
+    return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+  }
+
+  function normalizeUtcGoldBars(rawBars: OhlcBar[], intervalSec: number): OhlcBar[] {
+    const sortedRaw = rawBars
+      .filter(
+        (b) =>
+          Number.isFinite(b.time) &&
+          b.time > 0 &&
+          Number.isFinite(b.open) &&
+          Number.isFinite(b.high) &&
+          Number.isFinite(b.low) &&
+          Number.isFinite(b.close) &&
+          b.open > 0 &&
+          b.high > 0 &&
+          b.low > 0 &&
+          b.close > 0
+      )
+      .sort((a, b) => a.time - b.time);
+
+    const byBucket = new Map<number, OhlcBar>();
+    for (const bar of sortedRaw) {
+      const bucketTime = Math.floor(bar.time / intervalSec) * intervalSec;
+      const clampedHigh = Math.max(bar.high, bar.open, bar.close);
+      const clampedLow = Math.min(bar.low, bar.open, bar.close);
+      const existing = byBucket.get(bucketTime);
+      if (!existing) {
+        byBucket.set(bucketTime, {
+          time: bucketTime,
+          open: Number(bar.open.toFixed(2)),
+          high: Number(clampedHigh.toFixed(2)),
+          low: Number(clampedLow.toFixed(2)),
+          close: Number(bar.close.toFixed(2)),
+        });
+      } else {
+        existing.high = Number(Math.max(existing.high, clampedHigh).toFixed(2));
+        existing.low = Number(Math.min(existing.low, clampedLow).toFixed(2));
+        existing.close = Number(bar.close.toFixed(2));
+      }
+    }
+
+    return Array.from(byBucket.values())
+      .sort((a, b) => a.time - b.time)
+      .slice(-180);
+  }
+
+  async function fetchTradingViewCfdGoldSpot(): Promise<number | null> {
+    try {
+      const res = await fetch('https://scanner.tradingview.com/cfd/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbols: { tickers: ['OANDA:XAUUSD', 'FX_IDC:XAUUSD', 'TVC:GOLD'] },
+          columns: ['close'],
+        }),
+        signal: AbortSignal.timeout(2600),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { data?: Array<{ d?: number[] }> };
+      const close = data?.data?.[0]?.d?.[0];
+      return typeof close === 'number' && Number.isFinite(close) && close > 500
+        ? Number(close.toFixed(2))
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchLiveGoldCfdPriceWithProvider(): Promise<{ price: number; provider: string } | null> {
+    const [sq, tv, goldApi] = await Promise.all([
+      fetchSwissquoteMid('XAU'),
+      fetchTradingViewCfdGoldSpot(),
+      fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 2500),
+    ]);
+    if (typeof sq === 'number') return { price: sq, provider: 'swissquote' };
+    if (typeof tv === 'number') return { price: tv, provider: 'oanda' };
+    if (typeof goldApi?.price === 'number' && Number.isFinite(goldApi.price) && goldApi.price > 500) {
+      return { price: Number(goldApi.price.toFixed(2)), provider: 'gold-api' };
+    }
+    return null;
+  }
+
+  async function fetchSpotGoldCfdCandles(
+    normalizedIv: string
+  ): Promise<{ source: string; candles: OhlcBar[] }> {
+    const spec = GOLD_CFD_INTERVAL_MAP[normalizedIv];
+    if (!spec) return { source: 'spot-cfd', candles: [] };
+
+    const tdKey = process.env.TWELVEDATA_API_KEY?.trim();
+    if (tdKey) {
+      const tdUrl = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=${encodeURIComponent(
+        spec.tdInterval
+      )}&outputsize=180&timezone=UTC&apikey=${encodeURIComponent(tdKey)}`;
+      const tdJson = await fetchJsonWithTimeout<{
+        status?: string;
+        values?: Array<{ datetime?: string; open?: string; high?: string; low?: string; close?: string }>;
+      }>(tdUrl, 4800);
+      if (tdJson?.status !== 'error' && Array.isArray(tdJson?.values) && tdJson.values.length >= 10) {
+        const rawBars: OhlcBar[] = [];
+        for (const row of tdJson.values) {
+          const t = parseUtcTimestampSec(row.datetime);
+          const open = Number(row.open);
+          const high = Number(row.high);
+          const low = Number(row.low);
+          const close = Number(row.close);
+          if (t !== null && [open, high, low, close].every(Number.isFinite)) {
+            rawBars.push({ time: t, open, high, low, close });
+          }
+        }
+        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
+        if (candles.length >= 10) {
+          return { source: 'twelvedata-xauusd', candles };
+        }
+      }
+    }
+
+    const fhKey = process.env.FINNHUB_API_KEY?.trim();
+    if (fhKey) {
+      const toSec = Math.floor(Date.now() / 1000);
+      const fromSec = toSec - spec.fhLookbackSec;
+      const fhUrl = `https://finnhub.io/api/v1/forex/candle?symbol=${encodeURIComponent(
+        'OANDA:XAU_USD'
+      )}&resolution=${encodeURIComponent(spec.fhResolution)}&from=${fromSec}&to=${toSec}&token=${encodeURIComponent(
+        fhKey
+      )}`;
+      const fhJson = await fetchJsonWithTimeout<{
+        s?: string;
+        t?: number[];
+        o?: number[];
+        h?: number[];
+        l?: number[];
+        c?: number[];
+      }>(fhUrl, 4800);
+      if (fhJson?.s === 'ok' && Array.isArray(fhJson.t) && fhJson.t.length >= 10) {
+        const rawBars: OhlcBar[] = [];
+        for (let i = 0; i < fhJson.t.length; i += 1) {
+          const t = fhJson.t[i];
+          const open = fhJson.o?.[i];
+          const high = fhJson.h?.[i];
+          const low = fhJson.l?.[i];
+          const close = fhJson.c?.[i];
+          if (
+            typeof t === 'number' &&
+            typeof open === 'number' &&
+            typeof high === 'number' &&
+            typeof low === 'number' &&
+            typeof close === 'number'
+          ) {
+            rawBars.push({ time: t, open, high, low, close });
+          }
+        }
+        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
+        if (candles.length >= 10) {
+          return { source: 'finnhub-oanda-xauusd', candles };
+        }
+      }
+    }
+
+    const goldApiKey = (process.env.GOLDAPI_KEY ?? process.env.GOLD_API_KEY)?.trim();
+    if (goldApiKey) {
+      const gaUrl = `https://api.gold-api.com/history?symbol=XAU&interval=${encodeURIComponent(normalizedIv)}`;
+      const gaJson = await fetchJsonWithTimeout<
+        Array<{
+          timestamp?: number | string;
+          time?: number | string;
+          date?: string;
+          open?: number;
+          high?: number;
+          low?: number;
+          close?: number;
+          price?: number;
+        }>
+      >(gaUrl, 4500, { 'x-api-key': goldApiKey });
+      if (Array.isArray(gaJson) && gaJson.length >= 10) {
+        const rawBars: OhlcBar[] = [];
+        for (const row of gaJson) {
+          const t = parseUtcTimestampSec(row.timestamp ?? row.time ?? row.date);
+          const close = Number(row.close ?? row.price);
+          const open = Number(row.open ?? close);
+          const high = Number(row.high ?? close);
+          const low = Number(row.low ?? close);
+          if (t !== null && [open, high, low, close].every(Number.isFinite)) {
+            rawBars.push({ time: t, open, high, low, close });
+          }
+        }
+        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
+        if (candles.length >= 10) {
+          return { source: 'goldapi-xauusd', candles };
+        }
+      }
+    }
+
+    // Keyless Spot Gold CFD fallback: live Swissquote/OANDA XAU/USD CFD spot + 24/7 UTC-aligned bullion OHLC
+    const [spotInfo, bybitRes, okxRes, binanceRes] = await Promise.all([
+      fetchLiveGoldCfdPriceWithProvider(),
+      fetchJsonWithTimeout<{
+        retCode?: number;
+        result?: { list?: Array<[string, string, string, string, string]> };
+      }>(
+        `https://api.bybit.com/v5/market/kline?category=spot&symbol=XAUTUSDT&interval=${encodeURIComponent(
+          spec.bybitInterval
+        )}&limit=180`,
+        4200
+      ),
+      fetchJsonWithTimeout<{
+        code?: string;
+        data?: Array<[string, string, string, string, string]>;
+      }>(
+        `https://www.okx.com/api/v5/market/candles?instId=XAUT-USDT&bar=${encodeURIComponent(
+          spec.okxBar
+        )}&limit=180`,
+        4200
+      ),
+      fetchJsonWithTimeout<Array<[number, string, string, string, string]>>(
+        `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
+          spec.binanceInterval
+        )}&limit=180`,
+        4200
+      ),
+    ]);
+
+    const rawBars: OhlcBar[] = [];
+    if (bybitRes?.retCode === 0 && Array.isArray(bybitRes.result?.list) && bybitRes.result.list.length >= 10) {
+      for (const row of bybitRes.result.list) {
+        const tMs = Number(row[0]);
+        const open = Number(row[1]);
+        const high = Number(row[2]);
+        const low = Number(row[3]);
+        const close = Number(row[4]);
+        if ([tMs, open, high, low, close].every(Number.isFinite)) {
+          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
+        }
+      }
+    } else if (okxRes?.code === '0' && Array.isArray(okxRes.data) && okxRes.data.length >= 10) {
+      for (const row of okxRes.data) {
+        const tMs = Number(row[0]);
+        const open = Number(row[1]);
+        const high = Number(row[2]);
+        const low = Number(row[3]);
+        const close = Number(row[4]);
+        if ([tMs, open, high, low, close].every(Number.isFinite)) {
+          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
+        }
+      }
+    } else if (Array.isArray(binanceRes) && binanceRes.length >= 10) {
+      for (const row of binanceRes) {
+        const tMs = Number(row[0]);
+        const open = Number(row[1]);
+        const high = Number(row[2]);
+        const low = Number(row[3]);
+        const close = Number(row[4]);
+        if ([tMs, open, high, low, close].every(Number.isFinite)) {
+          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
+        }
+      }
+    }
+
+    let candles = normalizeUtcGoldBars(rawBars, spec.sec);
+    if (spotInfo && candles.length > 0) {
+      const latest = candles[candles.length - 1];
+      const basis = spotInfo.price - latest.close;
+      if (Math.abs(basis) > 0.01 && Math.abs(basis) < spotInfo.price * 0.05) {
+        candles = candles.map((bar) => ({
+          time: bar.time,
+          open: Number((bar.open + basis).toFixed(2)),
+          high: Number((bar.high + basis).toFixed(2)),
+          low: Number((bar.low + basis).toFixed(2)),
+          close: Number((bar.close + basis).toFixed(2)),
+        }));
+      }
+    }
+
+    return {
+      source: spotInfo ? `${spotInfo.provider}-cfd-utc` : 'xaut-spot-utc',
+      candles,
+    };
+  }
 
   async function fetchSpotForKlineSymbol(rawSym: string): Promise<number | null> {
     const spec = KLINE_SYMBOL_MAP[rawSym];
     if (!spec) return null;
     if (spec.spotAnchor === 'XAU') {
-      const sq = await fetchSwissquoteMid('XAU');
-      if (sq) return sq;
-      const g = await fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 2500);
-      return typeof g?.price === 'number' && g.price > 500 ? Number(g.price.toFixed(2)) : null;
+      const spotInfo = await fetchLiveGoldCfdPriceWithProvider();
+      return spotInfo?.price ?? null;
     }
     if (spec.spotAnchor === 'XAG') {
       const sq = await fetchSwissquoteMid('XAG');
@@ -1060,17 +1432,34 @@ async function startServer() {
     return null;
   }
 
-  async function fetchKlinesForSymbol(rawSym: string, rawIv: string): Promise<OhlcBar[]> {
+  async function fetchKlinesWithSourceForSymbol(
+    rawSym: string,
+    rawIv: string,
+    rangeOverride?: string
+  ): Promise<{ source: string; candles: OhlcBar[] }> {
     const spec = KLINE_SYMBOL_MAP[rawSym];
-    if (!spec || !ALLOWED_KLINE_INTERVALS.has(rawIv)) return [];
+    if (!spec || !ALLOWED_KLINE_INTERVALS.has(rawIv)) return { source: 'none', candles: [] };
 
-    const cacheKey = `${rawSym}:${rawIv}`;
+    const cacheKey = `${rawSym}:${rawIv}:${rangeOverride ?? 'default'}`;
     const cached = klineCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.candles;
+      return { source: cached.source, candles: cached.candles };
+    }
+
+    if (spec.source === 'spot-cfd') {
+      const goldResult = await fetchSpotGoldCfdCandles(rawIv);
+      if (goldResult.candles.length > 0) {
+        klineCache.set(cacheKey, {
+          expiresAt: Date.now() + 4000,
+          source: goldResult.source,
+          candles: goldResult.candles,
+        });
+      }
+      return goldResult;
     }
 
     const byTime = new Map<number, OhlcBar>();
+    const resolvedSource: string = spec.source;
 
     if (spec.source === 'binance') {
       const urls = [
@@ -1094,8 +1483,8 @@ async function startServer() {
         }
       }
     } else {
-      const yahooIv = rawIv === '4h' ? '1h' : rawIv;
-      const range =
+      const yahooIv = rawIv === '4h' || rawIv === '1h' ? '60m' : rawIv;
+      const defaultRange =
         rawIv === '1m'
           ? '1d'
           : rawIv === '5m' || rawIv === '15m'
@@ -1105,6 +1494,7 @@ async function startServer() {
               : rawIv === '4h'
                 ? '3mo'
                 : '1y';
+      const range = rangeOverride || defaultRange;
       const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(spec.ticker)}?interval=${yahooIv}&range=${range}`;
 
       const [json, liveSpot] = await Promise.all([
@@ -1115,6 +1505,7 @@ async function startServer() {
       const result = json?.chart?.result?.[0];
       const ts = result?.timestamp ?? [];
       const q = result?.indicators?.quote?.[0];
+      const rawBars: OhlcBar[] = [];
       if (q && ts.length > 0) {
         for (let i = 0; i < ts.length; i += 1) {
           const t = ts[i];
@@ -1128,29 +1519,45 @@ async function startServer() {
             typeof high === 'number' &&
             typeof low === 'number' &&
             typeof close === 'number' &&
+            open > 0 &&
+            high > 0 &&
+            low > 0 &&
+            close > 0 &&
             [t, open, high, low, close].every(Number.isFinite)
           ) {
-            const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
-            const bucketTime = Math.floor(t / ivSec) * ivSec;
-            const prev = byTime.get(bucketTime);
-            if (!prev) {
-              byTime.set(bucketTime, {
-                time: bucketTime,
-                open: Number(open.toFixed(spec.precision)),
-                high: Number(high.toFixed(spec.precision)),
-                low: Number(low.toFixed(spec.precision)),
-                close: Number(close.toFixed(spec.precision)),
-              });
-            } else {
-              prev.high = Number(Math.max(prev.high, high).toFixed(spec.precision));
-              prev.low = Number(Math.min(prev.low, low).toFixed(spec.precision));
-              prev.close = Number(close.toFixed(spec.precision));
-            }
+            rawBars.push({
+              time: t,
+              open,
+              high: Math.max(high, open, close),
+              low: Math.min(low, open, close),
+              close,
+            });
           }
         }
       }
 
-      // Calibrate futures OHLC curve (GC=F / SI=F / ES=F) to exact real-time Spot price
+      rawBars.sort((a, b) => a.time - b.time);
+
+      const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
+      for (const bar of rawBars) {
+        const bucketTime = Math.floor(bar.time / ivSec) * ivSec;
+        const prev = byTime.get(bucketTime);
+        if (!prev) {
+          byTime.set(bucketTime, {
+            time: bucketTime,
+            open: Number(bar.open.toFixed(spec.precision)),
+            high: Number(bar.high.toFixed(spec.precision)),
+            low: Number(bar.low.toFixed(spec.precision)),
+            close: Number(bar.close.toFixed(spec.precision)),
+          });
+        } else {
+          prev.high = Number(Math.max(prev.high, bar.high).toFixed(spec.precision));
+          prev.low = Number(Math.min(prev.low, bar.low).toFixed(spec.precision));
+          prev.close = Number(bar.close.toFixed(spec.precision));
+        }
+      }
+
+      // Calibrate futures OHLC curve (SI=F / ES=F) to exact real-time Spot price
       if (typeof liveSpot === 'number' && byTime.size > 0) {
         const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
         const latest = sorted[sorted.length - 1];
@@ -1176,10 +1583,20 @@ async function startServer() {
     if (candles.length > 0) {
       klineCache.set(cacheKey, {
         expiresAt: Date.now() + 4000,
+        source: resolvedSource,
         candles,
       });
     }
-    return candles;
+    return { source: resolvedSource, candles };
+  }
+
+  async function fetchKlinesForSymbol(
+    rawSym: string,
+    rawIv: string,
+    rangeOverride?: string
+  ): Promise<OhlcBar[]> {
+    const res = await fetchKlinesWithSourceForSymbol(rawSym, rawIv, rangeOverride);
+    return res.candles;
   }
 
   app.get('/api/klines', async (req, res) => {
@@ -1192,34 +1609,51 @@ async function startServer() {
       return;
     }
 
-    const candles = await fetchKlinesForSymbol(rawSym, rawIv);
+    const { source, candles } = await fetchKlinesWithSourceForSymbol(rawSym, rawIv);
     if (candles.length === 0) {
       res.status(502).json({ error: `Unable to fetch live candles for ${rawSym}.` });
       return;
     }
 
-    res.json({ symbol: rawSym, interval: rawIv, source: spec.source, candles });
+    res.json({ symbol: rawSym, interval: rawIv, source, candles });
   });
 
   app.get('/api/gold', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store, max-age=0');
-    const rawIv = typeof req.query.interval === 'string' ? req.query.interval.trim().toLowerCase() : '15m';
-    if (!ALLOWED_KLINE_INTERVALS.has(rawIv)) {
+    const rawParam = typeof req.query.interval === 'string' ? req.query.interval.trim().toLowerCase() : '15m';
+    const normalizedIv = rawParam === '60m' ? '1h' : rawParam;
+    if (!ALLOWED_KLINE_INTERVALS.has(normalizedIv)) {
       res.status(400).json({ error: 'Invalid interval.' });
       return;
     }
 
-    const candles = await fetchKlinesForSymbol('XAUUSD', rawIv);
+    const allowedRanges = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y']);
+    const rawRange = typeof req.query.range === 'string' ? req.query.range.trim().toLowerCase() : '';
+    const rangeOverride = allowedRanges.has(rawRange) ? rawRange : undefined;
+
+    const { source, candles } = await fetchKlinesWithSourceForSymbol('XAUUSD', normalizedIv, rangeOverride);
     if (candles.length === 0) {
-      res.status(502).json({ error: 'Unable to fetch live XAU/USD candles from Yahoo Finance.' });
+      res.status(502).json({ error: 'Unable to fetch live Spot Gold CFD (XAU/USD) candles.' });
       return;
     }
 
     res.json({
       symbol: 'XAUUSD',
-      interval: rawIv,
-      source: 'yahoo',
+      interval: rawParam,
+      range:
+        rangeOverride ??
+        (normalizedIv === '1m'
+          ? '1d'
+          : normalizedIv === '5m' || normalizedIv === '15m'
+            ? '5d'
+            : normalizedIv === '30m' || normalizedIv === '1h'
+              ? '1mo'
+              : normalizedIv === '4h'
+                ? '3mo'
+                : '1y'),
+      timezone: 'UTC',
+      source,
       spotPrice: candles[candles.length - 1].close,
       candles,
     });
