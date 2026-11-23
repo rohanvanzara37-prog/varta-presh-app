@@ -335,35 +335,51 @@ async function fetchCandles(
   tf: SmcTimeframe,
   signal: AbortSignal
 ): Promise<TerminalCandle[]> {
-  try {
-    const res = await fetch(`/api/klines?symbol=${symbol}&interval=${tf}`, {
-      signal,
-      cache: 'no-store',
-    });
-    if (res.ok) {
-      const json = (await res.json()) as {
-        candles?: Array<{
-          time: number;
-          open: number;
-          high: number;
-          low: number;
-          close: number;
-          volume?: number;
-        }>;
-      };
-      if (Array.isArray(json.candles) && json.candles.length >= 10) {
-        return json.candles.map((c) => ({
-          time: c.time as UTCTimestamp,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        }));
+  const endpointsToTry =
+    symbol === 'XAUUSD'
+      ? [`/api/gold?interval=${tf}`, `/api/klines?symbol=${symbol}&interval=${tf}`]
+      : [`/api/klines?symbol=${symbol}&interval=${tf}`];
+
+  for (const endpoint of endpointsToTry) {
+    try {
+      const res = await fetch(endpoint, {
+        signal,
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          candles?: Array<{
+            time: number;
+            open: number;
+            high: number;
+            low: number;
+            close: number;
+            volume?: number;
+          }>;
+        };
+        if (Array.isArray(json.candles) && json.candles.length >= 10) {
+          const byTime = new Map<number, TerminalCandle>();
+          for (const c of json.candles) {
+            if ([c.time, c.open, c.high, c.low, c.close].every(Number.isFinite)) {
+              byTime.set(c.time, {
+                time: c.time as UTCTimestamp,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+              });
+            }
+          }
+          const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+          if (sorted.length >= 10) {
+            return sorted;
+          }
+        }
       }
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
     }
-  } catch (err) {
-    if ((err as Error)?.name === 'AbortError') throw err;
   }
 
   const meta = SYMBOL_OPTIONS.find((s) => s.value === symbol);
@@ -1768,15 +1784,25 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     setDrawings([]);
     setDraftAnchor(null);
 
-    const applyIncomingCandle = (liveCandle: TerminalCandle, isClosed: boolean) => {
+    const applyIncomingCandle = (incomingCandle: TerminalCandle, isClosed: boolean) => {
       if (disposed || !candleSeriesRef.current) return;
 
       const fullArr = fullCandlesRef.current;
+      let liveCandle = incomingCandle;
       if (fullArr.length > 0) {
         const lastFull = fullArr[fullArr.length - 1];
+        if (liveCandle.time < lastFull.time) {
+          return;
+        }
         if (lastFull.time === liveCandle.time) {
+          liveCandle = {
+            ...liveCandle,
+            open: lastFull.open,
+            high: Math.max(lastFull.high, liveCandle.high),
+            low: Math.min(lastFull.low, liveCandle.low),
+          };
           fullArr[fullArr.length - 1] = liveCandle;
-        } else if (liveCandle.time > lastFull.time) {
+        } else {
           fullArr.push(liveCandle);
           if (fullArr.length > 220) fullArr.shift();
         }
@@ -1838,6 +1864,23 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       }
     };
 
+    let goldPollTimer: number | null = null;
+    const startGoldFallbackPoll = () => {
+      if (symbol !== 'XAUUSD' || goldPollTimer !== null || disposed) return;
+      goldPollTimer = window.setInterval(() => {
+        if (disposed) return;
+        fetchCandles('XAUUSD', timeframe, controller.signal)
+          .then((fresh) => {
+            if (disposed || fresh.length === 0) return;
+            const latest = fresh[fresh.length - 1];
+            applyIncomingCandle(latest, false);
+          })
+          .catch(() => {
+            // ignore poll errors
+          });
+      }, 5000);
+    };
+
     const connectBackendMarketWs = () => {
       if (disposed) return;
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1850,7 +1893,12 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         wsRef.current = ws;
 
         ws.onopen = () => {
-          if (!disposed) setStreamStatus('LIVE WS');
+          if (disposed) return;
+          setStreamStatus('LIVE WS');
+          if (goldPollTimer !== null) {
+            window.clearInterval(goldPollTimer);
+            goldPollTimer = null;
+          }
         };
 
         ws.onmessage = (event) => {
@@ -1881,7 +1929,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         ws.onclose = () => {
           if (disposed) return;
           setStreamStatus('RECONNECTING');
-          reconnectTimer = window.setTimeout(connectBackendMarketWs, 2000);
+          startGoldFallbackPoll();
+          reconnectTimer = window.setTimeout(connectBackendMarketWs, 3000);
         };
 
         ws.onerror = () => {
@@ -1889,7 +1938,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         };
       } catch {
         setStreamStatus('RECONNECTING');
-        reconnectTimer = window.setTimeout(connectBackendMarketWs, 2500);
+        startGoldFallbackPoll();
+        reconnectTimer = window.setTimeout(connectBackendMarketWs, 3500);
       }
     };
 
@@ -1976,6 +2026,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       disposed = true;
       controller.abort();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (goldPollTimer !== null) window.clearInterval(goldPollTimer);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

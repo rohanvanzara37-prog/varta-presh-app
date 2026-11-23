@@ -169,6 +169,7 @@ export default function App() {
   // Firebase Auth & Push Notifications
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => getPushPermission());
   const [pushEnabled, setPushEnabled] = useState<boolean>(() =>
     loadJson<boolean>(STORAGE_KEYS.pushEnabled, true)
@@ -393,10 +394,39 @@ export default function App() {
   };
 
   const handleGoogleSignIn = async () => {
+    if (isSigningIn) return;
+    setIsSigningIn(true);
     try {
       await signInWithPopup(auth, googleProvider);
+      setAlertBanner((prev) => (prev?.title === 'Sign-In Notice' ? null : prev));
     } catch (err) {
-      console.error('Google Sign-In failed:', err);
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code)
+          : '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        setAlertBanner({
+          title: 'Sign-In Notice',
+          body: 'Sign-in popup was blocked by your browser. Please allow popups and try again.',
+        });
+        return;
+      }
+      if (code === 'auth/unauthorized-domain') {
+        setAlertBanner({
+          title: 'Sign-In Notice',
+          body: 'This domain is not authorized in Firebase Authentication settings.',
+        });
+        return;
+      }
+      setAlertBanner({
+        title: 'Sign-In Notice',
+        body: err instanceof Error ? err.message : 'Unable to sign in with Google right now.',
+      });
+    } finally {
+      setIsSigningIn(false);
     }
   };
 
@@ -506,6 +536,7 @@ export default function App() {
         pushEnabled={pushEnabled}
         onTogglePush={handleTogglePush}
         firebaseUser={firebaseUser}
+        isSigningIn={isSigningIn}
         onSignIn={handleGoogleSignIn}
         onSignOut={() => signOut(auth)}
       />

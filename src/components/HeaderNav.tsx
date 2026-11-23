@@ -13,6 +13,7 @@ interface HeaderNavProps {
   pushEnabled: boolean;
   onTogglePush: () => void;
   firebaseUser: User | null;
+  isSigningIn?: boolean;
   onSignIn: () => void;
   onSignOut: () => void;
 }
@@ -30,6 +31,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   pushEnabled,
   onTogglePush,
   firebaseUser,
+  isSigningIn = false,
   onSignIn,
   onSignOut,
 }) => {
@@ -121,11 +123,12 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           ) : (
             <button
               type="button"
+              disabled={isSigningIn}
               onClick={onSignIn}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#F0B90B] px-3 text-xs font-bold text-[#0B0E11] cursor-pointer whitespace-nowrap"
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#F0B90B] disabled:opacity-60 px-3 text-xs font-bold text-[#0B0E11] cursor-pointer whitespace-nowrap"
             >
               <LogIn className="h-3.5 w-3.5" />
-              <span>Sync</span>
+              <span>{isSigningIn ? 'Signing in...' : 'Sync'}</span>
             </button>
           )}
         </div>

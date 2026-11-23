@@ -1096,13 +1096,15 @@ async function startServer() {
     } else {
       const yahooIv = rawIv === '4h' ? '1h' : rawIv;
       const range =
-        rawIv === '1m' || rawIv === '5m' || rawIv === '15m'
-          ? '5d'
-          : rawIv === '30m' || rawIv === '1h'
-            ? '1mo'
-            : rawIv === '4h'
-              ? '3mo'
-              : '1y';
+        rawIv === '1m'
+          ? '1d'
+          : rawIv === '5m' || rawIv === '15m'
+            ? '5d'
+            : rawIv === '30m' || rawIv === '1h'
+              ? '1mo'
+              : rawIv === '4h'
+                ? '3mo'
+                : '1y';
       const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(spec.ticker)}?interval=${yahooIv}&range=${range}`;
 
       const [json, liveSpot] = await Promise.all([
@@ -1128,7 +1130,8 @@ async function startServer() {
             typeof close === 'number' &&
             [t, open, high, low, close].every(Number.isFinite)
           ) {
-            const bucketTime = rawIv === '4h' ? Math.floor(t / 14400) * 14400 : rawIv === '1d' ? Math.floor(t / 86400) * 86400 : t;
+            const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
+            const bucketTime = Math.floor(t / ivSec) * ivSec;
             const prev = byTime.get(bucketTime);
             if (!prev) {
               byTime.set(bucketTime, {
@@ -1196,6 +1199,30 @@ async function startServer() {
     }
 
     res.json({ symbol: rawSym, interval: rawIv, source: spec.source, candles });
+  });
+
+  app.get('/api/gold', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    const rawIv = typeof req.query.interval === 'string' ? req.query.interval.trim().toLowerCase() : '15m';
+    if (!ALLOWED_KLINE_INTERVALS.has(rawIv)) {
+      res.status(400).json({ error: 'Invalid interval.' });
+      return;
+    }
+
+    const candles = await fetchKlinesForSymbol('XAUUSD', rawIv);
+    if (candles.length === 0) {
+      res.status(502).json({ error: 'Unable to fetch live XAU/USD candles from Yahoo Finance.' });
+      return;
+    }
+
+    res.json({
+      symbol: 'XAUUSD',
+      interval: rawIv,
+      source: 'yahoo',
+      spotPrice: candles[candles.length - 1].close,
+      candles,
+    });
   });
 
   app.get('/api/news-ticker', async (req, res) => {
