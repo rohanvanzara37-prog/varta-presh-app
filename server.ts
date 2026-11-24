@@ -998,17 +998,49 @@ async function startServer() {
 
   const KLINE_SYMBOL_MAP: Record<
     string,
-    { source: 'yahoo' | 'binance' | 'spot-cfd'; ticker: string; spotAnchor?: 'XAU' | 'XAG' | 'US500'; precision: number }
+    {
+      source: 'yahoo' | 'binance' | 'spot-cfd';
+      ticker: string;
+      dailyTicker?: string;
+      spotAnchor?: 'XAU' | 'XAG' | 'US500';
+      precision: number;
+      inceptionLabel: string;
+    }
   > = {
-    XAUUSD: { source: 'spot-cfd', ticker: 'XAU/USD', spotAnchor: 'XAU', precision: 2 },
-    XAGUSD: { source: 'yahoo', ticker: 'SI=F', spotAnchor: 'XAG', precision: 2 },
-    US500: { source: 'yahoo', ticker: 'ES=F', spotAnchor: 'US500', precision: 2 },
-    USOIL: { source: 'yahoo', ticker: 'CL=F', precision: 2 },
-    BTCUSDT: { source: 'binance', ticker: 'BTCUSDT', precision: 2 },
-    ETHUSDT: { source: 'binance', ticker: 'ETHUSDT', precision: 2 },
-    SOLUSDT: { source: 'binance', ticker: 'SOLUSDT', precision: 2 },
-    BNBUSDT: { source: 'binance', ticker: 'BNBUSDT', precision: 2 },
-    XRPUSDT: { source: 'binance', ticker: 'XRPUSDT', precision: 4 },
+    XAUUSD: {
+      source: 'spot-cfd',
+      ticker: 'XAU/USD',
+      dailyTicker: 'GC=F',
+      spotAnchor: 'XAU',
+      precision: 2,
+      inceptionLabel: 'Aug 2000',
+    },
+    XAGUSD: {
+      source: 'yahoo',
+      ticker: 'SI=F',
+      spotAnchor: 'XAG',
+      precision: 2,
+      inceptionLabel: 'Aug 2000',
+    },
+    US500: {
+      source: 'yahoo',
+      ticker: 'ES=F',
+      dailyTicker: '^GSPC',
+      spotAnchor: 'US500',
+      precision: 2,
+      inceptionLabel: 'Dec 1927',
+    },
+    USOIL: {
+      source: 'yahoo',
+      ticker: 'CL=F',
+      precision: 2,
+      inceptionLabel: 'Aug 2000',
+    },
+    BTCUSDT: { source: 'binance', ticker: 'BTCUSDT', precision: 2, inceptionLabel: 'Aug 2017' },
+    ETHUSDT: { source: 'binance', ticker: 'ETHUSDT', precision: 2, inceptionLabel: 'Aug 2017' },
+    SOLUSDT: { source: 'binance', ticker: 'SOLUSDT', precision: 2, inceptionLabel: 'Aug 2020' },
+    BNBUSDT: { source: 'binance', ticker: 'BNBUSDT', precision: 2, inceptionLabel: 'Nov 2017' },
+    XRPUSDT: { source: 'binance', ticker: 'XRPUSDT', precision: 4, inceptionLabel: 'May 2018' },
   };
   const INTERVAL_SECONDS: Record<string, number> = {
     '1m': 60,
@@ -1018,10 +1050,14 @@ async function startServer() {
     '1h': 3600,
     '4h': 14400,
     '1d': 86400,
+    '1w': 604800,
   };
   const ALLOWED_KLINE_INTERVALS = new Set(Object.keys(INTERVAL_SECONDS));
-  type OhlcBar = { time: number; open: number; high: number; low: number; close: number };
-  const klineCache = new Map<string, { expiresAt: number; source: string; candles: OhlcBar[] }>();
+  type OhlcBar = { time: number; open: number; high: number; low: number; close: number; volume?: number };
+  const klineCache = new Map<
+    string,
+    { expiresAt: number; source: string; candles: OhlcBar[]; hasMore: boolean; inceptionDate?: string }
+  >();
 
   const GOLD_CFD_INTERVAL_MAP: Record<
     string,
@@ -1093,10 +1129,19 @@ async function startServer() {
       sec: 86400,
       tdInterval: '1day',
       fhResolution: 'D',
-      fhLookbackSec: 750 * 86400,
+      fhLookbackSec: 1800 * 86400,
       bybitInterval: 'D',
       okxBar: '1Dutc',
       binanceInterval: '1d',
+    },
+    '1w': {
+      sec: 604800,
+      tdInterval: '1week',
+      fhResolution: 'W',
+      fhLookbackSec: 3650 * 86400,
+      bybitInterval: 'W',
+      okxBar: '1Wutc',
+      binanceInterval: '1w',
     },
   };
 
@@ -1122,7 +1167,7 @@ async function startServer() {
     return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
   }
 
-  function normalizeUtcGoldBars(rawBars: OhlcBar[], intervalSec: number): OhlcBar[] {
+  function normalizeUtcGoldBars(rawBars: OhlcBar[], intervalSec: number, maxBars = 30_000): OhlcBar[] {
     const sortedRaw = rawBars
       .filter(
         (b) =>
@@ -1152,17 +1197,22 @@ async function startServer() {
           high: Number(clampedHigh.toFixed(2)),
           low: Number(clampedLow.toFixed(2)),
           close: Number(bar.close.toFixed(2)),
+          ...(typeof bar.volume === 'number' && Number.isFinite(bar.volume)
+            ? { volume: Number(bar.volume.toFixed(2)) }
+            : {}),
         });
       } else {
         existing.high = Number(Math.max(existing.high, clampedHigh).toFixed(2));
         existing.low = Number(Math.min(existing.low, clampedLow).toFixed(2));
         existing.close = Number(bar.close.toFixed(2));
+        if (typeof bar.volume === 'number' && Number.isFinite(bar.volume)) {
+          existing.volume = Number(((existing.volume ?? 0) + bar.volume).toFixed(2));
+        }
       }
     }
 
-    return Array.from(byBucket.values())
-      .sort((a, b) => a.time - b.time)
-      .slice(-500);
+    const out = Array.from(byBucket.values()).sort((a, b) => a.time - b.time);
+    return out.length > maxBars ? out.slice(-maxBars) : out;
   }
 
   async function fetchTradingViewCfdGoldSpot(): Promise<number | null> {
@@ -1201,17 +1251,190 @@ async function startServer() {
     return null;
   }
 
+  async function fetchYahooHistoricalBars(
+    ticker: string,
+    rawIv: string,
+    precision: number,
+    options?: { inception?: boolean }
+  ): Promise<OhlcBar[]> {
+    const yahooIv =
+      rawIv === '1w'
+        ? '1wk'
+        : rawIv === '1d'
+          ? '1d'
+          : rawIv === '4h' || rawIv === '1h'
+            ? '60m'
+            : rawIv;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    let url: string;
+    if (rawIv === '1d' || rawIv === '1w' || options?.inception) {
+      const startSec = ticker === '^GSPC' ? -2208988800 : 0;
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yahooIv}&period1=${startSec}&period2=${nowSec}`;
+    } else {
+      const maxRange =
+        rawIv === '1m'
+          ? '7d'
+          : rawIv === '5m' || rawIv === '15m' || rawIv === '30m'
+            ? '60d'
+            : '2y';
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yahooIv}&range=${maxRange}`;
+    }
+
+    const json = await fetchJsonWithTimeout<YahooChartResponse>(url, 8000, {
+      'User-Agent': 'Mozilla/5.0',
+    });
+
+    const result = json?.chart?.result?.[0];
+    const ts = result?.timestamp ?? [];
+    const q = result?.indicators?.quote?.[0];
+    const rawBars: OhlcBar[] = [];
+    if (q && ts.length > 0) {
+      for (let i = 0; i < ts.length; i += 1) {
+        const t = ts[i];
+        const open = q.open?.[i];
+        const high = q.high?.[i];
+        const low = q.low?.[i];
+        const close = q.close?.[i];
+        const vol = q.volume?.[i];
+        if (
+          typeof t === 'number' &&
+          typeof open === 'number' &&
+          typeof high === 'number' &&
+          typeof low === 'number' &&
+          typeof close === 'number' &&
+          open > 0 &&
+          high > 0 &&
+          low > 0 &&
+          close > 0 &&
+          [t, open, high, low, close].every(Number.isFinite)
+        ) {
+          rawBars.push({
+            time: t,
+            open,
+            high: Math.max(high, open, close),
+            low: Math.min(low, open, close),
+            close,
+            ...(typeof vol === 'number' && Number.isFinite(vol) ? { volume: vol } : {}),
+          });
+        }
+      }
+    }
+
+    rawBars.sort((a, b) => a.time - b.time);
+    const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
+    const byTime = new Map<number, OhlcBar>();
+    for (const bar of rawBars) {
+      // Keep daily/weekly timestamps clean at UTC day boundary
+      const bucketTime =
+        rawIv === '1d' || rawIv === '1w'
+          ? Math.floor(bar.time / 86400) * 86400
+          : Math.floor(bar.time / ivSec) * ivSec;
+      const bucket = rawIv === '1w' ? Math.floor(bucketTime / 604800) * 604800 : bucketTime;
+      const prev = byTime.get(bucket);
+      if (!prev) {
+        byTime.set(bucket, {
+          time: bucket,
+          open: Number(bar.open.toFixed(precision)),
+          high: Number(bar.high.toFixed(precision)),
+          low: Number(bar.low.toFixed(precision)),
+          close: Number(bar.close.toFixed(precision)),
+          ...(bar.volume !== undefined ? { volume: bar.volume } : {}),
+        });
+      } else {
+        prev.high = Number(Math.max(prev.high, bar.high).toFixed(precision));
+        prev.low = Number(Math.min(prev.low, bar.low).toFixed(precision));
+        prev.close = Number(bar.close.toFixed(precision));
+        if (bar.volume !== undefined) {
+          prev.volume = (prev.volume ?? 0) + bar.volume;
+        }
+      }
+    }
+    return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+  }
+
   async function fetchSpotGoldCfdCandles(
-    normalizedIv: string
-  ): Promise<{ source: string; candles: OhlcBar[] }> {
+    normalizedIv: string,
+    opts?: { before?: number; limit?: number }
+  ): Promise<{ source: string; candles: OhlcBar[]; hasMore: boolean; inceptionDate?: string }> {
     const spec = GOLD_CFD_INTERVAL_MAP[normalizedIv];
-    if (!spec) return { source: 'spot-cfd', candles: [] };
+    if (!spec) return { source: 'spot-cfd', candles: [], hasMore: false };
+
+    const before = opts?.before;
+    const reqLimit = Math.min(1000, Math.max(50, opts?.limit ?? 1000));
+
+    // Daily (1d) & Weekly (1w): Full COMEX/Spot Gold archive back to Aug 2000 (GC=F) + live CFD spot on latest bar
+    if (normalizedIv === '1d' || normalizedIv === '1w') {
+      const [yahooBars, spotInfo] = await Promise.all([
+        fetchYahooHistoricalBars('GC=F', normalizedIv, 2, { inception: true }),
+        !before ? fetchLiveGoldCfdPriceWithProvider() : Promise.resolve(null),
+      ]);
+
+      if (yahooBars.length >= 10) {
+        const candles = yahooBars.map((b) => ({ ...b }));
+        if (spotInfo && candles.length > 0 && !before) {
+          const last = candles[candles.length - 1];
+          const basisCheck = Math.abs(spotInfo.price - last.close);
+          if (basisCheck < spotInfo.price * 0.05) {
+            last.close = spotInfo.price;
+            last.high = Number(Math.max(last.high, spotInfo.price).toFixed(2));
+            last.low = Number(Math.min(last.low, spotInfo.price).toFixed(2));
+          }
+        }
+        const filtered = before ? candles.filter((c) => c.time < before) : candles;
+        return {
+          source: spotInfo ? `yahoo-gcf+${spotInfo.provider}` : 'yahoo-gcf-inception',
+          candles: filtered,
+          hasMore: false,
+          inceptionDate: '2000-08-30',
+        };
+      }
+    }
+
+    // Paginated historical intraday lookback via continuous 24/7 PAXG/USDT gold-backed feed (Aug 2020 -> Live)
+    if (before) {
+      const endMs = (before - 1) * 1000;
+      const binanceHistUrls = [
+        `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
+          spec.binanceInterval
+        )}&limit=${reqLimit}&endTime=${endMs}`,
+        `https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
+          spec.binanceInterval
+        )}&limit=${reqLimit}&endTime=${endMs}`,
+      ];
+
+      for (const u of binanceHistUrls) {
+        const rows = await fetchJsonWithTimeout<Array<[number, string, string, string, string, string?]>>(u, 5500);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const rawBars: OhlcBar[] = [];
+          for (const row of rows) {
+            const tSec = Math.floor(Number(row[0]) / 1000);
+            const open = Number(row[1]);
+            const high = Number(row[2]);
+            const low = Number(row[3]);
+            const close = Number(row[4]);
+            const volume = row[5] !== undefined ? Number(row[5]) : undefined;
+            if (tSec < before && [tSec, open, high, low, close].every(Number.isFinite)) {
+              rawBars.push({ time: tSec, open, high, low, close, volume });
+            }
+          }
+          const candles = normalizeUtcGoldBars(rawBars, spec.sec, 2000);
+          return {
+            source: 'paxg-gold-archive',
+            candles,
+            hasMore: rows.length >= reqLimit,
+            inceptionDate: '2020-08-27',
+          };
+        }
+      }
+      return { source: 'paxg-gold-archive', candles: [], hasMore: false, inceptionDate: '2020-08-27' };
+    }
 
     const tdKey = process.env.TWELVEDATA_API_KEY?.trim();
     if (tdKey) {
       const tdUrl = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=${encodeURIComponent(
         spec.tdInterval
-      )}&outputsize=500&timezone=UTC&apikey=${encodeURIComponent(tdKey)}`;
+      )}&outputsize=1000&timezone=UTC&apikey=${encodeURIComponent(tdKey)}`;
       const tdJson = await fetchJsonWithTimeout<{
         status?: string;
         values?: Array<{ datetime?: string; open?: string; high?: string; low?: string; close?: string }>;
@@ -1228,9 +1451,9 @@ async function startServer() {
             rawBars.push({ time: t, open, high, low, close });
           }
         }
-        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
+        const candles = normalizeUtcGoldBars(rawBars, spec.sec, 2000);
         if (candles.length >= 10) {
-          return { source: 'twelvedata-xauusd', candles };
+          return { source: 'twelvedata-xauusd', candles, hasMore: true };
         }
       }
     }
@@ -1270,130 +1493,88 @@ async function startServer() {
             rawBars.push({ time: t, open, high, low, close });
           }
         }
-        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
+        const candles = normalizeUtcGoldBars(rawBars, spec.sec, 2000);
         if (candles.length >= 10) {
-          return { source: 'finnhub-oanda-xauusd', candles };
+          return { source: 'finnhub-oanda-xauusd', candles, hasMore: true };
         }
       }
     }
 
-    const goldApiKey = (process.env.GOLDAPI_KEY ?? process.env.GOLD_API_KEY)?.trim();
-    if (goldApiKey) {
-      const gaUrl = `https://api.gold-api.com/history?symbol=XAU&interval=${encodeURIComponent(normalizedIv)}`;
-      const gaJson = await fetchJsonWithTimeout<
-        Array<{
-          timestamp?: number | string;
-          time?: number | string;
-          date?: string;
-          open?: number;
-          high?: number;
-          low?: number;
-          close?: number;
-          price?: number;
-        }>
-      >(gaUrl, 4500, { 'x-api-key': goldApiKey });
-      if (Array.isArray(gaJson) && gaJson.length >= 10) {
-        const rawBars: OhlcBar[] = [];
-        for (const row of gaJson) {
-          const t = parseUtcTimestampSec(row.timestamp ?? row.time ?? row.date);
-          const close = Number(row.close ?? row.price);
-          const open = Number(row.open ?? close);
-          const high = Number(row.high ?? close);
-          const low = Number(row.low ?? close);
-          if (t !== null && [open, high, low, close].every(Number.isFinite)) {
-            rawBars.push({ time: t, open, high, low, close });
-          }
-        }
-        const candles = normalizeUtcGoldBars(rawBars, spec.sec);
-        if (candles.length >= 10) {
-          return { source: 'goldapi-xauusd', candles };
-        }
-      }
-    }
-
-    // Keyless Spot Gold CFD fallback: live Swissquote/OANDA XAU/USD CFD spot + 24/7 UTC-aligned bullion OHLC
-    const [spotInfo, bybitRes, okxRes, binanceRes] = await Promise.all([
+    // Continuous Keyless Spot Gold CFD curve: PAXGUSDT (goes back to Aug 2020) + Swissquote/OANDA live spot taper on active session
+    const [spotInfo, paxgRes, bybitRes] = await Promise.all([
       fetchLiveGoldCfdPriceWithProvider(),
+      fetchJsonWithTimeout<Array<[number, string, string, string, string, string?]>>(
+        `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
+          spec.binanceInterval
+        )}&limit=1000`,
+        4800
+      ),
       fetchJsonWithTimeout<{
         retCode?: number;
-        result?: { list?: Array<[string, string, string, string, string]> };
+        result?: { list?: Array<[string, string, string, string, string, string?]> };
       }>(
         `https://api.bybit.com/v5/market/kline?category=spot&symbol=XAUTUSDT&interval=${encodeURIComponent(
           spec.bybitInterval
-        )}&limit=500`,
-        4200
-      ),
-      fetchJsonWithTimeout<{
-        code?: string;
-        data?: Array<[string, string, string, string, string]>;
-      }>(
-        `https://www.okx.com/api/v5/market/candles?instId=XAUT-USDT&bar=${encodeURIComponent(
-          spec.okxBar
-        )}&limit=300`,
-        4200
-      ),
-      fetchJsonWithTimeout<Array<[number, string, string, string, string]>>(
-        `https://data-api.binance.vision/api/v3/klines?symbol=PAXGUSDT&interval=${encodeURIComponent(
-          spec.binanceInterval
-        )}&limit=500`,
+        )}&limit=1000`,
         4200
       ),
     ]);
 
     const rawBars: OhlcBar[] = [];
-    if (bybitRes?.retCode === 0 && Array.isArray(bybitRes.result?.list) && bybitRes.result.list.length >= 10) {
+    if (Array.isArray(paxgRes) && paxgRes.length >= 10) {
+      for (const row of paxgRes) {
+        const tMs = Number(row[0]);
+        const open = Number(row[1]);
+        const high = Number(row[2]);
+        const low = Number(row[3]);
+        const close = Number(row[4]);
+        const volume = row[5] !== undefined ? Number(row[5]) : undefined;
+        if ([tMs, open, high, low, close].every(Number.isFinite)) {
+          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close, volume });
+        }
+      }
+    } else if (bybitRes?.retCode === 0 && Array.isArray(bybitRes.result?.list) && bybitRes.result.list.length >= 10) {
       for (const row of bybitRes.result.list) {
         const tMs = Number(row[0]);
         const open = Number(row[1]);
         const high = Number(row[2]);
         const low = Number(row[3]);
         const close = Number(row[4]);
+        const volume = row[5] !== undefined ? Number(row[5]) : undefined;
         if ([tMs, open, high, low, close].every(Number.isFinite)) {
-          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
-        }
-      }
-    } else if (okxRes?.code === '0' && Array.isArray(okxRes.data) && okxRes.data.length >= 10) {
-      for (const row of okxRes.data) {
-        const tMs = Number(row[0]);
-        const open = Number(row[1]);
-        const high = Number(row[2]);
-        const low = Number(row[3]);
-        const close = Number(row[4]);
-        if ([tMs, open, high, low, close].every(Number.isFinite)) {
-          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
-        }
-      }
-    } else if (Array.isArray(binanceRes) && binanceRes.length >= 10) {
-      for (const row of binanceRes) {
-        const tMs = Number(row[0]);
-        const open = Number(row[1]);
-        const high = Number(row[2]);
-        const low = Number(row[3]);
-        const close = Number(row[4]);
-        if ([tMs, open, high, low, close].every(Number.isFinite)) {
-          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close });
+          rawBars.push({ time: Math.floor(tMs / 1000), open, high, low, close, volume });
         }
       }
     }
 
-    let candles = normalizeUtcGoldBars(rawBars, spec.sec);
+    let candles = normalizeUtcGoldBars(rawBars, spec.sec, 1200);
+    // Smoothly align only the most recent 24 bars onto exact Swissquote/OANDA XAU/USD spot without distorting older history
     if (spotInfo && candles.length > 0) {
       const latest = candles[candles.length - 1];
       const basis = spotInfo.price - latest.close;
       if (Math.abs(basis) > 0.01 && Math.abs(basis) < spotInfo.price * 0.05) {
-        candles = candles.map((bar) => ({
-          time: bar.time,
-          open: Number((bar.open + basis).toFixed(2)),
-          high: Number((bar.high + basis).toFixed(2)),
-          low: Number((bar.low + basis).toFixed(2)),
-          close: Number((bar.close + basis).toFixed(2)),
-        }));
+        const taperWindow = Math.min(24, candles.length);
+        const startTaperIdx = candles.length - taperWindow;
+        candles = candles.map((bar, idx) => {
+          if (idx < startTaperIdx) return bar;
+          const weight = (idx - startTaperIdx + 1) / taperWindow;
+          const shift = basis * weight;
+          return {
+            ...bar,
+            open: Number((bar.open + shift).toFixed(2)),
+            high: Number((bar.high + shift).toFixed(2)),
+            low: Number((bar.low + shift).toFixed(2)),
+            close: Number((bar.close + shift).toFixed(2)),
+          };
+        });
       }
     }
 
     return {
-      source: spotInfo ? `${spotInfo.provider}-cfd-utc` : 'xaut-spot-utc',
+      source: spotInfo ? `${spotInfo.provider}-cfd-utc` : 'paxg-spot-utc',
       candles,
+      hasMore: true,
+      inceptionDate: '2020-08-27',
     };
   }
 
@@ -1435,24 +1616,35 @@ async function startServer() {
   async function fetchKlinesWithSourceForSymbol(
     rawSym: string,
     rawIv: string,
-    rangeOverride?: string
-  ): Promise<{ source: string; candles: OhlcBar[] }> {
+    opts?: { rangeOverride?: string; before?: number; limit?: number }
+  ): Promise<{ source: string; candles: OhlcBar[]; hasMore: boolean; inceptionDate?: string }> {
     const spec = KLINE_SYMBOL_MAP[rawSym];
-    if (!spec || !ALLOWED_KLINE_INTERVALS.has(rawIv)) return { source: 'none', candles: [] };
+    if (!spec || !ALLOWED_KLINE_INTERVALS.has(rawIv)) {
+      return { source: 'none', candles: [], hasMore: false };
+    }
 
-    const cacheKey = `${rawSym}:${rawIv}:${rangeOverride ?? 'default'}`;
+    const before = opts?.before && Number.isFinite(opts.before) && opts.before > 0 ? Math.floor(opts.before) : undefined;
+    const limit = Math.min(1000, Math.max(50, opts?.limit ?? 1000));
+    const cacheKey = `${rawSym}:${rawIv}:${before ?? 'latest'}:${limit}:${opts?.rangeOverride ?? 'default'}`;
     const cached = klineCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return { source: cached.source, candles: cached.candles };
+      return {
+        source: cached.source,
+        candles: cached.candles,
+        hasMore: cached.hasMore,
+        inceptionDate: cached.inceptionDate,
+      };
     }
 
     if (spec.source === 'spot-cfd') {
-      const goldResult = await fetchSpotGoldCfdCandles(rawIv);
+      const goldResult = await fetchSpotGoldCfdCandles(rawIv, { before, limit });
       if (goldResult.candles.length > 0) {
         klineCache.set(cacheKey, {
-          expiresAt: Date.now() + 4000,
+          expiresAt: Date.now() + (before ? 300_000 : 4000),
           source: goldResult.source,
           candles: goldResult.candles,
+          hasMore: goldResult.hasMore,
+          inceptionDate: goldResult.inceptionDate,
         });
       }
       return goldResult;
@@ -1460,134 +1652,147 @@ async function startServer() {
 
     const byTime = new Map<number, OhlcBar>();
     const resolvedSource: string = spec.source;
+    let hasMore = false;
+    let inceptionDate: string | undefined;
 
     if (spec.source === 'binance') {
-      const urls = [
-        `https://api.binance.com/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=500`,
-        `https://data-api.binance.vision/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=500`,
-      ];
-      for (const u of urls) {
-        const rows = await fetchJsonWithTimeout<Array<[number, string, string, string, string]>>(u, 4500);
-        if (Array.isArray(rows) && rows.length >= 10) {
-          for (const d of rows) {
-            const t = Math.floor(d[0] / 1000);
-            const open = Number(d[1]);
-            const high = Number(d[2]);
-            const low = Number(d[3]);
-            const close = Number(d[4]);
-            if ([t, open, high, low, close].every(Number.isFinite)) {
-              byTime.set(t, { time: t, open, high, low, close });
+      const fetchBinancePage = async (endTimeMs?: number): Promise<OhlcBar[]> => {
+        const endQs = endTimeMs !== undefined ? `&endTime=${endTimeMs}` : '';
+        const urls = [
+          `https://api.binance.com/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=1000${endQs}`,
+          `https://data-api.binance.vision/api/v3/klines?symbol=${spec.ticker}&interval=${rawIv}&limit=1000${endQs}`,
+        ];
+        for (const u of urls) {
+          const rows = await fetchJsonWithTimeout<Array<[number, string, string, string, string, string?]>>(u, 5500);
+          if (Array.isArray(rows)) {
+            const parsed: OhlcBar[] = [];
+            for (const d of rows) {
+              const t = Math.floor(d[0] / 1000);
+              const open = Number(d[1]);
+              const high = Number(d[2]);
+              const low = Number(d[3]);
+              const close = Number(d[4]);
+              const volume = d[5] !== undefined ? Number(d[5]) : undefined;
+              if ([t, open, high, low, close].every(Number.isFinite)) {
+                parsed.push({
+                  time: t,
+                  open,
+                  high,
+                  low,
+                  close,
+                  ...(volume !== undefined && Number.isFinite(volume) ? { volume } : {}),
+                });
+              }
+            }
+            return parsed;
+          }
+        }
+        return [];
+      };
+
+      if (!before && (rawIv === '1d' || rawIv === '1w')) {
+        // Fetch complete inception-to-live history for Daily & Weekly crypto (2017 -> Live)
+        let cursorEndMs: number | undefined;
+        for (let page = 0; page < 6; page += 1) {
+          const batch = await fetchBinancePage(cursorEndMs);
+          if (batch.length === 0) break;
+          for (const b of batch) byTime.set(b.time, b);
+          if (batch.length < 1000) break;
+          cursorEndMs = batch[0].time * 1000 - 1;
+        }
+        hasMore = false;
+      } else {
+        const endMs = before ? (before - 1) * 1000 : undefined;
+        const batch = await fetchBinancePage(endMs);
+        for (const b of batch) {
+          if (!before || b.time < before) byTime.set(b.time, b);
+        }
+        hasMore = batch.length >= 1000;
+      }
+      inceptionDate = spec.inceptionLabel;
+    } else {
+      // Yahoo Finance (XAGUSD, US500, USOIL): cache full multi-year/inception archive and serve full 1d/1w or paginated intraday slices
+      const yahooTicker = (rawIv === '1d' || rawIv === '1w') && spec.dailyTicker ? spec.dailyTicker : spec.ticker;
+      const fullCacheKey = `${rawSym}:${rawIv}:yahoo-full`;
+      let fullYahoo = klineCache.get(fullCacheKey);
+
+      if (!fullYahoo || fullYahoo.expiresAt <= Date.now()) {
+        const [bars, liveSpot] = await Promise.all([
+          fetchYahooHistoricalBars(yahooTicker, rawIv, spec.precision, {
+            inception: rawIv === '1d' || rawIv === '1w',
+          }),
+          fetchSpotForKlineSymbol(rawSym),
+        ]);
+
+        if (typeof liveSpot === 'number' && bars.length > 0) {
+          const latest = bars[bars.length - 1];
+          const diff = Math.abs(liveSpot - latest.close);
+          if (diff < liveSpot * 0.05) {
+            if (rawIv === '1d' || rawIv === '1w') {
+              // Keep decades of historical daily/weekly prices pure; update only today's active candle
+              latest.close = liveSpot;
+              latest.high = Number(Math.max(latest.high, liveSpot).toFixed(spec.precision));
+              latest.low = Number(Math.min(latest.low, liveSpot).toFixed(spec.precision));
+            } else {
+              // Smoothly align only the most recent 24 intraday bars onto live Spot
+              const basis = liveSpot - latest.close;
+              const taperWindow = Math.min(24, bars.length);
+              const startTaperIdx = bars.length - taperWindow;
+              for (let idx = startTaperIdx; idx < bars.length; idx += 1) {
+                const weight = (idx - startTaperIdx + 1) / taperWindow;
+                const shift = basis * weight;
+                bars[idx] = {
+                  ...bars[idx],
+                  open: Number((bars[idx].open + shift).toFixed(spec.precision)),
+                  high: Number((bars[idx].high + shift).toFixed(spec.precision)),
+                  low: Number((bars[idx].low + shift).toFixed(spec.precision)),
+                  close: Number((bars[idx].close + shift).toFixed(spec.precision)),
+                };
+              }
             }
           }
-          break;
         }
-      }
-    } else {
-      const yahooIv = rawIv === '4h' || rawIv === '1h' ? '60m' : rawIv;
-      const defaultRange =
-        rawIv === '1m'
-          ? '5d'
-          : rawIv === '5m' || rawIv === '15m' || rawIv === '30m'
-            ? '1mo'
-            : rawIv === '1h'
-              ? '6mo'
-              : rawIv === '4h'
-                ? '1y'
-                : '2y';
-      const range = rangeOverride || defaultRange;
-      const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(spec.ticker)}?interval=${yahooIv}&range=${range}`;
 
-      const [json, liveSpot] = await Promise.all([
-        fetchJsonWithTimeout<YahooChartResponse>(u, 5000, { 'User-Agent': 'Mozilla/5.0' }),
-        fetchSpotForKlineSymbol(rawSym),
-      ]);
-
-      const result = json?.chart?.result?.[0];
-      const ts = result?.timestamp ?? [];
-      const q = result?.indicators?.quote?.[0];
-      const rawBars: OhlcBar[] = [];
-      if (q && ts.length > 0) {
-        for (let i = 0; i < ts.length; i += 1) {
-          const t = ts[i];
-          const open = q.open?.[i];
-          const high = q.high?.[i];
-          const low = q.low?.[i];
-          const close = q.close?.[i];
-          if (
-            typeof t === 'number' &&
-            typeof open === 'number' &&
-            typeof high === 'number' &&
-            typeof low === 'number' &&
-            typeof close === 'number' &&
-            open > 0 &&
-            high > 0 &&
-            low > 0 &&
-            close > 0 &&
-            [t, open, high, low, close].every(Number.isFinite)
-          ) {
-            rawBars.push({
-              time: t,
-              open,
-              high: Math.max(high, open, close),
-              low: Math.min(low, open, close),
-              close,
-            });
-          }
+        if (bars.length > 0) {
+          fullYahoo = {
+            expiresAt: Date.now() + (rawIv === '1d' || rawIv === '1w' ? 120_000 : 20_000),
+            source: resolvedSource,
+            candles: bars,
+            hasMore: false,
+            inceptionDate: spec.inceptionLabel,
+          };
+          klineCache.set(fullCacheKey, fullYahoo);
         }
       }
 
-      rawBars.sort((a, b) => a.time - b.time);
+      const allBars = fullYahoo?.candles ?? [];
+      inceptionDate = spec.inceptionLabel;
 
-      const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
-      for (const bar of rawBars) {
-        const bucketTime = Math.floor(bar.time / ivSec) * ivSec;
-        const prev = byTime.get(bucketTime);
-        if (!prev) {
-          byTime.set(bucketTime, {
-            time: bucketTime,
-            open: Number(bar.open.toFixed(spec.precision)),
-            high: Number(bar.high.toFixed(spec.precision)),
-            low: Number(bar.low.toFixed(spec.precision)),
-            close: Number(bar.close.toFixed(spec.precision)),
-          });
-        } else {
-          prev.high = Number(Math.max(prev.high, bar.high).toFixed(spec.precision));
-          prev.low = Number(Math.min(prev.low, bar.low).toFixed(spec.precision));
-          prev.close = Number(bar.close.toFixed(spec.precision));
-        }
-      }
-
-      // Calibrate futures OHLC curve (SI=F / ES=F) to exact real-time Spot price
-      if (typeof liveSpot === 'number' && byTime.size > 0) {
-        const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
-        const latest = sorted[sorted.length - 1];
-        const basis = liveSpot - latest.close;
-        if (Math.abs(basis) > 0.01 && Math.abs(basis) < liveSpot * 0.05) {
-          for (const bar of sorted) {
-            byTime.set(bar.time, {
-              time: bar.time,
-              open: Number((bar.open + basis).toFixed(spec.precision)),
-              high: Number((bar.high + basis).toFixed(spec.precision)),
-              low: Number((bar.low + basis).toFixed(spec.precision)),
-              close: Number((bar.close + basis).toFixed(spec.precision)),
-            });
-          }
-        }
+      if (rawIv === '1d' || rawIv === '1w') {
+        const slice = before ? allBars.filter((c) => c.time < before) : allBars;
+        for (const b of slice) byTime.set(b.time, b);
+        hasMore = false;
+      } else {
+        const eligible = before ? allBars.filter((c) => c.time < before) : allBars;
+        const startIdx = Math.max(0, eligible.length - limit);
+        const page = eligible.slice(startIdx);
+        for (const b of page) byTime.set(b.time, b);
+        hasMore = startIdx > 0;
       }
     }
 
-    const candles = Array.from(byTime.values())
-      .sort((a, b) => a.time - b.time)
-      .slice(-500);
+    const candles = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
 
     if (candles.length > 0) {
       klineCache.set(cacheKey, {
-        expiresAt: Date.now() + 4000,
+        expiresAt: Date.now() + (before ? 300_000 : 4000),
         source: resolvedSource,
         candles,
+        hasMore,
+        inceptionDate,
       });
     }
-    return { source: resolvedSource, candles };
+    return { source: resolvedSource, candles, hasMore, inceptionDate };
   }
 
   async function fetchKlinesForSymbol(
@@ -1595,13 +1800,15 @@ async function startServer() {
     rawIv: string,
     rangeOverride?: string
   ): Promise<OhlcBar[]> {
-    const res = await fetchKlinesWithSourceForSymbol(rawSym, rawIv, rangeOverride);
+    const res = await fetchKlinesWithSourceForSymbol(rawSym, rawIv, { rangeOverride });
     return res.candles;
   }
 
   app.get('/api/klines', async (req, res) => {
     const rawSym = typeof req.query.symbol === 'string' ? req.query.symbol.trim().toUpperCase() : 'XAUUSD';
     const rawIv = typeof req.query.interval === 'string' ? req.query.interval.trim().toLowerCase() : '15m';
+    const rawBefore = typeof req.query.before === 'string' ? Number(req.query.before) : undefined;
+    const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
 
     const spec = KLINE_SYMBOL_MAP[rawSym];
     if (!spec || !ALLOWED_KLINE_INTERVALS.has(rawIv)) {
@@ -1609,13 +1816,16 @@ async function startServer() {
       return;
     }
 
-    const { source, candles } = await fetchKlinesWithSourceForSymbol(rawSym, rawIv);
-    if (candles.length === 0) {
+    const { source, candles, hasMore, inceptionDate } = await fetchKlinesWithSourceForSymbol(rawSym, rawIv, {
+      before: rawBefore && Number.isFinite(rawBefore) && rawBefore > 0 ? rawBefore : undefined,
+      limit: rawLimit && Number.isFinite(rawLimit) ? rawLimit : undefined,
+    });
+    if (candles.length === 0 && !rawBefore) {
       res.status(502).json({ error: `Unable to fetch live candles for ${rawSym}.` });
       return;
     }
 
-    res.json({ symbol: rawSym, interval: rawIv, source, candles });
+    res.json({ symbol: rawSym, interval: rawIv, source, candles, hasMore, inceptionDate });
   });
 
   app.get('/api/gold', async (req, res) => {
@@ -1628,12 +1838,18 @@ async function startServer() {
       return;
     }
 
-    const allowedRanges = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y']);
+    const allowedRanges = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max']);
     const rawRange = typeof req.query.range === 'string' ? req.query.range.trim().toLowerCase() : '';
     const rangeOverride = allowedRanges.has(rawRange) ? rawRange : undefined;
+    const rawBefore = typeof req.query.before === 'string' ? Number(req.query.before) : undefined;
+    const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
 
-    const { source, candles } = await fetchKlinesWithSourceForSymbol('XAUUSD', normalizedIv, rangeOverride);
-    if (candles.length === 0) {
+    const { source, candles, hasMore, inceptionDate } = await fetchKlinesWithSourceForSymbol('XAUUSD', normalizedIv, {
+      rangeOverride,
+      before: rawBefore && Number.isFinite(rawBefore) && rawBefore > 0 ? rawBefore : undefined,
+      limit: rawLimit && Number.isFinite(rawLimit) ? rawLimit : undefined,
+    });
+    if (candles.length === 0 && !rawBefore) {
       res.status(502).json({ error: 'Unable to fetch live Spot Gold CFD (XAU/USD) candles.' });
       return;
     }
@@ -1651,11 +1867,13 @@ async function startServer() {
               ? '1mo'
               : normalizedIv === '4h'
                 ? '3mo'
-                : '1y'),
+                : 'max'),
       timezone: 'UTC',
       source,
-      spotPrice: candles[candles.length - 1].close,
+      spotPrice: candles.length > 0 ? candles[candles.length - 1].close : undefined,
       candles,
+      hasMore,
+      inceptionDate,
     });
   });
 

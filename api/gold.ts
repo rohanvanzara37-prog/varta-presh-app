@@ -112,9 +112,19 @@ const INTERVAL_SPEC: Record<string, SpotIntervalSpec> = {
     okxBar: '1Dutc',
     binanceInterval: '1d',
   },
+  '1w': {
+    sec: 604800,
+    defaultRange: 'max',
+    tdInterval: '1week',
+    fhResolution: 'W',
+    fhLookbackSec: 3650 * 86400,
+    bybitInterval: 'W',
+    okxBar: '1Wutc',
+    binanceInterval: '1w',
+  },
 };
 
-const ALLOWED_RANGES = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y']);
+const ALLOWED_RANGES = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max']);
 
 async function fetchJsonWithTimeout<T>(
   url: string,
@@ -178,9 +188,8 @@ function normalizeAndAggregateUtcBars(rawBars: OhlcBar[], intervalSec: number): 
     }
   }
 
-  return Array.from(byBucket.values())
-    .sort((a, b) => a.time - b.time)
-    .slice(-500);
+  const out = Array.from(byBucket.values()).sort((a, b) => a.time - b.time);
+  return out.length > 30_000 ? out.slice(-30_000) : out;
 }
 
 function parseUtcTimestampSec(raw: string | number | undefined): number | null {

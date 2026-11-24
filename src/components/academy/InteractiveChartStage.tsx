@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import type { AcademyCandle, ChartZoneOverlay } from '../../types/academy';
+import type { ThemeMode } from '../../types/news';
 
 interface InteractiveChartStageProps {
   symbol: string;
@@ -9,6 +10,7 @@ interface InteractiveChartStageProps {
   targetCandleIndex: number;
   targetZoneId: string;
   isAnswered: boolean;
+  themeMode?: ThemeMode;
 }
 
 const VIEW_W = 460;
@@ -32,7 +34,16 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
   targetCandleIndex,
   targetZoneId,
   isAnswered,
+  themeMode = 'dark',
 }) => {
+  const isLight = themeMode === 'light';
+  const canvasBg = isLight ? '#FFFFFF' : '#0B0E14';
+  const gridColor = isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)';
+  const axisTextColor = isLight ? '#475569' : '#94A3B8';
+  const bullColor = '#089981';
+  const bearColor = '#F23645';
+  const goldColor = '#F59E0B';
+
   const safeTargetIdx = Math.max(0, Math.min(candles.length - 1, targetCandleIndex));
   const activeZone = useMemo(
     () => zones.find((z) => z.id === targetZoneId) ?? zones[0],
@@ -77,18 +88,18 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
     : Math.max(PAD_T + 13, targetHighY - 17);
 
   return (
-    <div className="flex-1 min-h-0 w-full rounded-2xl border border-[#E5E7EB] bg-white p-1.5 flex items-center justify-center overflow-hidden">
+    <div className="flex-1 min-h-0 w-full vp-glass-card rounded-2xl p-1.5 flex items-center justify-center overflow-hidden">
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="w-full h-full max-h-full select-none"
+        className="w-full h-full max-h-full select-none rounded-xl"
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={`${symbol} candlestick chart`}
       >
-        {/* Crisp White Canvas */}
-        <rect x={0} y={0} width={VIEW_W} height={VIEW_H} fill="#FFFFFF" />
+        {/* Obsidian Dark / Crisp Light Canvas */}
+        <rect x={0} y={0} width={VIEW_W} height={VIEW_H} fill={canvasBg} rx={10} />
 
-        {/* Horizontal Light Gridlines & Dark Price Axis */}
+        {/* Horizontal Gridlines & Monospace Price Axis */}
         {gridPrices.map((gp, i) => {
           const y = priceToY(gp);
           return (
@@ -98,13 +109,13 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 y1={y}
                 x2={PAD_L + PLOT_W}
                 y2={y}
-                stroke="#F3F4F6"
+                stroke={gridColor}
                 strokeWidth={1}
               />
               <text
                 x={PAD_L + PLOT_W + 6}
                 y={y + 3.5}
-                fill="#4B5563"
+                fill={axisTextColor}
                 fontSize="9.5"
                 fontWeight="500"
                 className="font-mono-tabular"
@@ -123,16 +134,16 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           const yBot = priceToY(activeZone.low);
           const fill =
             activeZone.sentiment === 'bull'
-              ? 'rgba(22, 163, 74, 0.12)'
+              ? 'rgba(8, 153, 129, 0.14)'
               : activeZone.sentiment === 'bear'
-                ? 'rgba(220, 38, 38, 0.11)'
-                : 'rgba(245, 184, 0, 0.16)';
+                ? 'rgba(242, 54, 69, 0.14)'
+                : 'rgba(245, 158, 11, 0.16)';
           const stroke =
             activeZone.sentiment === 'bull'
-              ? '#16A34A'
+              ? bullColor
               : activeZone.sentiment === 'bear'
-                ? '#DC2626'
-                : '#D97706';
+                ? bearColor
+                : goldColor;
           const labelW = Math.min(152, Math.max(88, activeZone.label.length * 5.2 + 12));
           const labelX = Math.min(PAD_L + PLOT_W - labelW - 2, Math.max(PAD_L + 4, x1 + 4));
           const labelY = Math.max(PAD_T + 14, yBot - 5);
@@ -155,14 +166,14 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 width={labelW}
                 height={13}
                 rx={3}
-                fill="rgba(255, 255, 255, 0.92)"
+                fill={isLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(19, 23, 34, 0.94)'}
                 stroke={stroke}
-                strokeWidth={0.6}
+                strokeWidth={0.7}
               />
               <text
                 x={labelX + 2}
                 y={labelY - 0.5}
-                fill="#111827"
+                fill={isLight ? '#0F172A' : '#F8FAFC'}
                 fontSize="8.5"
                 fontWeight="700"
               >
@@ -172,15 +183,15 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           );
         })()}
 
-        {/* Target Candle Column Highlight (golden #f5b800) */}
+        {/* Target Candle Column Highlight (Brushed Gold #F59E0B) */}
         {!isAnswered ? (
           <rect
             x={targetCx - colW * 0.44}
             y={PAD_T}
             width={colW * 0.88}
             height={PLOT_H}
-            fill="rgba(245, 184, 0, 0.08)"
-            stroke="rgba(245, 184, 0, 0.58)"
+            fill="rgba(245, 158, 11, 0.09)"
+            stroke="rgba(245, 158, 11, 0.62)"
             strokeWidth={1}
             strokeDasharray="3 3"
             rx={4}
@@ -191,8 +202,8 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
             y={Math.max(PAD_T + 2, targetHighY - 7)}
             width={colW * 0.92}
             height={Math.max(18, targetLowY - targetHighY + 14)}
-            fill="rgba(245, 184, 0, 0.22)"
-            stroke="#f5b800"
+            fill="rgba(245, 158, 11, 0.22)"
+            stroke={goldColor}
             strokeWidth={1.85}
             rx={5}
           />
@@ -202,7 +213,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
         {candles.map((c, idx) => {
           const cx = indexToX(idx);
           const isBull = c.close >= c.open;
-          const color = isBull ? '#16A34A' : '#DC2626';
+          const color = isBull ? bullColor : bearColor;
           const yHigh = priceToY(c.high);
           const yLow = priceToY(c.low);
           const yOpen = priceToY(c.open);
@@ -228,7 +239,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 width={bodyW}
                 height={bodyH}
                 fill={color}
-                stroke={isTarget && isAnswered ? '#111827' : color}
+                stroke={isTarget && isAnswered ? (isLight ? '#0F172A' : '#F8FAFC') : color}
                 strokeWidth={isTarget && isAnswered ? 1.2 : 0.4}
                 rx={1.5}
               />
@@ -237,7 +248,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                   x={cx}
                   y={VIEW_H - 5}
                   textAnchor="middle"
-                  fill="#6B7280"
+                  fill={axisTextColor}
                   fontSize="8.5"
                   className="font-mono-tabular"
                 >
@@ -255,15 +266,15 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               cx={targetCx}
               cy={mysteryBadgeY}
               r={11.5}
-              fill="#f5b800"
-              stroke="#111827"
+              fill={goldColor}
+              stroke="#0B0E14"
               strokeWidth={1.5}
             />
             <text
               x={targetCx}
               y={mysteryBadgeY + 4.5}
               textAnchor="middle"
-              fill="#111827"
+              fill="#0B0E14"
               fontSize="13"
               fontWeight="800"
             >
@@ -288,15 +299,15 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                     width={42}
                     height={15}
                     rx={4}
-                    fill="#f5b800"
-                    stroke="#111827"
+                    fill={goldColor}
+                    stroke="#0B0E14"
                     strokeWidth={0.95}
                   />
                   <text
                     x={badgeX}
                     y={badgeY + 2.5}
                     textAnchor="middle"
-                    fill="#111827"
+                    fill="#0B0E14"
                     fontSize="8.5"
                     fontWeight="800"
                   >
@@ -311,3 +322,4 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
     </div>
   );
 };
+

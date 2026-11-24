@@ -8,12 +8,13 @@ import {
   Zap,
 } from 'lucide-react';
 import { ACADEMY_SCENARIOS } from '../data/academyData';
-import type { AppTab } from '../types/news';
+import type { AppTab, ThemeMode } from '../types/news';
 import { InteractiveChartStage } from './academy/InteractiveChartStage';
 
 interface AcademyViewProps {
   onOpenPairInTerminal?: (tvSymbol: string) => void;
   onNavigateTab?: (tab: AppTab) => void;
+  themeMode?: ThemeMode;
 }
 
 const XP_STORAGE_KEY = 'vp_academy_xp_v3';
@@ -40,13 +41,17 @@ function loadCompleted(): string[] {
   }
 }
 
-export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
+export const AcademyView: React.FC<AcademyViewProps> = ({
+  onNavigateTab,
+  themeMode = 'dark',
+}) => {
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [stepIdx, setStepIdx] = useState<0 | 1 | 2>(0);
   const [selectedByStep, setSelectedByStep] = useState<Record<string, string>>({});
   const [xp, setXp] = useState<number>(() => loadNumber(XP_STORAGE_KEY, 120));
   const [completedIds, setCompletedIds] = useState<string[]>(loadCompleted);
 
+  const isLight = themeMode === 'light';
   const scenario = ACADEMY_SCENARIOS[scenarioIdx] ?? ACADEMY_SCENARIOS[0];
   const currentStep = scenario.steps[stepIdx];
   const stepKey = `${scenario.id}:${currentStep.stepNumber}`;
@@ -96,48 +101,52 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
   const optionLetters = ['A', 'B', 'C'] as const;
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-white text-[#111827] flex flex-col">
+    <div className="h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-[var(--vp-canvas)] text-[var(--vp-text)] flex flex-col transition-colors duration-200">
       {/* 1. Compact Top Bar: Title, Timeframe Badge & XP Counter */}
-      <header className="shrink-0 h-12 border-b border-[#E5E7EB] bg-white px-3 sm:px-6 flex items-center justify-between gap-2">
+      <header className="shrink-0 h-12 border-b border-[var(--vp-border)] bg-[var(--vp-header)]/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 transition-colors">
         <div className="flex items-center gap-1.5 min-w-0">
           {onNavigateTab && (
             <button
               type="button"
               onClick={() => onNavigateTab('terminal')}
               aria-label="Back to Terminal"
-              className="inline-flex h-9 w-9 -ml-1 items-center justify-center rounded-lg text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827] cursor-pointer shrink-0 transition-colors"
+              className="vp-pill-btn inline-flex h-8 w-8 -ml-1 items-center justify-center text-[var(--vp-muted)] hover:bg-[var(--vp-elevated)] hover:text-[var(--vp-text)] cursor-pointer shrink-0"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <h1 className="text-sm sm:text-base font-bold tracking-tight text-[#111827] truncate">
+          <h1 className="text-sm sm:text-base font-bold tracking-tight text-[var(--vp-text)] truncate">
             Varta Presh Academy
           </h1>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="inline-flex items-center rounded-md bg-[#f5b800] px-2 py-0.5 text-[11px] font-bold text-[#111827] font-mono-tabular whitespace-nowrap shrink-0">
+          <span className="inline-flex items-center rounded-full bg-[#F59E0B] px-2.5 py-0.5 text-[11px] font-bold text-[#0B0E14] font-mono-tabular whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.28)]">
             {scenario.timeframe}
           </span>
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#111827] font-mono-tabular whitespace-nowrap shrink-0">
-            <Zap className="h-3.5 w-3.5 text-[#f5b800] fill-[#f5b800]" />
+          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-0.5 text-xs font-bold text-[var(--vp-text)] font-mono-tabular whitespace-nowrap shrink-0">
+            <Zap className="h-3.5 w-3.5 text-[#F59E0B] fill-[#F59E0B]" />
             {xp} XP
           </span>
         </div>
       </header>
 
       {/* Main Content Container */}
-      <div className="mx-auto w-full max-w-4xl flex-1 min-h-0 flex flex-col px-3 sm:px-6 pt-2 pb-2.5 gap-2">
-        {/* 2. Upper Half: Clean White Candlestick Chart */}
+      <div className="mx-auto w-full max-w-4xl flex-1 min-h-0 flex flex-col px-3 sm:px-6 pt-2.5 pb-3 gap-2.5">
+        {/* 2. Upper Half: Flagship Interactive Candlestick Chart */}
         <section
           aria-label="Interactive Candlestick Chart"
-          className="flex-1 min-h-0 flex flex-col gap-1"
+          className="flex-1 min-h-0 flex flex-col gap-1.5"
         >
           <div className="shrink-0 flex items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-[#111827] truncate">
-              {scenario.symbol} <span className="text-[#9CA3AF]" aria-hidden="true">·</span> {scenario.title}
+            <span className="font-semibold text-[var(--vp-text)] truncate">
+              {scenario.symbol}{' '}
+              <span className="text-[var(--vp-muted)]" aria-hidden="true">
+                ·
+              </span>{' '}
+              {scenario.title}
             </span>
-            <span className="text-[11px] font-medium text-[#6B7280] font-mono-tabular whitespace-nowrap shrink-0">
+            <span className="text-[11px] font-medium text-[var(--vp-muted)] font-mono-tabular whitespace-nowrap shrink-0">
               Setup {scenarioIdx + 1}/{ACADEMY_SCENARIOS.length}
             </span>
           </div>
@@ -150,18 +159,19 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
             targetCandleIndex={currentStep.targetCandleIndex}
             targetZoneId={currentStep.targetZoneId}
             isAnswered={isAnswered}
+            themeMode={themeMode}
           />
         </section>
 
         {/* 3. Lower Half: Compact 3-Step MCQ Card */}
         <section
           aria-label="3-Step Question Card"
-          className="shrink-0 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-3 flex flex-col gap-2"
+          className="shrink-0 vp-glass-card rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2"
         >
           {/* Step Indicator & Next Trigger */}
           <div className="flex items-center justify-between gap-2 h-7">
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className="text-xs font-bold text-[#111827] font-mono-tabular whitespace-nowrap">
+              <span className="text-xs font-bold text-[var(--vp-text)] font-mono-tabular whitespace-nowrap">
                 {currentStep.stepNumber} of 3
               </span>
               <div className="flex items-center gap-1 w-20" aria-hidden="true">
@@ -170,7 +180,8 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
                     key={idx}
                     className="h-1.5 flex-1 rounded-full transition-colors"
                     style={{
-                      backgroundColor: idx <= stepIdx ? '#f5b800' : '#E5E7EB',
+                      backgroundColor:
+                        idx <= stepIdx ? '#F59E0B' : isLight ? '#E2E8F0' : '#1E2433',
                     }}
                   />
                 ))}
@@ -181,7 +192,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
               <button
                 type="button"
                 onClick={handleNext}
-                className="inline-flex h-7 items-center gap-1 rounded-lg bg-[#f5b800] hover:bg-[#eab000] px-2.5 text-[11px] font-bold text-[#111827] cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+                className="vp-pill-btn inline-flex h-7 items-center gap-1 bg-[#F59E0B] hover:bg-[#D97706] px-3 text-[11px] font-bold text-[#0B0E14] cursor-pointer whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.3)]"
               >
                 <span>{stepIdx < 2 ? `Step ${stepIdx + 2}` : 'Next Setup'}</span>
                 <ArrowRight className="h-3 w-3" />
@@ -190,7 +201,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
           </div>
 
           {/* Question */}
-          <h2 className="text-[13px] sm:text-sm font-semibold text-[#111827] leading-snug line-clamp-2">
+          <h2 className="text-[13px] sm:text-sm font-semibold text-[var(--vp-text)] leading-snug line-clamp-2">
             {currentStep.question}
           </h2>
 
@@ -201,14 +212,19 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
               const isRight = opt.id === currentStep.correctOptionId;
 
               let containerClass =
-                'bg-white border-[#E5E7EB] text-[#111827] hover:border-[#f5b800]';
+                'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]/70';
               if (isAnswered) {
                 if (isRight) {
-                  containerClass = 'bg-[#ECFDF5] border-[#16A34A] text-[#14532D]';
+                  containerClass = isLight
+                    ? 'bg-[#ECFDF5] border-[#089981] text-[#065F46]'
+                    : 'bg-[#089981]/15 border-[#089981] text-[#34D399]';
                 } else if (isPicked && !isRight) {
-                  containerClass = 'bg-[#FEF2F2] border-[#DC2626] text-[#7F1D1D]';
+                  containerClass = isLight
+                    ? 'bg-[#FEF2F2] border-[#F23645] text-[#991B1B]'
+                    : 'bg-[#F23645]/15 border-[#F23645] text-[#FCA5A5]';
                 } else {
-                  containerClass = 'bg-white border-[#E5E7EB] text-[#6B7280] opacity-75';
+                  containerClass =
+                    'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] opacity-70';
                 }
               }
 
@@ -220,8 +236,8 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
                   aria-checked={isPicked}
                   disabled={isAnswered}
                   onClick={() => handleSelectOption(opt.id)}
-                  className={`min-h-[42px] w-full flex items-center justify-between gap-2 rounded-xl border px-3 py-1.5 text-left text-xs font-medium transition-colors ${
-                    isAnswered ? 'cursor-default' : 'cursor-pointer'
+                  className={`min-h-[42px] w-full flex items-center justify-between gap-2 rounded-xl border px-3 py-1.5 text-left text-xs font-medium transition-all ${
+                    isAnswered ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'
                   } ${containerClass}`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
@@ -230,12 +246,18 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
                       style={{
                         backgroundColor:
                           isAnswered && isRight
-                            ? '#16A34A'
+                            ? '#089981'
                             : isAnswered && isPicked && !isRight
-                              ? '#DC2626'
-                              : '#F3F4F6',
+                              ? '#F23645'
+                              : isLight
+                                ? '#E2E8F0'
+                                : '#1E2433',
                         color:
-                          isAnswered && (isRight || isPicked) ? '#FFFFFF' : '#111827',
+                          isAnswered && (isRight || isPicked)
+                            ? '#FFFFFF'
+                            : isLight
+                              ? '#0F172A'
+                              : '#E2E8F0',
                       }}
                     >
                       {optionLetters[idx]}
@@ -244,10 +266,10 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
                   </span>
 
                   {isAnswered && isRight && (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A]" aria-label="Correct option" />
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#089981]" aria-label="Correct option" />
                   )}
                   {isAnswered && isPicked && !isRight && (
-                    <XCircle className="h-4 w-4 shrink-0 text-[#DC2626]" aria-label="Incorrect option" />
+                    <XCircle className="h-4 w-4 shrink-0 text-[#F23645]" aria-label="Incorrect option" />
                   )}
                 </button>
               );
@@ -259,21 +281,21 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
             {isAnswered ? (
               <>
                 {isCorrect ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#16A34A]" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#089981]" />
                 ) : (
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[#DC2626]" />
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[#F23645]" />
                 )}
                 <p
                   title={currentStep.explanation}
                   className={`truncate font-medium ${
-                    isCorrect ? 'text-[#14532D]' : 'text-[#7F1D1D]'
+                    isCorrect ? 'text-[var(--vp-bull)]' : 'text-[var(--vp-bear)]'
                   }`}
                 >
                   {currentStep.explanation}
                 </p>
               </>
             ) : (
-              <p className="truncate text-[#6B7280]">
+              <p className="truncate text-[var(--vp-muted)]">
                 Pick an option to reveal the target candle and zone.
               </p>
             )}
@@ -283,3 +305,4 @@ export const AcademyView: React.FC<AcademyViewProps> = ({ onNavigateTab }) => {
     </div>
   );
 };
+

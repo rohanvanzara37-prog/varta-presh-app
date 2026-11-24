@@ -50,7 +50,7 @@ export type SmcSymbol =
   | 'US500'
   | 'USOIL';
 
-export type SmcTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+export type SmcTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w';
 
 export interface ZoneRange {
   type: 'Bullish' | 'Bearish';
@@ -170,6 +170,7 @@ const TIMEFRAME_OPTIONS: { value: SmcTimeframe; label: string }[] = [
   { value: '1h', label: '1H' },
   { value: '4h', label: '4H' },
   { value: '1d', label: '1D' },
+  { value: '1w', label: '1W' },
 ];
 
 function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
@@ -257,12 +258,20 @@ function calcBollingerPoints(candles: TerminalCandle[], period = 20, mult = 2) {
   const lower: Array<{ time: UTCTimestamp; value: number }> = [];
   if (candles.length === 0) return { upper, basis, lower };
 
+  let sum = 0;
+  let sumSq = 0;
   for (let i = 0; i < candles.length; i += 1) {
-    const start = Math.max(0, i - period + 1);
-    const slice = candles.slice(start, i + 1);
-    const mean = slice.reduce((sum, c) => sum + c.close, 0) / slice.length;
-    const variance =
-      slice.reduce((sum, c) => sum + (c.close - mean) * (c.close - mean), 0) / slice.length;
+    const val = candles[i].close;
+    sum += val;
+    sumSq += val * val;
+    if (i >= period) {
+      const drop = candles[i - period].close;
+      sum -= drop;
+      sumSq -= drop * drop;
+    }
+    const count = Math.min(i + 1, period);
+    const mean = sum / count;
+    const variance = Math.max(0, sumSq / count - mean * mean);
     const std = Math.sqrt(variance);
     basis.push({ time: candles[i].time, value: mean });
     upper.push({ time: candles[i].time, value: mean + mult * std });
@@ -375,22 +384,34 @@ const GOLD_CFD_PARAMS: Record<SmcTimeframe, { interval: string; range: string }>
   '30m': { interval: '30m', range: '1mo' },
   '1h': { interval: '60m', range: '3mo' },
   '4h': { interval: '4h', range: '6mo' },
-  '1d': { interval: '1d', range: '2y' },
+  '1d': { interval: '1d', range: 'max' },
+  '1w': { interval: '1w', range: 'max' },
 };
+
+interface FetchCandlesResult {
+  candles: TerminalCandle[];
+  hasMore: boolean;
+  inceptionDate?: string;
+}
 
 async function fetchCandles(
   symbol: SmcSymbol,
   tf: SmcTimeframe,
-  signal: AbortSignal
-): Promise<TerminalCandle[]> {
+  signal: AbortSignal,
+  opts?: { before?: number; limit?: number }
+): Promise<FetchCandlesResult> {
   const goldSpec = GOLD_CFD_PARAMS[tf];
+  const beforeQs = opts?.before ? `&before=${Math.floor(opts.before)}` : '';
+  const limitQs = `&limit=${opts?.limit ?? 1000}`;
+
+  // Use paginated /api/klines directly when scrolling back in history, or standard endpoints on initial load
   const endpointsToTry =
-    symbol === 'XAUUSD'
+    symbol === 'XAUUSD' && !opts?.before
       ? [
-          `/api/gold?interval=${goldSpec.interval}&range=${goldSpec.range}`,
-          `/api/klines?symbol=${symbol}&interval=${tf}`,
+          `/api/klines?symbol=${symbol}&interval=${tf}${limitQs}`,
+          `/api/gold?interval=${goldSpec.interval}&range=${goldSpec.range}${limitQs}`,
         ]
-      : [`/api/klines?symbol=${symbol}&interval=${tf}`];
+      : [`/api/klines?symbol=${symbol}&interval=${tf}${beforeQs}${limitQs}`];
 
   for (const endpoint of endpointsToTry) {
     try {
@@ -408,11 +429,16 @@ async function fetchCandles(
             close: number;
             volume?: number;
           }>;
+          hasMore?: boolean;
+          inceptionDate?: string;
         };
-        if (Array.isArray(json.candles) && json.candles.length >= 10) {
+        if (Array.isArray(json.candles)) {
           const byTime = new Map<number, TerminalCandle>();
           for (const c of json.candles) {
-            if ([c.time, c.open, c.high, c.low, c.close].every(Number.isFinite)) {
+            if (
+              [c.time, c.open, c.high, c.low, c.close].every(Number.isFinite) &&
+              (!opts?.before || c.time < opts.before)
+            ) {
               byTime.set(c.time, {
                 time: c.time as UTCTimestamp,
                 open: c.open,
@@ -424,8 +450,12 @@ async function fetchCandles(
             }
           }
           const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
-          if (sorted.length >= 10) {
-            return sorted;
+          if (opts?.before || sorted.length >= 10) {
+            return {
+              candles: sorted,
+              hasMore: Boolean(json.hasMore),
+              inceptionDate: json.inceptionDate,
+            };
           }
         }
       }
@@ -435,45 +465,71 @@ async function fetchCandles(
   }
 
   const meta = SYMBOL_OPTIONS.find((s) => s.value === symbol);
-  if (!meta?.isCrypto) return [];
+  if (!meta?.isCrypto) return { candles: [], hasMore: false };
 
-  const endpoints = [
-    `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=500`,
-    `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=500`,
-  ];
-
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { signal });
-      if (!res.ok) continue;
-      const raw = (await res.json()) as [number, string, string, string, string, string][];
-      if (!Array.isArray(raw) || raw.length < 10) continue;
-
-      const byTime = new Map<number, TerminalCandle>();
-      for (const d of raw) {
-        const t = Math.floor(d[0] / 1000);
-        const open = Number(d[1]);
-        const high = Number(d[2]);
-        const low = Number(d[3]);
-        const close = Number(d[4]);
-        const volume = Number(d[5]);
-        if ([t, open, high, low, close].every(Number.isFinite)) {
-          byTime.set(t, {
-            time: t as UTCTimestamp,
-            open,
-            high,
-            low,
-            close,
-            volume: Number.isFinite(volume) ? volume : undefined,
-          });
+  const fetchDirectBinance = async (endTimeMs?: number) => {
+    const endQs = endTimeMs !== undefined ? `&endTime=${endTimeMs}` : '';
+    const endpoints = [
+      `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=1000${endQs}`,
+      `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=1000${endQs}`,
+    ];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, { signal });
+        if (!res.ok) continue;
+        const raw = (await res.json()) as [number, string, string, string, string, string][];
+        if (!Array.isArray(raw)) continue;
+        const parsed: TerminalCandle[] = [];
+        for (const d of raw) {
+          const t = Math.floor(d[0] / 1000);
+          const open = Number(d[1]);
+          const high = Number(d[2]);
+          const low = Number(d[3]);
+          const close = Number(d[4]);
+          const volume = Number(d[5]);
+          if ([t, open, high, low, close].every(Number.isFinite)) {
+            parsed.push({
+              time: t as UTCTimestamp,
+              open,
+              high,
+              low,
+              close,
+              volume: Number.isFinite(volume) ? volume : undefined,
+            });
+          }
         }
+        return parsed;
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') throw err;
       }
-      return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') throw err;
     }
+    return null;
+  };
+
+  if (!opts?.before && (tf === '1d' || tf === '1w')) {
+    const byTime = new Map<number, TerminalCandle>();
+    let cursorEndMs: number | undefined;
+    for (let page = 0; page < 6; page += 1) {
+      const batch = await fetchDirectBinance(cursorEndMs);
+      if (!batch || batch.length === 0) break;
+      for (const b of batch) byTime.set(b.time, b);
+      if (batch.length < 1000) break;
+      cursorEndMs = batch[0].time * 1000 - 1;
+    }
+    return {
+      candles: Array.from(byTime.values()).sort((a, b) => a.time - b.time),
+      hasMore: false,
+    };
   }
-  return [];
+
+  const endMs = opts?.before ? (opts.before - 1) * 1000 : undefined;
+  const batch = await fetchDirectBinance(endMs);
+  if (!batch) return { candles: [], hasMore: false };
+  const filtered = opts?.before ? batch.filter((c) => c.time < opts.before!) : batch;
+  return {
+    candles: filtered.sort((a, b) => a.time - b.time),
+    hasMore: batch.length >= 1000,
+  };
 }
 
 function formatTerminalPrice(val: number | null, precision = 2): string {
@@ -632,6 +688,13 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const [smc, setSmc] = useState<SmcAnalysisState | null>(null);
   const [omye, setOmye] = useState<OmyeEngineState | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [loadedSpanInfo, setLoadedSpanInfo] = useState<{
+    oldestTs: number;
+    count: number;
+    inceptionDate?: string;
+  } | null>(null);
 
   const terminalSectionRef = useRef<HTMLElement | null>(null);
   const enteredNativeFsRef = useRef(false);
@@ -651,6 +714,9 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const fullCandlesRef = useRef<TerminalCandle[]>([]);
   const latestCandlesRef = useRef<TerminalCandle[]>([]);
   const historicalLoadedRef = useRef<boolean>(false);
+  const hasMoreHistoryRef = useRef<boolean>(true);
+  const isLoadingHistoryRef = useRef<boolean>(false);
+  const loadMoreHistoryRef = useRef<(() => void) | null>(null);
   const omyeCandlesRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const omyeWsRef = useRef<WebSocket | null>(null);
@@ -752,6 +818,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         secondsVisible: false,
         rightOffset: 8,
         barSpacing: 7,
+        minBarSpacing: 0.2,
         fixLeftEdge: false,
         fixRightEdge: false,
         lockVisibleTimeRangeOnResize: false,
@@ -856,7 +923,19 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       });
     };
 
-    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlayTick);
+    chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+      scheduleOverlayTick();
+      if (
+        logicalRange &&
+        logicalRange.from < 35 &&
+        historicalLoadedRef.current &&
+        hasMoreHistoryRef.current &&
+        !isLoadingHistoryRef.current &&
+        !replayActiveRef.current
+      ) {
+        loadMoreHistoryRef.current?.();
+      }
+    });
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.point) {
@@ -1027,6 +1106,19 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     if (!chart) return;
     chart.priceScale('right').applyOptions({ autoScale: true });
     chart.timeScale().fitContent();
+  }, []);
+
+  const handleJumpLive = useCallback(() => {
+    const chart = chartApiRef.current;
+    const candles = latestCandlesRef.current;
+    if (!chart || candles.length === 0) return;
+    chart.priceScale('right').applyOptions({ autoScale: true });
+    const chartWidth = chartWrapRef.current?.clientWidth || 360;
+    const visibleBars = Math.max(60, Math.min(candles.length, Math.floor(chartWidth / 6)));
+    chart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, candles.length - visibleBars),
+      to: candles.length - 1 + 8,
+    });
   }, []);
 
   const toggleFullScreen = useCallback(() => {
@@ -1271,12 +1363,15 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   // Auto-draw Support (Green), Resistance (Red), Chart Patterns, HH/HL/LH/LL & BOS/CHoCH directly on candles
   const runSmcAndAutoDraw = useCallback(
     (
-      candles: CandlestickData<UTCTimestamp>[],
+      rawCandles: CandlestickData<UTCTimestamp>[],
       prefs: { showSR: boolean; showPatterns: boolean; showSwing: boolean; showBos: boolean }
     ) => {
       const chart = chartApiRef.current;
       const markersPlugin = markersPluginRef.current;
-      if (!chart || !markersPlugin || candles.length < 12) return;
+      if (!chart || !markersPlugin || rawCandles.length < 12) return;
+
+      // Analyze recent 600-bar window so 25,000+ inception bars stay silky 60fps when panning/zooming
+      const candles = rawCandles.length > 600 ? rawCandles.slice(-600) : rawCandles;
 
       clearOverlayLines();
 
@@ -1945,6 +2040,11 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
     // Clear old candles, indicators, markers & overlay lines immediately on timeframe/symbol switch
     historicalLoadedRef.current = false;
+    hasMoreHistoryRef.current = true;
+    isLoadingHistoryRef.current = false;
+    setHasMoreHistory(true);
+    setIsLoadingHistory(false);
+    setLoadedSpanInfo(null);
     fullCandlesRef.current = [];
     latestCandlesRef.current = [];
     candleSeriesRef.current?.setData([]);
@@ -1957,6 +2057,107 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     rsiSeriesRef.current?.setData([]);
     markersPluginRef.current?.setMarkers([]);
     clearOverlayLines();
+
+    const shiftDrawingLogicalIndices = (addedCount: number) => {
+      if (addedCount <= 0) return;
+      const shiftAnchor = (a: ChartAnchor): ChartAnchor => ({ ...a, logical: a.logical + addedCount });
+      setDrawings((prev) =>
+        prev.length === 0
+          ? prev
+          : prev.map((d) => {
+              if (d.kind === 'trendline' || d.kind === 'fib') {
+                return { ...d, a: shiftAnchor(d.a), b: shiftAnchor(d.b) };
+              }
+              if (d.kind === 'hray' || d.kind === 'text') {
+                return { ...d, a: shiftAnchor(d.a) };
+              }
+              return { ...d, points: d.points.map(shiftAnchor) };
+            })
+      );
+      setDraftAnchor((prev) => (prev ? shiftAnchor(prev) : null));
+      setBrushStroke((prev) => (prev ? prev.map(shiftAnchor) : null));
+    };
+
+    const loadOlderHistoryChunk = async () => {
+      if (
+        disposed ||
+        !historicalLoadedRef.current ||
+        !hasMoreHistoryRef.current ||
+        isLoadingHistoryRef.current ||
+        replayActiveRef.current
+      ) {
+        return;
+      }
+      const existing = fullCandlesRef.current;
+      if (existing.length === 0) return;
+      const oldestTs = existing[0].time;
+
+      isLoadingHistoryRef.current = true;
+      setIsLoadingHistory(true);
+
+      try {
+        const res = await fetchCandles(symbol, timeframe, controller.signal, {
+          before: oldestTs,
+          limit: 1000,
+        });
+        if (disposed) return;
+
+        const older = res.candles.filter((c) => c.time < oldestTs);
+        if (older.length === 0) {
+          hasMoreHistoryRef.current = false;
+          setHasMoreHistory(false);
+          return;
+        }
+
+        const chart = chartApiRef.current;
+        const prevRange = chart?.timeScale().getVisibleLogicalRange();
+
+        const byTime = new Map<number, TerminalCandle>();
+        for (const c of older) byTime.set(c.time, c);
+        for (const c of fullCandlesRef.current) byTime.set(c.time, c);
+        const merged = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+        const addedCount = merged.length - fullCandlesRef.current.length;
+
+        fullCandlesRef.current = merged;
+        latestCandlesRef.current = merged;
+        setReplayTotal(merged.length);
+        candleSeriesRef.current?.setData(merged.map(toPureCandle));
+
+        if (chart && prevRange && addedCount > 0) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: prevRange.from + addedCount,
+            to: prevRange.to + addedCount,
+          });
+        }
+        if (addedCount > 0) {
+          shiftDrawingLogicalIndices(addedCount);
+        }
+
+        hasMoreHistoryRef.current = res.hasMore && addedCount > 0;
+        setHasMoreHistory(hasMoreHistoryRef.current);
+        setLoadedSpanInfo((prev) => ({
+          oldestTs: merged[0].time,
+          count: merged.length,
+          inceptionDate: res.inceptionDate ?? prev?.inceptionDate,
+        }));
+
+        syncTechnicalIndicatorsRef.current(merged);
+      } catch (err) {
+        if ((err as Error)?.name !== 'AbortError') {
+          hasMoreHistoryRef.current = false;
+          setHasMoreHistory(false);
+        }
+      } finally {
+        if (!disposed) {
+          isLoadingHistoryRef.current = false;
+          setIsLoadingHistory(false);
+        }
+      }
+    };
+
+    loadMoreHistoryRef.current = () => {
+      void loadOlderHistoryChunk();
+    };
 
     const applyIncomingCandle = (incomingCandle: TerminalCandle, isClosed: boolean) => {
       if (disposed || !candleSeriesRef.current || !historicalLoadedRef.current) return;
@@ -1978,7 +2179,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           fullArr[fullArr.length - 1] = liveCandle;
         } else {
           fullArr.push(liveCandle);
-          if (fullArr.length > 600) fullArr.shift();
         }
       } else {
         fullArr.push(liveCandle);
@@ -2000,7 +2200,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         } else if (liveCandle.time > last.time) {
           arr.push(liveCandle);
           isNewBar = true;
-          if (arr.length > 600) arr.shift();
         }
       } else {
         arr.push(liveCandle);
@@ -2045,8 +2244,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         if (disposed) return;
         fetchCandles('XAUUSD', timeframe, controller.signal)
           .then((fresh) => {
-            if (disposed || fresh.length === 0) return;
-            const latest = fresh[fresh.length - 1];
+            if (disposed || fresh.candles.length === 0) return;
+            const latest = fresh.candles[fresh.candles.length - 1];
             applyIncomingCandle(latest, false);
           })
           .catch(() => {
@@ -2172,8 +2371,9 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     };
 
     fetchCandles(symbol, timeframe, controller.signal)
-      .then((candles) => {
+      .then((res) => {
         if (disposed) return;
+        const candles = res.candles;
         if (candles.length === 0) {
           setLoadError(`Unable to load live ${symbol} candlesticks.`);
           return;
@@ -2183,6 +2383,13 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         setReplayTotal(candles.length);
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
         historicalLoadedRef.current = true;
+        hasMoreHistoryRef.current = res.hasMore;
+        setHasMoreHistory(res.hasMore);
+        setLoadedSpanInfo({
+          oldestTs: candles[0].time,
+          count: candles.length,
+          inceptionDate: res.inceptionDate,
+        });
 
         const applyInitialRange = () => {
           const chart = chartApiRef.current;
@@ -2214,6 +2421,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
     return () => {
       disposed = true;
+      loadMoreHistoryRef.current = null;
       controller.abort();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       if (goldPollTimer !== null) window.clearInterval(goldPollTimer);
@@ -2335,8 +2543,9 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     };
 
     fetchCandles(symbol, '1m', controller.signal)
-      .then((bars) => {
+      .then((res) => {
         if (disposed) return;
+        const bars = res.candles;
         if (bars.length > 0) {
           omyeCandlesRef.current = bars.slice(-90);
           const snap = computeOmyeSnapshot(omyeCandlesRef.current, 'SYNCING');
@@ -2988,39 +3197,83 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               </div>
             )}
 
-            {/* Floating Compact Zoom & Reset Controls */}
-            <div
-              role="group"
-              aria-label="Chart zoom controls"
-              className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-lg"
-            >
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                title="Zoom In"
-                aria-label="Zoom In"
-                className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+            {/* History Loading / Inception Span Indicator + Floating Zoom Controls */}
+            <div className="absolute bottom-8 left-2.5 right-14 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+              <div
+                role="group"
+                aria-label="Chart zoom and history controls"
+                className="pointer-events-auto flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-lg"
               >
-                +
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                title="Zoom Out"
-                aria-label="Zoom Out"
-                className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
-              >
-                -
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomReset}
-                title="Reset Chart View"
-                aria-label="Reset Chart View"
-                className="vp-pill-btn flex h-7 items-center justify-center bg-[var(--vp-control)] px-2.5 text-[11px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
-              >
-                Reset
-              </button>
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  title="Zoom In"
+                  aria-label="Zoom In"
+                  className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  title="Zoom Out"
+                  aria-label="Zoom Out"
+                  className="vp-pill-btn flex h-7 w-7 items-center justify-center bg-[var(--vp-control)] text-sm font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomReset}
+                  title="Fit All Loaded History (Inception to Live)"
+                  aria-label="Fit All Loaded History"
+                  className="vp-pill-btn flex h-7 items-center justify-center bg-[var(--vp-control)] px-2.5 text-[11px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={handleJumpLive}
+                  title="Snap to Live Candles"
+                  aria-label="Snap to Live Candles"
+                  className="vp-pill-btn flex h-7 items-center justify-center bg-[var(--vp-control)] px-2.5 text-[11px] font-semibold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+                >
+                  Live
+                </button>
+              </div>
+
+              {(isLoadingHistory || loadedSpanInfo) && (
+                <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-[var(--vp-border)] bg-[var(--vp-header)]/90 px-2.5 py-1 text-[10px] font-mono-tabular text-[var(--vp-muted)] backdrop-blur-md shadow-lg">
+                  {isLoadingHistory ? (
+                    <span className="text-[var(--vp-accent-text)] font-semibold">
+                      Loading older history...
+                    </span>
+                  ) : loadedSpanInfo ? (
+                    <>
+                      <span>
+                        Since{' '}
+                        <strong className="text-[var(--vp-text)]">
+                          {new Date(loadedSpanInfo.oldestTs * 1000).toLocaleDateString('en-US', {
+                            month: 'short',
+                            year: 'numeric',
+                            timeZone: 'UTC',
+                          })}
+                        </strong>{' '}
+                        · {loadedSpanInfo.count.toLocaleString()} bars
+                      </span>
+                      {!hasMoreHistory && timeframe !== '1d' && timeframe !== '1w' && (
+                        <button
+                          type="button"
+                          onClick={() => setTimeframe('1d')}
+                          className="vp-pill-btn bg-[#F59E0B]/15 border border-[#F59E0B]/45 px-2 py-0.5 text-[10px] font-bold text-[var(--vp-accent-text)] cursor-pointer hover:bg-[#F59E0B]/25"
+                        >
+                          1D Inception ({loadedSpanInfo.inceptionDate ?? 'Full'})
+                        </button>
+                      )}
+                    </>
+                  ) : null}
+                </div>
+              )}
             </div>
             {loadError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[var(--vp-canvas)]/90 p-4 text-center text-xs text-[var(--vp-muted)] z-30">
@@ -3720,6 +3973,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         secondsVisible: false,
         rightOffset: 6,
         barSpacing: 6,
+        minBarSpacing: 0.2,
         fixLeftEdge: false,
         fixRightEdge: false,
         lockVisibleTimeRangeOnResize: false,
@@ -3852,7 +4106,6 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         arr[arr.length - 1] = bar;
       } else if (arr.length === 0 || bar.time > arr[arr.length - 1].time) {
         arr.push(bar);
-        if (arr.length > 600) arr.shift();
       }
       setSubPrice(bar.close);
       setSubBull(bar.close >= bar.open);
@@ -3904,7 +4157,8 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     };
 
     fetchCandles(subSymbol, subTf, controller.signal)
-      .then((bars) => {
+      .then((res) => {
+        const bars = res.candles;
         if (disposed || bars.length === 0) return;
         candlesRef.current = [...bars];
         candleRef.current?.setData(bars.map(toPureCandle));

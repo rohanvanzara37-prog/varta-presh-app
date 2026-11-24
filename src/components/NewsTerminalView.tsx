@@ -93,12 +93,12 @@ function isSafeHttpUrl(rawUrl: string): boolean {
 
 function getSentimentMeta(sentiment: NewsWireItem['sentiment']) {
   if (sentiment === 'Bullish') {
-    return { color: '#00C087', label: 'Bullish', Icon: TrendingUp };
+    return { color: '#089981', label: 'Bullish', Icon: TrendingUp };
   }
   if (sentiment === 'Bearish') {
-    return { color: '#F6465D', label: 'Bearish', Icon: TrendingDown };
+    return { color: '#F23645', label: 'Bearish', Icon: TrendingDown };
   }
-  return { color: '#848E9C', label: 'Neutral', Icon: Minus };
+  return { color: '#94A3B8', label: 'Neutral', Icon: Minus };
 }
 
 function formatIstTimestamp(ms: number): string {
@@ -205,22 +205,22 @@ function getBadgeStyle(tone: ImpactBadgeTone): {
 } {
   if (tone === 'bullish') {
     return {
-      backgroundColor: 'rgba(0, 192, 135, 0.14)',
-      borderColor: 'rgba(0, 192, 135, 0.38)',
-      color: '#00C087',
+      backgroundColor: 'rgba(8, 153, 129, 0.14)',
+      borderColor: 'rgba(8, 153, 129, 0.38)',
+      color: '#089981',
     };
   }
   if (tone === 'bearish') {
     return {
-      backgroundColor: 'rgba(246, 70, 93, 0.14)',
-      borderColor: 'rgba(246, 70, 93, 0.38)',
-      color: '#F6465D',
+      backgroundColor: 'rgba(242, 54, 69, 0.14)',
+      borderColor: 'rgba(242, 54, 69, 0.38)',
+      color: '#F23645',
     };
   }
   return {
-    backgroundColor: 'rgba(240, 185, 11, 0.14)',
-    borderColor: 'rgba(240, 185, 11, 0.42)',
-    color: '#F0B90B',
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    borderColor: 'rgba(245, 158, 11, 0.42)',
+    color: '#F59E0B',
   };
 }
 
@@ -803,10 +803,10 @@ export const NewsTerminalView: React.FC = () => {
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-24 md:pb-8">
       {/* Sticky Top Live Mini Price Move Strip (Gold, Silver, BTC, ETH via WebSocket) */}
-      <div className="sticky top-[53px] md:top-[61px] z-20 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)]/95 backdrop-blur-md px-3 py-2 shadow-lg transition-colors">
+      <div className="sticky top-[53px] md:top-[61px] z-20 vp-glass-card rounded-2xl px-3 py-2">
         <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--vp-bull)]/35 bg-[var(--vp-bull)]/10 px-2 py-1 text-[10px] font-bold font-mono-tabular text-[var(--vp-bull)] shrink-0">
-            <span className="animate-pulse">●</span>
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-1 text-[10px] font-bold font-mono-tabular text-[var(--vp-bull)] shrink-0">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
             <span>LIVE WS</span>
           </div>
 
@@ -821,7 +821,7 @@ export const NewsTerminalView: React.FC = () => {
             return (
               <div
                 key={asset.id}
-                className="flex items-center gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 transition-colors"
+                className="flex items-center gap-2 rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 transition-colors"
               >
                 <span className="font-semibold text-[var(--vp-text)]">
                   {asset.icon} {asset.label}
@@ -841,12 +841,12 @@ export const NewsTerminalView: React.FC = () => {
       </div>
 
       {/* Live Economic Calendar + Auto-Sync Status Header */}
-      <section className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 sm:p-5 space-y-4 transition-colors">
+      <section className="vp-glass-card rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#00C087]/35 bg-[#00C087]/10 px-2.5 py-0.5 font-bold tracking-wide text-[var(--vp-bull)]">
-                <span className="animate-pulse">●</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-0.5 font-bold tracking-wide text-[var(--vp-bull)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
                 <span>LIVE AUTO-SYNC</span>
               </span>
               <span className="text-[var(--vp-muted)]">
@@ -881,10 +881,12 @@ export const NewsTerminalView: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setCalendarFilter(tab.id)}
-                  className="min-h-[34px] rounded-lg px-3 text-xs font-semibold cursor-pointer transition-colors"
+                  className={`vp-pill-btn min-h-[34px] px-3.5 text-xs font-semibold cursor-pointer ${
+                    active ? 'shadow-[0_0_14px_rgba(245,158,11,0.3)]' : 'hover:text-[var(--vp-text)]'
+                  }`}
                   style={{
-                    backgroundColor: active ? '#F0B90B' : 'var(--vp-elevated)',
-                    color: active ? '#0B0E11' : 'var(--vp-muted)',
+                    backgroundColor: active ? '#F59E0B' : 'var(--vp-elevated)',
+                    color: active ? '#0B0E14' : 'var(--vp-muted)',
                   }}
                 >
                   {tab.label}
@@ -1081,7 +1083,7 @@ export const NewsTerminalView: React.FC = () => {
       </section>
 
       {/* Top Macro Sentiment Summary + Search/Refresh */}
-      <section className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 sm:p-5 space-y-4 transition-colors">
+      <section className="vp-glass-card rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--vp-muted)]">
@@ -1103,7 +1105,7 @@ export const NewsTerminalView: React.FC = () => {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search CPI, Gold, BTC..."
                 aria-label="Search market news"
-                className="w-full min-h-[40px] rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] pl-9 pr-3 text-xs text-[var(--vp-text)] placeholder:text-[var(--vp-muted)] outline-none focus:border-[#F0B90B] transition-colors"
+                className="w-full min-h-[40px] rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] pl-9 pr-3 text-xs text-[var(--vp-text)] placeholder:text-[var(--vp-muted)] outline-none focus:border-[#F59E0B] transition-colors"
               />
             </div>
 
@@ -1112,7 +1114,7 @@ export const NewsTerminalView: React.FC = () => {
               onClick={() => loadAllFeeds(true, false)}
               disabled={loading || isSyncing}
               aria-label="Refresh market news and calendar"
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 text-xs font-semibold text-[var(--vp-text)] hover:border-[#F0B90B]/60 cursor-pointer shrink-0 transition-colors"
+              className="vp-pill-btn inline-flex min-h-[40px] items-center gap-1.5 border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3.5 text-xs font-semibold text-[var(--vp-text)] hover:border-[#F59E0B]/60 cursor-pointer shrink-0"
             >
               <RefreshCw
                 className={`h-3.5 w-3.5 text-[var(--vp-accent-text)] ${loading || isSyncing ? 'animate-spin' : ''}`}
@@ -1131,10 +1133,12 @@ export const NewsTerminalView: React.FC = () => {
                 key={t.id}
                 type="button"
                 onClick={() => setTopic(t.id)}
-                className="min-h-[34px] rounded-lg px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                className={`vp-pill-btn min-h-[34px] px-3.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer ${
+                  active ? 'shadow-[0_0_14px_rgba(245,158,11,0.3)]' : 'hover:text-[var(--vp-text)]'
+                }`}
                 style={{
-                  backgroundColor: active ? '#F0B90B' : 'var(--vp-elevated)',
-                  color: active ? '#0B0E11' : 'var(--vp-muted)',
+                  backgroundColor: active ? '#F59E0B' : 'var(--vp-elevated)',
+                  color: active ? '#0B0E14' : 'var(--vp-muted)',
                 }}
               >
                 {t.label}
@@ -1150,23 +1154,23 @@ export const NewsTerminalView: React.FC = () => {
           {[1, 2, 3, 4].map((n) => (
             <div
               key={n}
-              className="h-32 rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] animate-pulse p-4"
+              className="h-32 vp-glass-card rounded-2xl animate-pulse p-4"
             />
           ))}
         </div>
       ) : errorMsg && !data ? (
-        <div className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-6 text-center space-y-3">
+        <div className="vp-glass-card rounded-2xl p-6 text-center space-y-3">
           <p className="text-sm text-[var(--vp-muted)]">{errorMsg}</p>
           <button
             type="button"
             onClick={() => loadAllFeeds(true, false)}
-            className="min-h-[44px] rounded-xl bg-[#F0B90B] px-5 text-xs font-bold text-[#0B0E11] cursor-pointer"
+            className="vp-pill-btn min-h-[42px] bg-[#F59E0B] px-5 text-xs font-bold text-[#0B0E14] cursor-pointer"
           >
             Retry News Wire
           </button>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-6 text-center space-y-2">
+        <div className="vp-glass-card rounded-2xl p-6 text-center space-y-2">
           <p className="text-sm font-semibold text-[var(--vp-text)]">No headlines match this filter.</p>
           <button
             type="button"
@@ -1174,7 +1178,7 @@ export const NewsTerminalView: React.FC = () => {
               setTopic('ALL');
               setQuery('');
             }}
-            className="min-h-[40px] rounded-xl bg-[var(--vp-elevated)] border border-[var(--vp-border)] px-4 text-xs font-semibold text-[var(--vp-accent-text)] cursor-pointer"
+            className="vp-pill-btn min-h-[40px] bg-[var(--vp-elevated)] border border-[var(--vp-border)] px-4 text-xs font-semibold text-[var(--vp-accent-text)] cursor-pointer"
           >
             Show All Wire Headlines
           </button>
@@ -1190,7 +1194,7 @@ export const NewsTerminalView: React.FC = () => {
             return (
               <article
                 key={item.id}
-                className="rounded-2xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-4 flex flex-col justify-between gap-3 hover:border-[#F0B90B]/50 transition-colors"
+                className="vp-glass-card rounded-2xl p-4 flex flex-col justify-between gap-3 hover:border-[#F59E0B]/55"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-[11px] font-mono-tabular">

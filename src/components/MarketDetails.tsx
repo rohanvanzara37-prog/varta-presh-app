@@ -259,8 +259,8 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
 
       widgetContainerRef.current.innerHTML = '';
       const isDark = themeMode === 'dark';
-      const bg = isDark ? '#0B0E11' : '#FFFFFF';
-      const grid = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)';
+      const bg = isDark ? '#0B0E14' : '#FFFFFF';
+      const grid = isDark ? 'rgba(255, 255, 255, 0.035)' : 'rgba(15, 23, 42, 0.06)';
       try {
         new window.TradingView.widget({
           autosize: true,
@@ -283,12 +283,12 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
             'paneProperties.background': bg,
             'paneProperties.vertGridProperties.color': grid,
             'paneProperties.horzGridProperties.color': grid,
-            'mainSeriesProperties.candleStyle.upColor': '#00C087',
-            'mainSeriesProperties.candleStyle.downColor': '#F6465D',
-            'mainSeriesProperties.candleStyle.borderUpColor': '#00C087',
-            'mainSeriesProperties.candleStyle.borderDownColor': '#F6465D',
-            'mainSeriesProperties.candleStyle.wickUpColor': '#00C087',
-            'mainSeriesProperties.candleStyle.wickDownColor': '#F6465D',
+            'mainSeriesProperties.candleStyle.upColor': '#089981',
+            'mainSeriesProperties.candleStyle.downColor': '#F23645',
+            'mainSeriesProperties.candleStyle.borderUpColor': '#089981',
+            'mainSeriesProperties.candleStyle.borderDownColor': '#F23645',
+            'mainSeriesProperties.candleStyle.wickUpColor': '#089981',
+            'mainSeriesProperties.candleStyle.wickDownColor': '#F23645',
           },
         });
         setTvFailed(false);
@@ -524,7 +524,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                 key={item.tvSymbol}
                 type="button"
                 onClick={() => onSelectAsset(item)}
-                className="min-h-[34px] rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                className="vp-pill-btn min-h-[34px] border px-3 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                 style={{
                   backgroundColor: active ? 'var(--vp-primary)' : 'var(--vp-surface)',
                   color: active ? 'var(--vp-primary-fg)' : 'var(--vp-text)',
@@ -542,7 +542,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
             <span className="font-bold">${formatAssetPrice(asset.livePrice)}</span>
             <span
               className="inline-flex items-center gap-0.5 text-xs font-semibold"
-              style={{ color: up24h ? '#10b981' : '#ef4444' }}
+              style={{ color: up24h ? '#089981' : '#F23645' }}
             >
               {up24h ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
               {up24h ? '+' : ''}
@@ -553,7 +553,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
           <button
             type="button"
             onClick={() => onToggleWatchlist(asset.tvSymbol)}
-            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold cursor-pointer shrink-0"
+            className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1.5 border px-3 text-xs font-semibold cursor-pointer shrink-0"
             style={{
               backgroundColor: isWatchlisted ? 'var(--vp-accent)' : 'var(--vp-surface)',
               color: isWatchlisted ? 'var(--vp-accent-fg)' : 'var(--vp-text)',
@@ -581,7 +581,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
           {/* Compact Single-Line Timeframe Pills + Collapsible Indicators + Mode/Zoom */}
           <div className="flex items-center justify-between gap-2 shrink-0">
             <div
-              className="flex items-center gap-1 rounded-lg border p-0.5 overflow-x-auto no-scrollbar flex-nowrap"
+              className="flex items-center gap-1 rounded-full border p-0.5 overflow-x-auto no-scrollbar flex-nowrap"
               style={{
                 backgroundColor: 'var(--vp-surface)',
                 borderColor: 'var(--vp-border)',
@@ -594,7 +594,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                     key={tf.id}
                     type="button"
                     onClick={() => setInterval(tf.id)}
-                    className="min-h-[30px] rounded-md px-2.5 text-xs font-mono-tabular font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                    className="vp-pill-btn min-h-[30px] px-2.5 text-xs font-mono-tabular font-semibold cursor-pointer whitespace-nowrap shrink-0"
                     style={{
                       backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
                       color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
@@ -830,7 +830,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                     const yOpen = nativeGeometry.toY(bar.open);
                     const yClose = nativeGeometry.toY(bar.close);
                     const bullish = bar.close >= bar.open;
-                    const color = bullish ? '#10b981' : '#ef4444';
+                    const color = bullish ? '#089981' : '#F23645';
                     const bodyTop = Math.min(yOpen, yClose);
                     const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
                     return (
@@ -928,9 +928,9 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                   sub: smartSummary.trendLabel,
                   color:
                     smartSummary.rating.includes('Buy')
-                      ? '#10b981'
+                      ? '#089981'
                       : smartSummary.rating.includes('Sell')
-                        ? '#ef4444'
+                        ? '#F23645'
                         : 'var(--vp-accent)',
                 },
                 {
@@ -942,28 +942,24 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
                   label: 'MACD Hist',
                   value: `${smartSummary.macdHist >= 0 ? '+' : ''}${smartSummary.macdHist.toFixed(2)}`,
                   sub: smartSummary.macdHist >= 0 ? 'Bullish momentum' : 'Bearish slope',
-                  color: smartSummary.macdHist >= 0 ? '#10b981' : '#ef4444',
+                  color: smartSummary.macdHist >= 0 ? '#089981' : '#F23645',
                 },
                 {
                   label: 'Support (S1)',
                   value: `$${formatAssetPrice(smartSummary.supportS1)}`,
                   sub: `VWAP $${formatAssetPrice(smartSummary.vwap)}`,
-                  color: '#10b981',
+                  color: '#089981',
                 },
                 {
                   label: 'Resistance (R1)',
                   value: `$${formatAssetPrice(smartSummary.resistanceR1)}`,
                   sub: `ATR $${formatAssetPrice(smartSummary.atr14)}`,
-                  color: '#ef4444',
+                  color: '#F23645',
                 },
               ].map((card) => (
                 <div
                   key={card.label}
-                  className="rounded-xl border p-3"
-                  style={{
-                    backgroundColor: 'var(--vp-elevated)',
-                    borderColor: 'var(--vp-border)',
-                  }}
+                  className="vp-glass-card rounded-xl p-3"
                 >
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     {card.label}
@@ -984,13 +980,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
         </section>
 
         {/* Price Alerts & Push Notification Panel */}
-        <aside
-          className="lg:col-span-12 rounded-2xl border p-5 space-y-5"
-          style={{
-            backgroundColor: 'var(--vp-surface)',
-            borderColor: 'var(--vp-border)',
-          }}
-        >
+        <aside className="lg:col-span-12 vp-glass-card rounded-2xl p-5 space-y-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-bold flex items-center gap-2">
