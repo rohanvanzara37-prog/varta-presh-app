@@ -119,11 +119,9 @@
 @keyframes vpFadeSlideIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -202,8 +200,15 @@
   pointer-events: none !important;
 }
 
-/* Lock touch gestures to chart so zooming/moving up-down inside chart never scrolls the outer page */
-.smc-chart-host,
+/* Lock touch gestures to chart & isolate layout compositing so Android vertical/horizontal panning is 60fps */
+.smc-chart-host {
+  touch-action: none !important;
+  overscroll-behavior: none;
+  contain: layout style size;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .smc-chart-host * {
   touch-action: none !important;
 }
@@ -212,10 +217,13 @@
 body.chart-fullscreen-active {
   overflow: hidden !important;
   overscroll-behavior: none !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 body.chart-fullscreen-active header,
 body.chart-fullscreen-active nav[aria-label="Primary bottom navigation"] {
   display: none !important;
 }
-

@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi, Time, UTCTimestamp } from 'lightweight-charts';
 import type { ThemeMode } from '../types/news';
 import {
   computeVisibleVolumeProfile,
   type ChartStructureOverlayData,
   type TerminalCandle,
+  type VolumeProfileBucket,
 } from '../utils/chartAnalysis';
 
 interface PlacedBox {
@@ -24,7 +25,7 @@ function boxesOverlap(a: PlacedBox, b: PlacedBox, pad = 4): boolean {
 }
 
 interface ChartCanvasOverlayProps {
-  renderTick: number;
+  redrawRef?: React.MutableRefObject<(() => void) | null>;
   chart: IChartApi | null;
   candleSeries: ISeriesApi<'Candlestick', Time> | null;
   candles: TerminalCandle[];
@@ -43,30 +44,44 @@ interface ChartCanvasOverlayProps {
   isBullTick: boolean;
 }
 
-export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
-  renderTick,
-  chart,
-  candleSeries,
-  candles,
-  structure,
-  bbUpper,
-  bbLower,
-  showBollinger,
-  showVolumeProfile,
-  showSupportResistance,
-  showPatterns,
-  showSwingLabels,
-  showBosChoch,
-  precision,
-  themeMode,
-  livePrice,
-  isBullTick,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+interface CachedVp {
+  key: string;
+  buckets: VolumeProfileBucket[];
+  pocPrice: number | null;
+  maxVol: number;
+}
 
-  useEffect(() => {
-    void renderTick;
+const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
+  const { redrawRef } = props;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const propsRef = useRef<ChartCanvasOverlayProps>(props);
+  propsRef.current = props;
+
+  const vpCacheRef = useRef<CachedVp | null>(null);
+  const textWidthCacheRef = useRef<Map<string, number>>(new Map());
+  const cachedFontKeyRef = useRef<string>('');
+
+  const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
+    const {
+      chart,
+      candleSeries,
+      candles,
+      structure,
+      bbUpper,
+      bbLower,
+      showBollinger,
+      showVolumeProfile,
+      showSupportResistance,
+      showPatterns,
+      showSwingLabels,
+      showBosChoch,
+      precision,
+      themeMode,
+      livePrice,
+      isBullTick,
+    } = propsRef.current;
+
     if (!canvas || !chart || !candleSeries) return;
 
     const pane = chart.paneSize(0);
@@ -74,16 +89,21 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
 
     const width = Math.floor(pane.width);
     const height = Math.floor(pane.height);
-    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    // Cap at 2x DPR for crisp Retina clarity while reducing Android GPU fill-rate by >2.25x vs 3x
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const targetW = Math.floor(width * dpr);
+    const targetH = Math.floor(height * dpr);
 
-    if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const styleW = `${width}px`;
+    const styleH = `${height}px`;
+    if (canvas.style.width !== styleW) canvas.style.width = styleW;
+    if (canvas.style.height !== styleH) canvas.style.height = styleH;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
     if (!ctx) return;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -114,10 +134,26 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
 
     const canPlaceRightTag = (y: number, minGap = 20): boolean => {
       if (y < 14 || y > height - 14) return false;
-      for (const used of usedRightYs) {
-        if (Math.abs(used - y) < minGap) return false;
+      for (let i = 0; i < usedRightYs.length; i += 1) {
+        if (Math.abs(usedRightYs[i] - y) < minGap) return false;
       }
       return true;
+    };
+
+    const measureCached = (text: string, fontSize: number): number => {
+      const font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, monospace`;
+      if (cachedFontKeyRef.current !== font) {
+        ctx.font = font;
+        cachedFontKeyRef.current = font;
+      }
+      const key = `${fontSize}:${text}`;
+      const cache = textWidthCacheRef.current;
+      const hit = cache.get(key);
+      if (hit !== undefined) return hit;
+      const w = ctx.measureText(text).width;
+      if (cache.size > 400) cache.clear();
+      cache.set(key, w);
+      return w;
     };
 
     const drawPillLabel = (
@@ -130,8 +166,7 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       options?: { checkCollision?: boolean; align?: 'center' | 'right' | 'left'; fontSize?: number }
     ): boolean => {
       const fontSize = options?.fontSize ?? 10;
-      ctx.font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, monospace`;
-      const textW = ctx.measureText(text).width;
+      const textW = measureCached(text, fontSize);
       const padX = 6;
       const boxW = Math.ceil(textW + padX * 2);
       const boxH = fontSize + 6;
@@ -145,16 +180,14 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       const candidate: PlacedBox = { x1, y1, x2: x1 + boxW, y2: y1 + boxH };
 
       if (options?.checkCollision !== false) {
-        for (const existing of placedBoxes) {
-          if (boxesOverlap(candidate, existing, 4)) return false;
+        for (let i = 0; i < placedBoxes.length; i += 1) {
+          if (boxesOverlap(candidate, placedBoxes[i], 4)) return false;
         }
       }
       placedBoxes.push(candidate);
 
-      ctx.save();
       ctx.beginPath();
-      const r = 4;
-      ctx.roundRect(x1, y1, boxW, boxH, r);
+      ctx.roundRect(x1, y1, boxW, boxH, 4);
       ctx.fillStyle = bg;
       ctx.fill();
       ctx.lineWidth = 1;
@@ -165,12 +198,12 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(text, x1 + boxW / 2, y1 + boxH / 2 + 0.5);
-      ctx.restore();
       return true;
     };
 
-    // Reserve top-left OHLCV legend + tools space so automated labels never collide with HUD
-    placedBoxes.push({ x1: 0, y1: 0, x2: Math.min(width * 0.65, 360), y2: 52 });
+    // Reserve top-left timeframe + OHLCV legend space and compact bottom-left zoom bar
+    placedBoxes.push({ x1: 0, y1: 0, x2: Math.min(width * 0.72, 380), y2: 88 });
+    placedBoxes.push({ x1: 0, y1: Math.max(0, height - 38), x2: Math.min(width - 40, 220), y2: height });
 
     // 1. Bollinger Bands Translucent Ribbon Fill
     if (showBollinger && bbUpper.length >= 2 && bbLower.length >= 2) {
@@ -195,7 +228,6 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       }
 
       if (upperPts.length >= 2) {
-        ctx.save();
         ctx.beginPath();
         ctx.moveTo(upperPts[0].x, upperPts[0].y);
         for (let i = 1; i < upperPts.length; i += 1) {
@@ -207,21 +239,29 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
         ctx.closePath();
         ctx.fillStyle = isLight ? 'rgba(59, 130, 246, 0.08)' : 'rgba(96, 165, 250, 0.08)';
         ctx.fill();
-        ctx.restore();
       }
     }
 
-    // 2. Visible Range Volume Profile (VPVR)
+    // 2. Visible Range Volume Profile (VPVR) with Range Cache for O(1) Vertical Pan
     if (showVolumeProfile && candles.length > 0) {
       const range = ts.getVisibleLogicalRange();
       const fromIdx = range ? Math.max(0, Math.floor(range.from)) : 0;
       const toIdx = range ? Math.min(candles.length - 1, Math.ceil(range.to)) : candles.length - 1;
-      const visible = candles.slice(fromIdx, toIdx + 1);
-      const vp = computeVisibleVolumeProfile(visible.length > 0 ? visible : candles, 24);
+      const lastBar = candles[candles.length - 1];
+      const vpKey = `${candles.length}:${lastBar?.time}:${lastBar?.close}:${fromIdx}:${toIdx}`;
+
+      let vp = vpCacheRef.current;
+      if (!vp || vp.key !== vpKey) {
+        const visible = candles.slice(fromIdx, toIdx + 1);
+        const computed = computeVisibleVolumeProfile(visible.length > 0 ? visible : candles, 24);
+        vp = { key: vpKey, ...computed };
+        vpCacheRef.current = vp;
+      }
 
       if (vp.maxVol > 0) {
         const maxBarW = Math.min(86, width * 0.19);
-        for (const b of vp.buckets) {
+        for (let i = 0; i < vp.buckets.length; i += 1) {
+          const b = vp.buckets[i];
           const yTop = toY(b.high);
           const yBot = toY(b.low);
           if (yTop === null || yBot === null) continue;
@@ -271,9 +311,10 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
     }
 
     if (structure) {
-      // 3. Order Blocks & FVG Shaded Zones (when BOS/CHoCH structure is enabled)
+      // 3. Order Blocks & FVG Shaded Zones
       if (showBosChoch) {
-        for (const ob of structure.orderBlocks) {
+        for (let i = 0; i < structure.orderBlocks.length; i += 1) {
+          const ob = structure.orderBlocks[i];
           if (ob.mitigated) continue;
           const x1 = toX(ob.startTime) ?? 0;
           const x2 = Math.min(plotRight, (toX(ob.endTime) ?? plotRight) + 28);
@@ -285,13 +326,11 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           const drawH = Math.max(3, Math.abs(yBot - yTop));
           const isBull = ob.type === 'Bullish';
 
-          ctx.save();
           ctx.fillStyle = isBull ? 'rgba(8, 153, 129, 0.10)' : 'rgba(242, 54, 69, 0.10)';
           ctx.strokeStyle = isBull ? 'rgba(8, 153, 129, 0.35)' : 'rgba(242, 54, 69, 0.35)';
           ctx.lineWidth = 1;
           ctx.fillRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
           ctx.strokeRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
-          ctx.restore();
 
           drawPillLabel(
             isBull ? 'OB+' : 'OB-',
@@ -304,7 +343,8 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           );
         }
 
-        for (const fvg of structure.fvgs) {
+        for (let i = 0; i < structure.fvgs.length; i += 1) {
+          const fvg = structure.fvgs[i];
           if (fvg.mitigated) continue;
           const x1 = toX(fvg.startTime) ?? 0;
           const x2 = Math.min(plotRight, (toX(fvg.endTime) ?? plotRight) + 20);
@@ -316,16 +356,15 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           const drawH = Math.max(2, Math.abs(yBot - yTop));
           const isBull = fvg.type === 'Bullish';
 
-          ctx.save();
           ctx.fillStyle = isBull ? 'rgba(56, 189, 248, 0.08)' : 'rgba(251, 146, 60, 0.08)';
           ctx.fillRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
-          ctx.restore();
         }
       }
 
       // 4. Support & Resistance Horizontal Levels (Collision-Safe Right Tags)
       if (showSupportResistance) {
-        for (const sr of structure.srLevels) {
+        for (let i = 0; i < structure.srLevels.length; i += 1) {
+          const sr = structure.srLevels[i];
           const y = toY(sr.price);
           if (y === null || y < 4 || y > height - 4) continue;
           const xStart = Math.max(0, toX(sr.startTime) ?? 0);
@@ -334,7 +373,7 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           ctx.save();
           ctx.strokeStyle = sr.color;
           ctx.lineWidth = isPrimary ? 1.5 : 1;
-          ctx.setLineDash(isPrimary ? [] : [5, 4]);
+          if (!isPrimary) ctx.setLineDash([5, 4]);
           ctx.beginPath();
           ctx.moveTo(xStart, y);
           ctx.lineTo(plotRight, y);
@@ -359,14 +398,15 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
 
       // 5. Chart Patterns (Trendlines, Neckline & Single Non-Overlapping Pattern Badge)
       if (showPatterns && structure.pattern) {
-        for (const ln of structure.pattern.lines) {
-          const pts = ln.points
-            .map((p) => {
-              const x = toX(p.time);
-              const y = toY(p.price);
-              return x !== null && y !== null ? { x, y } : null;
-            })
-            .filter((p): p is { x: number; y: number } => p !== null);
+        for (let i = 0; i < structure.pattern.lines.length; i += 1) {
+          const ln = structure.pattern.lines[i];
+          const pts: Array<{ x: number; y: number }> = [];
+          for (let j = 0; j < ln.points.length; j += 1) {
+            const p = ln.points[j];
+            const x = toX(p.time);
+            const y = toY(p.price);
+            if (x !== null && y !== null) pts.push({ x, y });
+          }
 
           if (pts.length < 2) continue;
           ctx.save();
@@ -375,8 +415,8 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           if (ln.dashed) ctx.setLineDash([5, 4]);
           ctx.beginPath();
           ctx.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i += 1) {
-            ctx.lineTo(pts[i].x, pts[i].y);
+          for (let j = 1; j < pts.length; j += 1) {
+            ctx.lineTo(pts[j].x, pts[j].y);
           }
           ctx.stroke();
           ctx.restore();
@@ -405,9 +445,10 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
         }
       }
 
-      // 6. BOS / CHoCH Break Segments & Labels (Collision-Checked)
+      // 6. BOS / CHoCH Break Segments & Labels
       if (showBosChoch) {
-        for (const seg of structure.breaks) {
+        for (let i = 0; i < structure.breaks.length; i += 1) {
+          const seg = structure.breaks[i];
           const x1 = toX(seg.t1);
           const x2 = toX(seg.t2);
           const y = toY(seg.price);
@@ -421,7 +462,7 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
           ctx.save();
           ctx.strokeStyle = seg.color;
           ctx.lineWidth = seg.kind === 'CHoCH' ? 1.75 : 1.2;
-          ctx.setLineDash(seg.kind === 'CHoCH' ? [] : [4, 3]);
+          if (seg.kind !== 'CHoCH') ctx.setLineDash([4, 3]);
           ctx.beginPath();
           ctx.moveTo(clampedX1, y);
           ctx.lineTo(clampedX2, y);
@@ -444,9 +485,8 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
 
       // 7. Swing Labels (HH / HL / LH / LL) — Strictly De-Collided
       if (showSwingLabels) {
-        // Prioritize most recent swings first so latest structure labels always win collisions
-        const swingsNewestFirst = [...structure.swings].reverse();
-        for (const sw of swingsNewestFirst) {
+        for (let i = structure.swings.length - 1; i >= 0; i -= 1) {
+          const sw = structure.swings[i];
           const x = toX(sw.time);
           const y = toY(sw.price);
           if (x === null || y === null || x < 14 || x > plotRight - 14) continue;
@@ -466,13 +506,12 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       }
     }
 
-    // 8. Live Price Pulse Anchor synced identically with Lightweight Charts priceLine & right scale
+    // 8. Live Price Pulse Anchor synced identically with Lightweight Charts priceLine
     if (liveY !== null && liveY >= 0 && liveY <= height && candles.length > 0) {
       const lastBar = candles[candles.length - 1];
       const lastX = toX(lastBar.time);
       const pulseColor = isBullTick ? '#089981' : '#F23645';
 
-      ctx.save();
       const grad = ctx.createLinearGradient(0, liveY, plotRight, liveY);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
       grad.addColorStop(0.65, isBullTick ? 'rgba(8, 153, 129, 0.10)' : 'rgba(242, 54, 69, 0.10)');
@@ -490,26 +529,38 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       ctx.arc(dotX, liveY, 2.75, 0, Math.PI * 2);
       ctx.fillStyle = pulseColor;
       ctx.fill();
-      ctx.restore();
     }
+  }, []);
+
+  useEffect(() => {
+    if (redrawRef) {
+      redrawRef.current = drawFrame;
+    }
+    drawFrame();
+    return () => {
+      if (redrawRef && redrawRef.current === drawFrame) {
+        redrawRef.current = null;
+      }
+    };
   }, [
-    renderTick,
-    chart,
-    candleSeries,
-    candles,
-    structure,
-    bbUpper,
-    bbLower,
-    showBollinger,
-    showVolumeProfile,
-    showSupportResistance,
-    showPatterns,
-    showSwingLabels,
-    showBosChoch,
-    precision,
-    themeMode,
-    livePrice,
-    isBullTick,
+    redrawRef,
+    drawFrame,
+    props.chart,
+    props.candleSeries,
+    props.candles,
+    props.structure,
+    props.bbUpper,
+    props.bbLower,
+    props.showBollinger,
+    props.showVolumeProfile,
+    props.showSupportResistance,
+    props.showPatterns,
+    props.showSwingLabels,
+    props.showBosChoch,
+    props.precision,
+    props.themeMode,
+    props.livePrice,
+    props.isBullTick,
   ]);
 
   return (
@@ -517,6 +568,9 @@ export const ChartCanvasOverlay: React.FC<ChartCanvasOverlayProps> = ({
       ref={canvasRef}
       aria-hidden="true"
       className="pointer-events-none absolute top-0 left-0 z-10"
+      style={{ willChange: 'contents', transform: 'translateZ(0)' }}
     />
   );
 };
+
+export const ChartCanvasOverlay = memo(ChartCanvasOverlayInner);

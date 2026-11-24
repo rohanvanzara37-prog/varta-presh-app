@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import type { MarketAsset } from '../types/news';
 
 interface LiveMarketWatchlistProps {
@@ -20,7 +20,7 @@ function getShortSymbol(pair: string): string {
   return pair.replace(/\/USD$/, '');
 }
 
-export const LiveMarketWatchlist: React.FC<LiveMarketWatchlistProps> = ({
+const LiveMarketWatchlistInner: React.FC<LiveMarketWatchlistProps> = ({
   assets,
   selectedSymbol,
   onSelectAsset,
@@ -68,3 +68,5 @@ export const LiveMarketWatchlist: React.FC<LiveMarketWatchlistProps> = ({
     </section>
   );
 };
+
+export const LiveMarketWatchlist = memo(LiveMarketWatchlistInner);

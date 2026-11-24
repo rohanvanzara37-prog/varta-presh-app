@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -47,7 +47,7 @@ const GUIDE_ITEMS = [
   },
 ] as const;
 
-export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
+const TerminalTopicBoxesInner: React.FC<TerminalTopicBoxesProps> = ({
   telemetry,
   fallbackPairLabel,
   fallbackPrice,
@@ -350,3 +350,5 @@ export const TerminalTopicBoxes: React.FC<TerminalTopicBoxesProps> = ({
     </section>
   );
 };
+
+export const TerminalTopicBoxes = memo(TerminalTopicBoxesInner);

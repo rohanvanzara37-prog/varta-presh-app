@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CandlestickSeries,
   ColorType,
@@ -9,7 +9,6 @@ import {
   type CandlestickData,
   type IChartApi,
   type ISeriesApi,
-  type Logical,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
@@ -17,20 +16,13 @@ import {
   Activity,
   BarChart2,
   Columns2,
-  Crosshair,
   Maximize2,
   Minimize2,
-  Minus,
   Pause,
-  Pencil,
   Play,
   RotateCcw,
   Settings,
   SkipForward,
-  Trash2,
-  TrendingUp,
-  Type,
-  Undo2,
   X,
 } from 'lucide-react';
 import type { ThemeMode } from '../types/news';
@@ -68,6 +60,8 @@ export interface SmcTelemetrySnapshot {
   symbol: SmcSymbol;
   timeframe: SmcTimeframe;
   price: number | null;
+  latestBarTime?: number;
+  countdown?: string;
   smc: SmcAnalysisState | null;
   omye: OmyeEngineState | null;
 }
@@ -117,6 +111,31 @@ function getChartThemeOptions(themeMode: ThemeMode) {
   };
 }
 
+function getCandleStyleOptions(themeMode: ThemeMode) {
+  const isLight = themeMode === 'light';
+  return isLight
+    ? {
+        upColor: '#089981',
+        downColor: '#F23645',
+        borderUpColor: '#057A66',
+        borderDownColor: '#C81E2B',
+        wickUpColor: '#057A66',
+        wickDownColor: '#C81E2B',
+        borderVisible: true,
+        wickVisible: true,
+      }
+    : {
+        upColor: '#089981',
+        downColor: '#F23645',
+        borderUpColor: '#14B89B',
+        borderDownColor: '#FF4E5E',
+        wickUpColor: '#26D7B7',
+        wickDownColor: '#FF6B79',
+        borderVisible: true,
+        wickVisible: true,
+      };
+}
+
 interface SymbolMeta {
   value: SmcSymbol;
   shortLabel: string;
@@ -149,6 +168,8 @@ const TIMEFRAME_OPTIONS: { value: SmcTimeframe; label: string }[] = [
   { value: '1w', label: '1W' },
 ];
 
+const IN_CHART_TIMEFRAMES = TIMEFRAME_OPTIONS.filter((tf) => tf.value !== '1w');
+
 function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
   if (!tvSymbol) return null;
   if (tvSymbol.includes('XAU')) return 'XAUUSD';
@@ -163,20 +184,6 @@ function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
   return null;
 }
 
-type DrawingTool = 'crosshair' | 'trendline' | 'hray' | 'fib' | 'brush' | 'text';
-
-interface ChartAnchor {
-  logical: number;
-  price: number;
-}
-
-type ChartDrawing =
-  | { id: string; kind: 'trendline'; a: ChartAnchor; b: ChartAnchor }
-  | { id: string; kind: 'hray'; a: ChartAnchor }
-  | { id: string; kind: 'fib'; a: ChartAnchor; b: ChartAnchor }
-  | { id: string; kind: 'brush'; points: ChartAnchor[] }
-  | { id: string; kind: 'text'; a: ChartAnchor; text: string };
-
 interface CrosshairReadout {
   price: number;
   timeLabel: string;
@@ -185,16 +192,6 @@ interface CrosshairReadout {
   low?: number;
   close?: number;
 }
-
-const FIB_LEVELS = [
-  { ratio: 0, label: '0%', color: '#8B95A5' },
-  { ratio: 0.236, label: '23.6%', color: '#F23645' },
-  { ratio: 0.382, label: '38.2%', color: '#F59E0B' },
-  { ratio: 0.5, label: '50.0%', color: '#089981' },
-  { ratio: 0.618, label: '61.8%', color: '#38BDF8' },
-  { ratio: 0.786, label: '78.6%', color: '#C084FC' },
-  { ratio: 1, label: '100%', color: '#8B95A5' },
-] as const;
 
 function toPureCandle(c: TerminalCandle): CandlestickData<UTCTimestamp> {
   return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
@@ -207,6 +204,68 @@ function formatUtcShort(ts: number): string {
   const mm = String(d.getMinutes()).padStart(2, '0');
   const mon = d.toLocaleString('en-US', { month: 'short' });
   return `${d.getDate()} ${mon} ${hh}:${mm}`;
+}
+
+const TIMEFRAME_SECONDS: Record<SmcTimeframe, number> = {
+  '1m': 60,
+  '5m': 300,
+  '15m': 900,
+  '30m': 1800,
+  '1h': 3600,
+  '4h': 14400,
+  '1d': 86400,
+  '1w': 604800,
+};
+
+export function formatCandleCountdown(
+  timeframe: SmcTimeframe,
+  latestBarTime?: number,
+  nowMs = Date.now()
+): string {
+  const tfSec = TIMEFRAME_SECONDS[timeframe] ?? 900;
+  const nowSec = Math.floor(nowMs / 1000);
+
+  let nextCloseSec: number;
+  if (timeframe === '1w') {
+    const mondayEpochOffset = 345600; // 1970-01-05T00:00:00Z
+    const weekStart = Math.floor((nowSec - mondayEpochOffset) / tfSec) * tfSec + mondayEpochOffset;
+    nextCloseSec =
+      latestBarTime && latestBarTime + tfSec > nowSec && latestBarTime >= weekStart - tfSec
+        ? latestBarTime + tfSec
+        : weekStart + tfSec;
+  } else {
+    const bucketStart = Math.floor(nowSec / tfSec) * tfSec;
+    nextCloseSec =
+      latestBarTime && latestBarTime + tfSec > nowSec && latestBarTime >= bucketStart - tfSec
+        ? latestBarTime + tfSec
+        : bucketStart + tfSec;
+  }
+
+  let remaining = nextCloseSec - nowSec;
+  if (remaining <= 0 || remaining > tfSec) {
+    remaining = tfSec - (nowSec % tfSec);
+    if (remaining <= 0) remaining = tfSec;
+  }
+
+  if (remaining >= 86400) {
+    const days = Math.floor(remaining / 86400);
+    const rem = remaining % 86400;
+    const hh = String(Math.floor(rem / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((rem % 3600) / 60)).padStart(2, '0');
+    const ss = String(rem % 60).padStart(2, '0');
+    return `${days}d ${hh}:${mm}:${ss}`;
+  }
+
+  if (tfSec >= 3600 || remaining >= 3600) {
+    const hh = String(Math.floor(remaining / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((remaining % 3600) / 60)).padStart(2, '0');
+    const ss = String(remaining % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+  const ss = String(remaining % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
 }
 
 const GOLD_CFD_PARAMS: Record<SmcTimeframe, { interval: string; range: string }> = {
@@ -347,7 +406,7 @@ function formatTerminalPrice(val: number | null, precision = 2): string {
   return val.toFixed(precision);
 }
 
-export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
+const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   externalTvSymbol,
   onSelectTvSymbol,
   onTelemetryChange,
@@ -358,11 +417,11 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const [timeframe, setTimeframe] = useState<SmcTimeframe>('15m');
   const [showSupportResistance, setShowSupportResistance] = useState(true);
   const [showPatterns, setShowPatterns] = useState(true);
-  const [showSwingLabels, setShowSwingLabels] = useState(true);
+  const [showSwingLabels, setShowSwingLabels] = useState(false);
   const [showBosChoch, setShowBosChoch] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // On-Chart Technical Indicators
+  // On-Chart Technical Indicators (all disabled by default)
   const [showEma20, setShowEma20] = useState(false);
   const [showEma50, setShowEma50] = useState(false);
   const [showEma200, setShowEma200] = useState(false);
@@ -378,17 +437,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     bbLower?: number;
   }>({});
 
-  // Drawing & Crosshair Tools
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [activeTool, setActiveTool] = useState<DrawingTool>('crosshair');
-  const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
-  const [draftAnchor, setDraftAnchor] = useState<ChartAnchor | null>(null);
-  const [hoverAnchor, setHoverAnchor] = useState<ChartAnchor | null>(null);
-  const [brushStroke, setBrushStroke] = useState<ChartAnchor[] | null>(null);
-  const [pendingTextAnchor, setPendingTextAnchor] = useState<ChartAnchor | null>(null);
-  const [pendingTextValue, setPendingTextValue] = useState('');
   const [crosshairReadout, setCrosshairReadout] = useState<CrosshairReadout | null>(null);
-  const [overlayRenderTick, setOverlayRenderTick] = useState(0);
 
   // Bar Replay, Full-Screen & 2-Chart Split View
   const [replayActive, setReplayActive] = useState(false);
@@ -419,6 +468,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
   const terminalSectionRef = useRef<HTMLElement | null>(null);
   const enteredNativeFsRef = useRef(false);
+  const savedScrollYRef = useRef<number>(0);
+  const lastPriceLineBullRef = useRef<boolean | null>(null);
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
@@ -441,34 +492,32 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   const omyeCandlesRef = useRef<TerminalCandle[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const omyeWsRef = useRef<WebSocket | null>(null);
-  const activeToolRef = useRef<DrawingTool>(activeTool);
-  const draftAnchorRef = useRef<ChartAnchor | null>(draftAnchor);
   const replayActiveRef = useRef<boolean>(replayActive);
   const scheduleOverlayRafRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    activeToolRef.current = activeTool;
-  }, [activeTool]);
-
-  useEffect(() => {
-    draftAnchorRef.current = draftAnchor;
-  }, [draftAnchor]);
+  const overlayRedrawRef = useRef<(() => void) | null>(null);
+  const countdownSyncRef = useRef<(() => void) | null>(null);
+  const isTouchPanningRef = useRef<boolean>(false);
+  const touchPanCooldownUntilRef = useRef<number>(0);
+  const lastCrosshairKeyRef = useRef<string>('');
+  const lastCrosshairCommitAtRef = useRef<number>(0);
 
   useEffect(() => {
     replayActiveRef.current = replayActive;
   }, [replayActive]);
 
   const symbolMeta = SYMBOL_OPTIONS.find((s) => s.value === symbol) ?? SYMBOL_OPTIONS[0];
+  const latestBarTime = latestBarSnapshot?.time;
 
   useEffect(() => {
     onTelemetryChange?.({
       symbol,
       timeframe,
       price: livePrice,
+      latestBarTime,
       smc,
       omye,
     });
-  }, [symbol, timeframe, livePrice, smc, omye, onTelemetryChange]);
+  }, [symbol, timeframe, livePrice, latestBarTime, smc, omye, onTelemetryChange]);
 
   useEffect(() => {
     const mapped = mapTvSymbolToSmc(externalTvSymbol);
@@ -484,8 +533,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     const initialChartTheme = getChartThemeOptions(themeMode);
 
     const chart = createChart(el, {
-      width: el.clientWidth || 320,
-      height: el.clientHeight || 360,
+      autoSize: true,
       layout: {
         ...initialChartTheme.layout,
         fontSize: 10.5,
@@ -522,13 +570,14 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         ...initialChartTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 10,
-        barSpacing: 8,
-        minBarSpacing: 0.25,
+        rightOffset: 5,
+        barSpacing: 11.5,
+        minBarSpacing: 2.5,
         maxBarSpacing: 36,
         fixLeftEdge: false,
         fixRightEdge: false,
-        lockVisibleTimeRangeOnResize: false,
+        lockVisibleTimeRangeOnResize: true,
+        shiftVisibleRangeOnNewBar: true,
       },
       rightPriceScale: {
         visible: true,
@@ -537,19 +586,14 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         ticksVisible: true,
         entireTextOnly: true,
         alignLabels: true,
-        minimumWidth: 56,
-        scaleMargins: { top: 0.12, bottom: 0.12 },
+        minimumWidth: 64,
+        scaleMargins: { top: 0.16, bottom: 0.16 },
       },
     });
 
-    // Native TradingView-synchronized candlesticks + real-time priceLine & right-axis badge
+    // Native TradingView-synchronized candlesticks + crisp borders/wicks & real-time priceLine
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#089981',
-      downColor: '#F23645',
-      borderUpColor: '#089981',
-      borderDownColor: '#F23645',
-      wickUpColor: '#089981',
-      wickDownColor: '#F23645',
+      ...getCandleStyleOptions(themeMode),
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: LineStyle.Dashed,
@@ -627,10 +671,40 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(() => {
         rafId = null;
-        setOverlayRenderTick((t) => t + 1);
+        overlayRedrawRef.current?.();
+        countdownSyncRef.current?.();
       });
     };
     scheduleOverlayRafRef.current = scheduleOverlayTick;
+
+    // Passive native listeners keep canvas overlays & countdown locked 1:1 during vertical/price-axis touch drag without React re-renders
+    const handleTouchStart = () => {
+      isTouchPanningRef.current = true;
+      scheduleOverlayTick();
+    };
+    const handleTouchMove = () => {
+      scheduleOverlayTick();
+    };
+    const handleTouchEnd = () => {
+      isTouchPanningRef.current = false;
+      touchPanCooldownUntilRef.current = performance.now() + 90;
+      scheduleOverlayTick();
+    };
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.buttons > 0 || e.pointerType === 'touch') {
+        scheduleOverlayTick();
+      }
+    };
+    const handleWheel = () => {
+      scheduleOverlayTick();
+    };
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+    el.addEventListener('pointermove', handlePointerMove, { passive: true });
+    el.addEventListener('wheel', handleWheel, { passive: true });
 
     chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
       scheduleOverlayTick();
@@ -649,80 +723,42 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     chart.subscribeCrosshairMove((param) => {
       scheduleOverlayTick();
       if (!param.point) {
-        setCrosshairReadout(null);
-        setHoverAnchor(null);
+        if (lastCrosshairKeyRef.current !== '') {
+          lastCrosshairKeyRef.current = '';
+          setCrosshairReadout(null);
+        }
         return;
       }
+
+      const now = performance.now();
+      // Skip coordinate lookups & React OHLCV updates while actively dragging with finger on mobile
+      if (isTouchPanningRef.current || now < touchPanCooldownUntilRef.current) {
+        return;
+      }
+
       const priceVal = candleSeries.coordinateToPrice(param.point.y);
-      const logicalVal = chart.timeScale().coordinateToLogical(param.point.x);
       const candleDatum = param.seriesData.get(candleSeries) as
         | CandlestickData<UTCTimestamp>
         | undefined;
 
       if (priceVal !== null && Number.isFinite(Number(priceVal))) {
         const numericTime = typeof param.time === 'number' ? param.time : null;
-        setCrosshairReadout({
-          price: Number(priceVal),
-          timeLabel: numericTime ? formatUtcShort(numericTime) : 'Cursor',
-          open: candleDatum?.open,
-          high: candleDatum?.high,
-          low: candleDatum?.low,
-          close: candleDatum?.close,
-        });
-      }
-
-      if (
-        draftAnchorRef.current &&
-        logicalVal !== null &&
-        priceVal !== null &&
-        Number.isFinite(Number(priceVal))
-      ) {
-        setHoverAnchor({ logical: Number(logicalVal), price: Number(priceVal) });
-      }
-    });
-
-    chart.subscribeClick((param) => {
-      const tool = activeToolRef.current;
-      if (tool === 'crosshair' || tool === 'brush' || !param.point) return;
-      const logicalVal = chart.timeScale().coordinateToLogical(param.point.x);
-      const priceVal = candleSeries.coordinateToPrice(param.point.y);
-      if (logicalVal === null || priceVal === null || !Number.isFinite(Number(priceVal))) return;
-
-      const anchor: ChartAnchor = { logical: Number(logicalVal), price: Number(priceVal) };
-      if (tool === 'hray') {
-        setDrawings((prev) => [
-          ...prev,
-          { id: `${Date.now()}-${Math.random()}`, kind: 'hray', a: anchor },
-        ]);
-        setDraftAnchor(null);
-        setHoverAnchor(null);
-        setActiveTool('crosshair');
-        return;
-      }
-
-      if (tool === 'text') {
-        setPendingTextAnchor(anchor);
-        setPendingTextValue('');
-        return;
-      }
-
-      if (!draftAnchorRef.current) {
-        setDraftAnchor(anchor);
-        setHoverAnchor(anchor);
-      } else {
-        const first = draftAnchorRef.current;
-        setDrawings((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-${Math.random()}`,
-            kind: tool,
-            a: first,
-            b: anchor,
-          },
-        ]);
-        setDraftAnchor(null);
-        setHoverAnchor(null);
-        setActiveTool('crosshair');
+        const readoutKey = `${numericTime ?? 'cursor'}|${candleDatum ? `${candleDatum.open}|${candleDatum.close}` : Math.round(Number(priceVal) * 10)}`;
+        if (
+          readoutKey !== lastCrosshairKeyRef.current &&
+          now - lastCrosshairCommitAtRef.current >= 90
+        ) {
+          lastCrosshairKeyRef.current = readoutKey;
+          lastCrosshairCommitAtRef.current = now;
+          setCrosshairReadout({
+            price: Number(priceVal),
+            timeLabel: numericTime ? formatUtcShort(numericTime) : 'Cursor',
+            open: candleDatum?.open,
+            high: candleDatum?.high,
+            low: candleDatum?.low,
+            close: candleDatum?.close,
+          });
+        }
       }
     });
 
@@ -730,7 +766,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (w > 0 && h > 0) {
-        chart.applyOptions({ width: Math.floor(w), height: Math.floor(h) });
+        chart.resize(Math.floor(w), Math.floor(h));
         scheduleOverlayTick();
       }
     };
@@ -738,17 +774,25 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
-        chart.applyOptions({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
+        chart.resize(Math.floor(rect.width), Math.floor(rect.height));
         scheduleOverlayTick();
       }
     });
     ro.observe(el);
     window.addEventListener('resize', syncRetinaSize);
+    window.visualViewport?.addEventListener('resize', syncRetinaSize);
 
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       scheduleOverlayRafRef.current = null;
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+      el.removeEventListener('pointermove', handlePointerMove);
+      el.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', syncRetinaSize);
+      window.visualViewport?.removeEventListener('resize', syncRetinaSize);
       ro.disconnect();
       chart.remove();
       chartApiRef.current = null;
@@ -765,6 +809,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
   useEffect(() => {
     chartApiRef.current?.applyOptions(getChartThemeOptions(themeMode));
+    candleSeriesRef.current?.applyOptions(getCandleStyleOptions(themeMode));
     scheduleOverlayRafRef.current?.();
   }, [themeMode]);
 
@@ -777,6 +822,44 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       },
     });
   }, [symbolMeta.precision, symbolMeta.minMove]);
+
+  const fitCandlesToViewport = useCallback((preserveHistoryIfScrolled = false) => {
+    const chart = chartApiRef.current;
+    const candles = latestCandlesRef.current;
+    if (!chart || candles.length === 0) return;
+
+    const containerW = chartWrapRef.current?.clientWidth || chart.paneSize(0).width || 360;
+    const plotW = Math.max(200, containerW - 64);
+    const targetVisibleBars = Math.max(26, Math.min(candles.length, 82, Math.round(plotW / 12)));
+
+    chart.priceScale('right').applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.16, bottom: 0.16 },
+    });
+
+    if (preserveHistoryIfScrolled) {
+      const currentRange = chart.timeScale().getVisibleLogicalRange();
+      if (currentRange && currentRange.to < candles.length - 12) {
+        const rightIdx = Math.min(candles.length - 1, Math.max(20, currentRange.to));
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, rightIdx - targetVisibleBars),
+          to: rightIdx,
+        });
+        scheduleOverlayRafRef.current?.();
+        return;
+      }
+    }
+
+    if (candles.length > targetVisibleBars) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, candles.length - targetVisibleBars),
+        to: candles.length - 1 + 4.5,
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
+    scheduleOverlayRafRef.current?.();
+  }, []);
 
   const handleZoomIn = useCallback(() => {
     const chart = chartApiRef.current;
@@ -799,7 +882,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     const range = ts.getVisibleLogicalRange();
     if (!range) return;
     const span = range.to - range.from;
-    const maxSpan = Math.max(180, latestCandlesRef.current.length + 20);
+    const maxSpan = Math.max(180, latestCandlesRef.current.length + 10);
     const nextSpan = Math.min(maxSpan, span * 1.38);
     ts.setVisibleLogicalRange({
       from: range.to - nextSpan,
@@ -812,37 +895,23 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     if (!chart) return;
     chart.priceScale('right').applyOptions({ autoScale: true });
     chart.timeScale().fitContent();
+    scheduleOverlayRafRef.current?.();
   }, []);
 
   const handleJumpLive = useCallback(() => {
-    const chart = chartApiRef.current;
-    const candles = latestCandlesRef.current;
-    if (!chart || candles.length === 0) return;
-    chart.priceScale('right').applyOptions({ autoScale: true });
-    const chartWidth = chartWrapRef.current?.clientWidth || 360;
-    const visibleBars = Math.max(50, Math.min(candles.length, Math.floor(chartWidth / 7)));
-    chart.timeScale().setVisibleLogicalRange({
-      from: Math.max(0, candles.length - visibleBars),
-      to: candles.length - 1 + 8,
-    });
-  }, []);
+    fitCandlesToViewport(false);
+  }, [fitCandlesToViewport]);
 
   const toggleFullScreen = useCallback(() => {
     setIsFullScreen((prev) => {
       const next = !prev;
-      const orientation = (
-        window.screen as Screen & {
-          orientation?: { lock?: (mode: string) => Promise<void>; unlock?: () => void };
-        }
-      )?.orientation;
-
       if (next) {
+        savedScrollYRef.current = window.scrollY || window.pageYOffset || 0;
         const el = terminalSectionRef.current;
         if (el?.requestFullscreen) {
           el.requestFullscreen()
             .then(() => {
               enteredNativeFsRef.current = true;
-              orientation?.lock?.('landscape')?.catch(() => {});
             })
             .catch(() => {
               enteredNativeFsRef.current = false;
@@ -853,11 +922,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
           document.exitFullscreen?.().catch(() => {});
         }
         enteredNativeFsRef.current = false;
-        try {
-          orientation?.unlock?.();
-        } catch {
-          // ignore
-        }
       }
       return next;
     });
@@ -873,30 +937,46 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
     let raf1: number | null = null;
     let raf2: number | null = null;
-    if (prevFullScreenRef.current !== isFullScreen) {
-      prevFullScreenRef.current = isFullScreen;
-      const syncSizeAfterFs = () => {
-        const el = chartWrapRef.current;
-        const chart = chartApiRef.current;
-        if (el && chart && el.clientWidth > 0 && el.clientHeight > 0) {
-          chart.applyOptions({
-            width: Math.floor(el.clientWidth),
-            height: Math.floor(el.clientHeight),
-          });
+    const timers: number[] = [];
+
+    const syncChartAfterViewportChange = (refitCandles: boolean) => {
+      const el = chartWrapRef.current;
+      const chart = chartApiRef.current;
+      if (el && chart && el.clientWidth > 0 && el.clientHeight > 0) {
+        chart.resize(Math.floor(el.clientWidth), Math.floor(el.clientHeight));
+        if (refitCandles) {
+          fitCandlesToViewport(true);
+        } else {
           chart.priceScale('right').applyOptions({ autoScale: true });
           scheduleOverlayRafRef.current?.();
         }
-      };
+      }
+    };
+
+    if (prevFullScreenRef.current !== isFullScreen) {
+      const exitedFullScreen = prevFullScreenRef.current && !isFullScreen;
+      prevFullScreenRef.current = isFullScreen;
+
+      if (exitedFullScreen) {
+        const restoreY = savedScrollYRef.current;
+        if (restoreY > 0) {
+          window.requestAnimationFrame(() => window.scrollTo(0, restoreY));
+        }
+      }
+
       raf1 = window.requestAnimationFrame(() => {
-        syncSizeAfterFs();
-        raf2 = window.requestAnimationFrame(syncSizeAfterFs);
+        syncChartAfterViewportChange(true);
+        raf2 = window.requestAnimationFrame(() => syncChartAfterViewportChange(true));
       });
+      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 120));
+      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 320));
     }
 
     if (!isFullScreen) {
       return () => {
         if (raf1 !== null) window.cancelAnimationFrame(raf1);
         if (raf2 !== null) window.cancelAnimationFrame(raf2);
+        timers.forEach((id) => window.clearTimeout(id));
         document.body.classList.remove('chart-fullscreen-active');
       };
     }
@@ -915,19 +995,30 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       if (enteredNativeFsRef.current && !document.fullscreenElement) {
         enteredNativeFsRef.current = false;
         setIsFullScreen(false);
+        return;
       }
+      window.setTimeout(() => syncChartAfterViewportChange(true), 80);
+    };
+
+    const handleViewportChange = () => {
+      window.setTimeout(() => syncChartAfterViewportChange(true), 100);
     };
 
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('orientationchange', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => {
       if (raf1 !== null) window.cancelAnimationFrame(raf1);
       if (raf2 !== null) window.cancelAnimationFrame(raf2);
+      timers.forEach((id) => window.clearTimeout(id));
       document.body.classList.remove('chart-fullscreen-active');
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('orientationchange', handleViewportChange);
+      window.visualViewport?.removeEventListener('resize', handleViewportChange);
       document.removeEventListener('fullscreenchange', handleFsChange);
     };
-  }, [isFullScreen]);
+  }, [isFullScreen, fitCandlesToViewport]);
 
   const syncTechnicalIndicators = useCallback(
     (candles: TerminalCandle[], incrementalTickOnly = false) => {
@@ -1225,8 +1316,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     setStreamStatus('CONNECTING');
     setReplayActive(false);
     setReplayPlaying(false);
-    setDrawings([]);
-    setDraftAnchor(null);
 
     historicalLoadedRef.current = false;
     hasMoreHistoryRef.current = true;
@@ -1247,26 +1336,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     rsiSeriesRef.current?.setData([]);
     bbUpperPointsRef.current = [];
     bbLowerPointsRef.current = [];
-
-    const shiftDrawingLogicalIndices = (addedCount: number) => {
-      if (addedCount <= 0) return;
-      const shiftAnchor = (a: ChartAnchor): ChartAnchor => ({ ...a, logical: a.logical + addedCount });
-      setDrawings((prev) =>
-        prev.length === 0
-          ? prev
-          : prev.map((d) => {
-              if (d.kind === 'trendline' || d.kind === 'fib') {
-                return { ...d, a: shiftAnchor(d.a), b: shiftAnchor(d.b) };
-              }
-              if (d.kind === 'hray' || d.kind === 'text') {
-                return { ...d, a: shiftAnchor(d.a) };
-              }
-              return { ...d, points: d.points.map(shiftAnchor) };
-            })
-      );
-      setDraftAnchor((prev) => (prev ? shiftAnchor(prev) : null));
-      setBrushStroke((prev) => (prev ? prev.map(shiftAnchor) : null));
-    };
 
     const loadOlderHistoryChunk = async () => {
       if (
@@ -1316,9 +1385,6 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
             from: prevRange.from + addedCount,
             to: prevRange.to + addedCount,
           });
-        }
-        if (addedCount > 0) {
-          shiftDrawingLogicalIndices(addedCount);
         }
 
         hasMoreHistoryRef.current = res.hasMore && addedCount > 0;
@@ -1392,12 +1458,15 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         return;
       }
 
-      // Update Lightweight Charts series & native live price line color atomically
+      // Update Lightweight Charts series & only mutate priceLineColor when bull/bear flips
       const isBull = liveCandle.close >= liveCandle.open;
       candleSeriesRef.current.update(toPureCandle(liveCandle));
-      candleSeriesRef.current.applyOptions({
-        priceLineColor: isBull ? '#089981' : '#F23645',
-      });
+      if (lastPriceLineBullRef.current !== isBull) {
+        lastPriceLineBullRef.current = isBull;
+        candleSeriesRef.current.applyOptions({
+          priceLineColor: isBull ? '#089981' : '#F23645',
+        });
+      }
 
       const arr = latestCandlesRef.current;
       let isNewBar = false;
@@ -1686,8 +1755,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         setReplayTotal(candles.length);
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
         const latest = candles[candles.length - 1];
+        const initBull = latest.close >= latest.open;
+        lastPriceLineBullRef.current = initBull;
         candleSeriesRef.current?.applyOptions({
-          priceLineColor: latest.close >= latest.open ? '#089981' : '#F23645',
+          priceLineColor: initBull ? '#089981' : '#F23645',
         });
 
         historicalLoadedRef.current = true;
@@ -1700,19 +1771,8 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
         });
 
         const applyInitialRange = () => {
-          const chart = chartApiRef.current;
-          if (!chart || disposed) return;
-          chart.priceScale('right').applyOptions({ autoScale: true });
-          const chartWidth = chartWrapRef.current?.clientWidth || 360;
-          const visibleBars = Math.max(52, Math.min(candles.length, Math.floor(chartWidth / 7)));
-          if (candles.length > visibleBars) {
-            chart.timeScale().setVisibleLogicalRange({
-              from: Math.max(0, candles.length - visibleBars),
-              to: candles.length - 1 + 8,
-            });
-          } else {
-            chart.timeScale().fitContent();
-          }
+          if (disposed) return;
+          fitCandlesToViewport(false);
         };
 
         applyInitialRange();
@@ -1897,6 +1957,17 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
     return ((activeLegendBar.close - activeLegendBar.open) / activeLegendBar.open) * 100;
   }, [activeLegendBar]);
 
+  const liveCandleMove = useMemo(() => {
+    if (!latestBarSnapshot) return null;
+    const delta = latestBarSnapshot.close - latestBarSnapshot.open;
+    const range = Math.max(0, latestBarSnapshot.high - latestBarSnapshot.low);
+    return {
+      delta,
+      range,
+      isBull: delta >= 0,
+    };
+  }, [latestBarSnapshot]);
+
   const currentTfLabel = TIMEFRAME_OPTIONS.find((t) => t.value === timeframe)?.label ?? timeframe;
 
   return (
@@ -1905,10 +1976,9 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       aria-label="Varta Presh Trading Terminal"
       className={
         isFullScreen
-          ? 'fixed inset-0 z-[200] flex flex-col w-screen h-[100dvh] bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden'
+          ? 'fixed inset-0 z-[200] flex flex-col w-full h-full bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden'
           : 'vp-glass-card rounded-2xl overflow-hidden text-[var(--vp-text)]'
       }
-      style={isFullScreen ? { width: '100vw', height: '100dvh' } : undefined}
     >
       {/* Top Controls Bar — hidden in Full Screen */}
       {!isFullScreen && (
@@ -1944,9 +2014,10 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                     key={tf.value}
                     type="button"
                     onClick={() => setTimeframe(tf.value)}
+                    aria-pressed={active}
                     className={`rounded-md px-2.5 py-1 text-xs font-mono-tabular font-semibold whitespace-nowrap cursor-pointer transition-colors ${
                       active
-                        ? 'bg-[#F59E0B] text-[#0B0E14] shadow-sm'
+                        ? 'bg-[#FACC15] text-[#0B0E14] shadow-sm'
                         : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
                     }`}
                   >
@@ -1971,11 +2042,19 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               </span>
             </div>
 
-            <div
-              className="font-mono-tabular text-[15px] font-bold tracking-tight"
-              style={{ color: isBullTick ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-            >
-              ${formatTerminalPrice(livePrice, symbolMeta.precision)}
+            <div className="inline-flex items-center gap-1.5">
+              <div
+                className="font-mono-tabular text-[15px] font-bold tracking-tight"
+                style={{ color: isBullTick ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
+              >
+                ${formatTerminalPrice(livePrice, symbolMeta.precision)}
+              </div>
+              <HeaderCountdownChip
+                timeframe={timeframe}
+                latestBarTime={latestBarTime}
+                currentTfLabel={currentTfLabel}
+                isBullTick={isBullTick}
+              />
             </div>
 
             <button
@@ -2157,84 +2236,66 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
       {/* Main Workspace: Chart(s) + Compact Live OMYE & SMC Sidebar */}
       <div className={isFullScreen ? 'flex-1 min-h-0 flex w-full h-full' : 'flex flex-col lg:flex-row lg:h-[580px]'}>
         <div
-          className={`flex-1 min-w-0 min-h-0 grid gap-0 ${
-            isFullScreen ? 'h-full w-full' : 'border-b lg:border-b-0 lg:border-r border-[var(--vp-border)]'
-          } ${splitView && !isFullScreen ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}
+          className={`flex-1 min-w-0 min-h-0 ${
+            isFullScreen
+              ? 'flex h-full w-full'
+              : `grid gap-0 border-b lg:border-b-0 lg:border-r border-[var(--vp-border)] ${
+                  splitView ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'
+                }`
+          }`}
         >
           {/* Primary Chart Pane */}
           <div
-            className={`relative min-w-0 min-h-0 ${
-              isFullScreen ? 'h-full w-full' : 'h-[400px] sm:h-[460px] lg:h-full'
+            className={`relative min-w-0 min-h-0 overflow-hidden ${
+              isFullScreen ? 'flex-1 h-full w-full' : 'h-[400px] sm:h-[460px] lg:h-full'
             } ${splitView && !isFullScreen ? 'border-b md:border-b-0 md:border-r border-[var(--vp-border)]' : ''}`}
           >
-            <div ref={chartWrapRef} className="smc-chart-host touch-none w-full h-full" />
+            <div ref={chartWrapRef} className="smc-chart-host absolute inset-0 touch-none" />
 
-            {/* Floating Exit Full Screen Button (Mobile & Desktop Full Screen) */}
+            {/* Full Screen Top Bar inside Chart: Permanent 1m–1D Timeframe Selector + Exit Full Screen */}
             {isFullScreen && (
-              <button
-                type="button"
-                onClick={toggleFullScreen}
-                aria-label="Exit Full Screen"
-                className="fixed top-[max(12px,env(safe-area-inset-top))] right-[max(64px,env(safe-area-inset-right))] z-[220] inline-flex min-h-[44px] items-center gap-2 rounded-full border border-[#F59E0B]/70 bg-[#0D1117]/90 px-4 py-2 text-xs font-bold text-[#F8FAFC] backdrop-blur-md shadow-2xl hover:bg-[#1E2638] active:scale-95 cursor-pointer"
-              >
-                <Minimize2 className="h-4 w-4 text-[#F59E0B]" />
-                <span>Exit Full Screen</span>
-              </button>
-            )}
-
-            {/* Freehand Brush Capture Layer */}
-            {!isFullScreen && activeTool === 'brush' && (
-              <div
-                aria-label="Freehand brush drawing canvas"
-                className="absolute inset-0 z-15 touch-none cursor-crosshair"
-                onPointerDown={(e) => {
-                  const chart = chartApiRef.current;
-                  const series = candleSeriesRef.current;
-                  const wrap = chartWrapRef.current;
-                  if (!chart || !series || !wrap) return;
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  const rect = wrap.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const y = e.clientY - rect.top;
-                  const logicalVal = chart.timeScale().coordinateToLogical(x);
-                  const priceVal = series.coordinateToPrice(y);
-                  if (logicalVal !== null && priceVal !== null && Number.isFinite(Number(priceVal))) {
-                    setBrushStroke([{ logical: Number(logicalVal), price: Number(priceVal) }]);
-                  }
-                }}
-                onPointerMove={(e) => {
-                  if (!brushStroke) return;
-                  const chart = chartApiRef.current;
-                  const series = candleSeriesRef.current;
-                  const wrap = chartWrapRef.current;
-                  if (!chart || !series || !wrap) return;
-                  const rect = wrap.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const y = e.clientY - rect.top;
-                  const logicalVal = chart.timeScale().coordinateToLogical(x);
-                  const priceVal = series.coordinateToPrice(y);
-                  if (logicalVal !== null && priceVal !== null && Number.isFinite(Number(priceVal))) {
-                    setBrushStroke((prev) =>
-                      prev ? [...prev, { logical: Number(logicalVal), price: Number(priceVal) }] : prev
+              <div className="pointer-events-none absolute top-2 left-2 right-[66px] z-[60] flex items-center justify-between gap-1.5">
+                <div
+                  role="group"
+                  aria-label="In-chart timeframe selector"
+                  className="pointer-events-auto inline-flex min-w-0 flex-1 max-w-fit items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-0.5 sm:p-1 shadow-xl touch-pan-x"
+                >
+                  {IN_CHART_TIMEFRAMES.map((tf) => {
+                    const active = timeframe === tf.value;
+                    return (
+                      <button
+                        key={`in-chart-fs-${tf.value}`}
+                        type="button"
+                        onClick={() => setTimeframe(tf.value)}
+                        aria-pressed={active}
+                        className={`rounded-md px-2 sm:px-2.5 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-[#FACC15] text-[#0B0E14] shadow-[0_0_12px_rgba(250,204,21,0.45)]'
+                            : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)] hover:bg-[var(--vp-control)]/70'
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
                     );
-                  }
-                }}
-                onPointerUp={() => {
-                  if (brushStroke && brushStroke.length >= 2) {
-                    setDrawings((prev) => [
-                      ...prev,
-                      { id: `${Date.now()}-${Math.random()}`, kind: 'brush', points: brushStroke },
-                    ]);
-                  }
-                  setBrushStroke(null);
-                  setActiveTool('crosshair');
-                }}
-              />
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={toggleFullScreen}
+                  aria-label="Exit Full Screen"
+                  className="pointer-events-auto inline-flex min-h-[34px] sm:min-h-[38px] items-center gap-1.5 rounded-full border border-[#F59E0B]/70 bg-[#0D1117]/95 px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold text-[#F8FAFC] shadow-2xl hover:bg-[#1E2638] active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+                >
+                  <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#F59E0B]" />
+                  <span className="sm:hidden">Exit</span>
+                  <span className="hidden sm:inline">Exit Full Screen</span>
+                </button>
+              </div>
             )}
 
             {/* 4K Retina High-DPI Collision-Free Canvas Layer (Indicators, VPVR, S/R, SMC, Patterns, Live Beam) */}
             <ChartCanvasOverlay
-              renderTick={overlayRenderTick}
+              redrawRef={overlayRedrawRef}
               chart={chartApiRef.current}
               candleSeries={candleSeriesRef.current}
               candles={latestCandlesRef.current}
@@ -2253,299 +2314,130 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               isBullTick={isBullTick}
             />
 
-            {/* User Interactive Drawings Overlay (Trendline, Ray, Fib, Brush, Text) */}
-            {!isFullScreen && (
-              <UserDrawingsSvgOverlay
-                renderTick={overlayRenderTick}
-                chart={chartApiRef.current}
-                candleSeries={candleSeriesRef.current}
-                precision={symbolMeta.precision}
-                drawings={drawings}
-                draftAnchor={draftAnchor}
-                hoverAnchor={hoverAnchor}
-                brushStroke={brushStroke}
-                activeTool={activeTool}
-                themeMode={themeMode}
-              />
-            )}
+            {/* TradingView-Style Candle Closing Countdown Stacked Directly Under Right-Axis Live Price */}
+            <PriceAxisCountdownTag
+              syncRef={countdownSyncRef}
+              chart={chartApiRef.current}
+              candleSeries={candleSeriesRef.current}
+              livePrice={livePrice}
+              isBullTick={isBullTick}
+              timeframe={timeframe}
+              latestBarTime={latestBarTime}
+            />
 
-            {/* TradingView-Style Top-Left OHLCV & Active Indicators Legend — hidden in Full Screen */}
+            {/* Top-Left Inside-Chart Stack: 1m–1D Timeframe Selector + OHLCV Legend + Active Indicators + Live Candle Points — hidden in Full Screen */}
             {!isFullScreen && (
-              <div className="pointer-events-none absolute top-2 left-2 right-16 z-20 flex flex-col gap-1">
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] font-mono-tabular">
-                  <span className="font-sans font-bold text-[var(--vp-text)]">
-                    {symbolMeta.shortLabel} · {currentTfLabel}
-                  </span>
-                  {activeLegendBar && (
-                    <div className="flex flex-wrap items-center gap-x-2 text-[10.5px]">
-                      <span className="text-[var(--vp-muted)]">
-                        O<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.open.toFixed(symbolMeta.precision)}</span>
-                      </span>
-                      <span className="text-[var(--vp-muted)]">
-                        H<span className="text-[var(--vp-bull)] ml-0.5">{activeLegendBar.high.toFixed(symbolMeta.precision)}</span>
-                      </span>
-                      <span className="text-[var(--vp-muted)]">
-                        L<span className="text-[var(--vp-bear)] ml-0.5">{activeLegendBar.low.toFixed(symbolMeta.precision)}</span>
-                      </span>
-                      <span className="text-[var(--vp-muted)]">
-                        C<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.close.toFixed(symbolMeta.precision)}</span>
-                      </span>
-                      {activeLegendDeltaPct !== null && (
-                        <span
-                          className="font-semibold"
-                          style={{ color: activeLegendDeltaPct >= 0 ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-                        >
-                          {activeLegendDeltaPct >= 0 ? '+' : ''}
-                          {activeLegendDeltaPct.toFixed(2)}%
+              <div className="pointer-events-none absolute top-2 left-2 right-16 z-[25] flex flex-col items-start gap-1.5">
+                {/* Floating In-Chart Timeframe Selector (1m..1D) at Top Side of Chart */}
+                <div
+                  role="group"
+                  aria-label="In-chart timeframe selector"
+                  className="pointer-events-auto inline-flex max-w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-lg touch-pan-x"
+                >
+                  {IN_CHART_TIMEFRAMES.map((tf) => {
+                    const active = timeframe === tf.value;
+                    return (
+                      <button
+                        key={`in-chart-${tf.value}`}
+                        type="button"
+                        onClick={() => setTimeframe(tf.value)}
+                        aria-pressed={active}
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-[#FACC15] text-[#0B0E14] shadow-[0_0_12px_rgba(250,204,21,0.45)]'
+                            : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)] hover:bg-[var(--vp-control)]/70'
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] font-mono-tabular">
+                    <span className="font-sans font-bold text-[var(--vp-text)]">
+                      {symbolMeta.shortLabel} · {currentTfLabel}
+                    </span>
+                    {activeLegendBar && (
+                      <div className="flex flex-wrap items-center gap-x-2 text-[10.5px]">
+                        <span className="text-[var(--vp-muted)]">
+                          O<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.open.toFixed(symbolMeta.precision)}</span>
                         </span>
+                        <span className="text-[var(--vp-muted)]">
+                          H<span className="text-[var(--vp-bull)] ml-0.5">{activeLegendBar.high.toFixed(symbolMeta.precision)}</span>
+                        </span>
+                        <span className="text-[var(--vp-muted)]">
+                          L<span className="text-[var(--vp-bear)] ml-0.5">{activeLegendBar.low.toFixed(symbolMeta.precision)}</span>
+                        </span>
+                        <span className="text-[var(--vp-muted)]">
+                          C<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.close.toFixed(symbolMeta.precision)}</span>
+                        </span>
+                        {activeLegendDeltaPct !== null && (
+                          <span
+                            className="font-semibold"
+                            style={{ color: activeLegendDeltaPct >= 0 ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
+                          >
+                            {activeLegendDeltaPct >= 0 ? '+' : ''}
+                            {activeLegendDeltaPct.toFixed(2)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {(showEma20 || showEma50 || showEma200 || showBollinger || showRsi) && (
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] font-mono-tabular">
+                      {showEma20 && indicatorValues.ema20 !== undefined && (
+                        <span className="text-[#F59E0B]">
+                          EMA20 {indicatorValues.ema20.toFixed(symbolMeta.precision)}
+                        </span>
+                      )}
+                      {showEma50 && indicatorValues.ema50 !== undefined && (
+                        <span className="text-[#38BDF8]">
+                          EMA50 {indicatorValues.ema50.toFixed(symbolMeta.precision)}
+                        </span>
+                      )}
+                      {showEma200 && indicatorValues.ema200 !== undefined && (
+                        <span className="text-[#C084FC]">
+                          EMA200 {indicatorValues.ema200.toFixed(symbolMeta.precision)}
+                        </span>
+                      )}
+                      {showBollinger && indicatorValues.bbUpper !== undefined && indicatorValues.bbLower !== undefined && (
+                        <span className="text-[#60A5FA]">
+                          BB {indicatorValues.bbUpper.toFixed(symbolMeta.precision)} / {indicatorValues.bbLower.toFixed(symbolMeta.precision)}
+                        </span>
+                      )}
+                      {showRsi && liveRsi !== null && (
+                        <span className="text-[#A78BFA]">RSI(14) {liveRsi.toFixed(1)}</span>
                       )}
                     </div>
                   )}
                 </div>
 
-                {(showEma20 || showEma50 || showEma200 || showBollinger || showRsi) && (
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] font-mono-tabular">
-                    {showEma20 && indicatorValues.ema20 !== undefined && (
-                      <span className="text-[#F59E0B]">
-                        EMA20 {indicatorValues.ema20.toFixed(symbolMeta.precision)}
-                      </span>
-                    )}
-                    {showEma50 && indicatorValues.ema50 !== undefined && (
-                      <span className="text-[#38BDF8]">
-                        EMA50 {indicatorValues.ema50.toFixed(symbolMeta.precision)}
-                      </span>
-                    )}
-                    {showEma200 && indicatorValues.ema200 !== undefined && (
-                      <span className="text-[#C084FC]">
-                        EMA200 {indicatorValues.ema200.toFixed(symbolMeta.precision)}
-                      </span>
-                    )}
-                    {showBollinger && indicatorValues.bbUpper !== undefined && indicatorValues.bbLower !== undefined && (
-                      <span className="text-[#60A5FA]">
-                        BB {indicatorValues.bbUpper.toFixed(symbolMeta.precision)} / {indicatorValues.bbLower.toFixed(symbolMeta.precision)}
-                      </span>
-                    )}
-                    {showRsi && liveRsi !== null && (
-                      <span className="text-[#A78BFA]">RSI(14) {liveRsi.toFixed(1)}</span>
-                    )}
-                  </div>
-                )}
-
-                {activeTool !== 'crosshair' && (
-                  <div className="inline-flex w-fit items-center gap-1.5 rounded bg-[#F59E0B] px-2 py-0.5 text-[10px] font-semibold text-[#0B0E14]">
-                    {activeTool === 'hray'
-                      ? 'Tap chart to place Horizontal Ray'
-                      : activeTool === 'brush'
-                        ? 'Drag on chart to draw freehand'
-                        : activeTool === 'text'
-                          ? 'Tap chart to pin Text Note'
-                          : draftAnchor
-                            ? `Tap Point 2 for ${activeTool === 'trendline' ? 'Trendline' : 'Fibonacci'}`
-                            : `Tap Point 1 for ${activeTool === 'trendline' ? 'Trendline' : 'Fibonacci'}`}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Inline Text Note Input Popover */}
-            {!isFullScreen && pendingTextAnchor && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const trimmed = pendingTextValue.trim();
-                  if (trimmed) {
-                    setDrawings((prev) => [
-                      ...prev,
-                      {
-                        id: `${Date.now()}-${Math.random()}`,
-                        kind: 'text',
-                        a: pendingTextAnchor,
-                        text: trimmed,
-                      },
-                    ]);
-                  }
-                  setPendingTextAnchor(null);
-                  setPendingTextValue('');
-                  setActiveTool('crosshair');
-                }}
-                className="absolute top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-lg border border-[#F59E0B]/60 bg-[var(--vp-header)] px-2.5 py-1.5 shadow-xl"
-              >
-                <input
-                  type="text"
-                  autoFocus
-                  maxLength={32}
-                  value={pendingTextValue}
-                  onChange={(e) => setPendingTextValue(e.target.value)}
-                  placeholder="Chart note (e.g. Buy OB)"
-                  className="w-40 rounded bg-[var(--vp-control)] px-2 py-1 text-xs text-[var(--vp-text)] outline-none placeholder:text-[var(--vp-muted)]"
-                />
-                <button
-                  type="submit"
-                  className="rounded bg-[#F59E0B] px-2 py-1 text-[11px] font-bold text-[#0B0E14] cursor-pointer"
-                >
-                  Pin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPendingTextAnchor(null);
-                    setActiveTool('crosshair');
-                  }}
-                  className="rounded bg-[var(--vp-control)] px-1.5 py-1 text-[11px] text-[var(--vp-muted)] cursor-pointer"
-                >
-                  ✕
-                </button>
-              </form>
-            )}
-
-            {/* Collapsible Drawing Tools Toolbar — hidden in Full Screen */}
-            {!isFullScreen && (
-              <div className="absolute top-12 left-2 z-20 flex flex-col items-start gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setToolsOpen((v) => !v)}
-                  aria-expanded={toolsOpen}
-                  aria-label="Toggle drawing tools"
-                  className={`rounded-lg inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-semibold backdrop-blur-md shadow-md cursor-pointer ${
-                    toolsOpen || activeTool !== 'crosshair'
-                      ? 'border-[#F59E0B]/70 bg-[var(--vp-header)] text-[var(--vp-accent-text)]'
-                      : 'border-[var(--vp-border)] bg-[var(--vp-header)]/85 text-[var(--vp-text)] hover:border-[#F59E0B]/50'
-                  }`}
-                >
-                  <Pencil className="h-3 w-3" />
-                  <span>Tools</span>
-                </button>
-
-                {toolsOpen && (
+                {/* Compact Live Forming Candle Points Badge */}
+                {liveCandleMove && (
                   <div
-                    role="toolbar"
-                    aria-label="Chart drawing and crosshair tools"
-                    className="flex flex-col gap-1 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 backdrop-blur-md shadow-xl"
+                    aria-label="Live candle points moved"
+                    className="pointer-events-none inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] leading-tight font-mono-tabular font-bold shadow-sm"
+                    style={{
+                      borderColor: liveCandleMove.isBull
+                        ? 'rgba(8, 153, 129, 0.45)'
+                        : 'rgba(242, 54, 69, 0.45)',
+                      backgroundColor: 'var(--vp-header)',
+                      color: liveCandleMove.isBull ? 'var(--vp-bull)' : 'var(--vp-bear)',
+                    }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('crosshair');
-                        setDraftAnchor(null);
-                        setHoverAnchor(null);
+                    <span
+                      className="h-1 w-1 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: liveCandleMove.isBull ? '#089981' : '#F23645',
                       }}
-                      title="Crosshair"
-                      aria-label="Crosshair"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg cursor-pointer ${
-                        activeTool === 'crosshair'
-                          ? 'bg-[#F59E0B] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      <Crosshair className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('trendline');
-                        setDraftAnchor(null);
-                      }}
-                      title="Trendline"
-                      aria-label="Trendline"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg cursor-pointer ${
-                        activeTool === 'trendline'
-                          ? 'bg-[#F59E0B] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      <TrendingUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('hray');
-                        setDraftAnchor(null);
-                      }}
-                      title="Horizontal Ray"
-                      aria-label="Horizontal Ray"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg cursor-pointer ${
-                        activeTool === 'hray'
-                          ? 'bg-[#38BDF8] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('fib');
-                        setDraftAnchor(null);
-                      }}
-                      title="Fibonacci Retracement"
-                      aria-label="Fibonacci Retracement"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold cursor-pointer ${
-                        activeTool === 'fib'
-                          ? 'bg-[#F59E0B] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      Fib
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('brush');
-                        setDraftAnchor(null);
-                      }}
-                      title="Brush"
-                      aria-label="Brush"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg cursor-pointer ${
-                        activeTool === 'brush'
-                          ? 'bg-[#089981] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTool('text');
-                        setDraftAnchor(null);
-                      }}
-                      title="Text Note"
-                      aria-label="Text Note"
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg cursor-pointer ${
-                        activeTool === 'text'
-                          ? 'bg-[#C084FC] text-[#0B0E14]'
-                          : 'bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85'
-                      }`}
-                    >
-                      <Type className="h-3.5 w-3.5" />
-                    </button>
-                    {drawings.length > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setDrawings((prev) => prev.slice(0, -1))}
-                          title="Undo Last Drawing"
-                          aria-label="Undo Last Drawing"
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
-                        >
-                          <Undo2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDrawings([]);
-                            setDraftAnchor(null);
-                            setHoverAnchor(null);
-                            setBrushStroke(null);
-                          }}
-                          title="Clear Drawings"
-                          aria-label="Clear Drawings"
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--vp-control)] text-[var(--vp-bear)] hover:bg-[#F23645]/20 cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
+                    />
+                    <span>
+                      {liveCandleMove.delta >= 0 ? '+' : '-'}
+                      {Math.abs(liveCandleMove.delta).toFixed(symbolMeta.precision)} pts
+                    </span>
                   </div>
                 )}
               </div>
@@ -2553,7 +2445,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
             {/* Floating Bar Replay Simulator Controls — hidden in Full Screen */}
             {!isFullScreen && replayActive && (
-              <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1.5 rounded-full border border-[#F59E0B]/50 bg-[var(--vp-header)]/95 px-3 py-1.5 backdrop-blur-md shadow-xl">
+              <div className="absolute top-24 sm:top-20 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center gap-1.5 rounded-full border border-[#F59E0B]/50 bg-[var(--vp-header)]/95 px-3 py-1.5 shadow-xl">
                 <button
                   type="button"
                   onClick={() => setReplayPlaying((p) => !p)}
@@ -2612,13 +2504,13 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
               </div>
             )}
 
-            {/* History Loading / Inception Span Indicator + Zoom Controls — hidden in Full Screen */}
+            {/* Bottom In-Chart Controls: Zoom & History Span (Normal Mode) */}
             {!isFullScreen && (
-              <div className="absolute bottom-8 left-2.5 right-16 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+              <div className="absolute bottom-8 left-2.5 right-16 z-[25] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
                 <div
                   role="group"
                   aria-label="Chart zoom and history controls"
-                  className="pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-md"
+                  className="pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-md"
                 >
                   <button
                     type="button"
@@ -2659,7 +2551,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
                 </div>
 
                 {(isLoadingHistory || loadedSpanInfo) && (
-                  <div className="pointer-events-auto inline-flex items-center gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/90 px-2.5 py-1 text-[10px] font-mono-tabular text-[var(--vp-muted)] backdrop-blur-md shadow-md">
+                  <div className="pointer-events-auto inline-flex items-center gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 px-2.5 py-1 text-[10px] font-mono-tabular text-[var(--vp-muted)] shadow-md">
                     {isLoadingHistory ? (
                       <span className="text-[var(--vp-accent-text)] font-semibold">
                         Loading older history...
@@ -2695,7 +2587,7 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
 
             {/* Initial Loading Overlay */}
             {isLoadingInitial && !loadError && (
-              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[var(--vp-canvas)]/45 backdrop-blur-[1px]">
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[var(--vp-canvas)]/55">
                 <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-header)]/95 px-4 py-2 text-xs font-semibold text-[var(--vp-text)] shadow-lg">
                   Loading live {symbolMeta.shortLabel} ({currentTfLabel})...
                 </div>
@@ -2936,220 +2828,147 @@ export const ProSmcTerminal: React.FC<ProSmcTerminalProps> = ({
   );
 };
 
-interface UserDrawingsSvgOverlayProps {
-  renderTick: number;
-  chart: IChartApi | null;
-  candleSeries: ISeriesApi<'Candlestick', Time> | null;
-  precision: number;
-  drawings: ChartDrawing[];
-  draftAnchor: ChartAnchor | null;
-  hoverAnchor: ChartAnchor | null;
-  brushStroke: ChartAnchor[] | null;
-  activeTool: DrawingTool;
-  themeMode: ThemeMode;
+export const ProSmcTerminal = memo(ProSmcTerminalInner);
+
+interface HeaderCountdownChipProps {
+  timeframe: SmcTimeframe;
+  latestBarTime?: number;
+  currentTfLabel: string;
+  isBullTick: boolean;
 }
 
-const UserDrawingsSvgOverlay: React.FC<UserDrawingsSvgOverlayProps> = ({
-  renderTick,
-  chart,
-  candleSeries,
-  precision,
-  drawings,
-  draftAnchor,
-  hoverAnchor,
-  brushStroke,
-  activeTool,
-  themeMode,
-}) => {
-  const projected = useMemo(() => {
-    void renderTick;
-    if (!chart || !candleSeries) return null;
-    const pane = chart.paneSize(0);
-    if (!pane || pane.width <= 0 || pane.height <= 0) return null;
+const HeaderCountdownChip: React.FC<HeaderCountdownChipProps> = memo(
+  ({ timeframe, latestBarTime, currentTfLabel, isBullTick }) => {
+    const [text, setText] = useState(() => formatCandleCountdown(timeframe, latestBarTime));
 
-    const ts = chart.timeScale();
-    const plotRight = Math.max(40, pane.width - 2);
+    useEffect(() => {
+      const update = () => {
+        const next = formatCandleCountdown(timeframe, latestBarTime);
+        setText((prev) => (prev === next ? prev : next));
+      };
+      update();
+      const timer = window.setInterval(update, 250);
+      return () => window.clearInterval(timer);
+    }, [timeframe, latestBarTime]);
 
-    const projectPt = (pt: ChartAnchor) => {
-      const x = ts.logicalToCoordinate(pt.logical as Logical);
-      const y = candleSeries.priceToCoordinate(pt.price);
-      if (x === null || y === null) return null;
-      return { x: Number(x), y: Number(y), price: pt.price };
-    };
+    return (
+      <span
+        aria-label="Candle closing countdown"
+        title={`Time remaining until current ${currentTfLabel} candle closes`}
+        className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono-tabular text-[11px] font-bold tracking-tight"
+        style={{
+          borderColor: isBullTick ? 'rgba(8, 153, 129, 0.45)' : 'rgba(242, 54, 69, 0.45)',
+          backgroundColor: isBullTick ? 'rgba(8, 153, 129, 0.12)' : 'rgba(242, 54, 69, 0.12)',
+          color: isBullTick ? 'var(--vp-bull)' : 'var(--vp-bear)',
+        }}
+      >
+        {text}
+      </span>
+    );
+  }
+);
 
-    const activePreview: ChartDrawing | null =
-      draftAnchor && hoverAnchor && (activeTool === 'trendline' || activeTool === 'fib')
-        ? { id: 'preview', kind: activeTool, a: draftAnchor, b: hoverAnchor }
-        : brushStroke && brushStroke.length >= 2
-          ? { id: 'brush-preview', kind: 'brush', points: brushStroke }
-          : null;
+interface PriceAxisCountdownTagProps {
+  syncRef?: React.MutableRefObject<(() => void) | null>;
+  chart: IChartApi | null;
+  candleSeries: ISeriesApi<'Candlestick', Time> | null;
+  livePrice: number | null;
+  isBullTick: boolean;
+  timeframe: SmcTimeframe;
+  latestBarTime?: number;
+}
 
-    const allDrawings = activePreview ? [...drawings, activePreview] : drawings;
-    if (allDrawings.length === 0) return null;
+const PriceAxisCountdownTag: React.FC<PriceAxisCountdownTagProps> = memo(
+  ({ syncRef, chart, candleSeries, livePrice, isBullTick, timeframe, latestBarTime }) => {
+    const elRef = useRef<HTMLDivElement | null>(null);
+    const propsRef = useRef({ chart, candleSeries, livePrice, isBullTick, timeframe, latestBarTime });
+    propsRef.current = { chart, candleSeries, livePrice, isBullTick, timeframe, latestBarTime };
 
-    return {
-      width: pane.width,
-      height: pane.height,
-      plotRight,
-      projectPt,
-      allDrawings,
-    };
-  }, [renderTick, chart, candleSeries, drawings, draftAnchor, hoverAnchor, brushStroke, activeTool]);
+    const syncDom = useCallback(() => {
+      const el = elRef.current;
+      if (!el) return;
+      const { chart: c, candleSeries: s, livePrice: lp, isBullTick: bull, timeframe: tf, latestBarTime: lbt } =
+        propsRef.current;
 
-  if (!projected) return null;
+      if (!c || !s || lp === null || !Number.isFinite(lp)) {
+        if (el.style.display !== 'none') el.style.display = 'none';
+        return;
+      }
 
-  return (
-    <svg
-      width={projected.width}
-      height={projected.height}
-      className="pointer-events-none absolute top-0 left-0 z-10 overflow-hidden"
-    >
-      {projected.allDrawings.map((d) => {
-        if (d.kind === 'brush') {
-          const pts = d.points
-            .map(projected.projectPt)
-            .filter((p): p is NonNullable<typeof p> => p !== null);
-          if (pts.length < 2) return null;
-          return (
-            <polyline
-              key={d.id}
-              fill="none"
-              stroke="#089981"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
-            />
-          );
-        }
+      const pane = c.paneSize(0);
+      if (!pane || pane.width <= 0 || pane.height <= 0) {
+        if (el.style.display !== 'none') el.style.display = 'none';
+        return;
+      }
 
-        const isPreview = d.id === 'preview';
-        const p1 = projected.projectPt(d.a);
-        if (!p1) return null;
+      const scaleWidth = c.priceScale('right').width();
+      if (!scaleWidth || scaleWidth < 24) {
+        if (el.style.display !== 'none') el.style.display = 'none';
+        return;
+      }
 
-        if (d.kind === 'text') {
-          return (
-            <g key={d.id}>
-              <circle cx={p1.x} cy={p1.y} r={3} fill="#C084FC" />
-              <rect
-                x={p1.x + 6}
-                y={p1.y - 16}
-                width={Math.max(44, d.text.length * 6.8 + 12)}
-                height={18}
-                rx={4}
-                fill={themeMode === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(13, 17, 23, 0.94)'}
-                stroke="#C084FC"
-                strokeWidth={1}
-              />
-              <text
-                x={p1.x + 12}
-                y={p1.y - 4}
-                fill={themeMode === 'light' ? '#0F172A' : '#F1F5F9'}
-                fontSize="10"
-                fontWeight="600"
-              >
-                {d.text}
-              </text>
-            </g>
-          );
-        }
+      const rawY = s.priceToCoordinate(lp);
+      if (rawY === null || !Number.isFinite(Number(rawY))) {
+        if (el.style.display !== 'none') el.style.display = 'none';
+        return;
+      }
 
-        if (d.kind === 'hray') {
-          return (
-            <g key={d.id}>
-              <line
-                x1={p1.x}
-                y1={p1.y}
-                x2={projected.plotRight}
-                y2={p1.y}
-                stroke="#38BDF8"
-                strokeWidth={1.6}
-              />
-              <circle cx={p1.x} cy={p1.y} r={3} fill="#38BDF8" />
-              <text
-                x={projected.plotRight - 4}
-                y={p1.y - 4}
-                textAnchor="end"
-                fill="#38BDF8"
-                fontSize="10"
-                fontWeight="700"
-              >
-                Ray {p1.price.toFixed(precision)}
-              </text>
-            </g>
-          );
-        }
+      const liveY = Number(rawY);
+      const badgeH = 16;
+      // Stack flush directly below Lightweight Charts' ~18px live price label (centered at liveY)
+      let top = liveY + 9;
+      if (top + badgeH > pane.height - 2) {
+        top = Math.min(pane.height - badgeH - 2, Math.max(2, liveY - 9 - badgeH));
+      } else if (top < 2) {
+        top = 2;
+      }
 
-        const p2 = projected.projectPt(d.b);
-        if (!p2) return null;
+      const left = Math.floor(pane.width) + 1;
+      const width = Math.max(48, Math.floor(scaleWidth) - 2);
+      const nextTransform = `translate3d(${left}px, ${Math.round(top)}px, 0)`;
+      const nextBg = bull ? '#067A66' : '#C92534';
+      const nextText = formatCandleCountdown(tf, lbt);
 
-        if (d.kind === 'trendline') {
-          return (
-            <g key={d.id}>
-              <line
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke="#F59E0B"
-                strokeWidth={2}
-                strokeDasharray={isPreview ? '5 4' : undefined}
-              />
-              <circle cx={p1.x} cy={p1.y} r={3.5} fill="#F59E0B" />
-              <circle cx={p2.x} cy={p2.y} r={3.5} fill="#F59E0B" />
-            </g>
-          );
-        }
+      if (el.style.display !== 'flex') el.style.display = 'flex';
+      if (el.style.transform !== nextTransform) el.style.transform = nextTransform;
+      const wStr = `${width}px`;
+      if (el.style.width !== wStr) el.style.width = wStr;
+      if (el.style.backgroundColor !== nextBg) el.style.backgroundColor = nextBg;
+      if (el.textContent !== nextText) el.textContent = nextText;
+    }, []);
 
-        const xLeft = Math.min(p1.x, p2.x);
-        const xRight = Math.max(p1.x, p2.x, xLeft + 110);
-        const diffPrice = d.b.price - d.a.price;
-
-        return (
-          <g key={d.id}>
-            <line
-              x1={p1.x}
-              y1={p1.y}
-              x2={p2.x}
-              y2={p2.y}
-              stroke="rgba(245, 158, 11, 0.65)"
-              strokeWidth={1}
-              strokeDasharray="3 3"
-            />
-            {FIB_LEVELS.map((lvl) => {
-              const lvlPrice = d.b.price - diffPrice * lvl.ratio;
-              const lvlY = candleSeries?.priceToCoordinate(lvlPrice);
-              if (lvlY === null || lvlY === undefined) return null;
-              const yNum = Number(lvlY);
-              return (
-                <g key={`${d.id}-${lvl.ratio}`}>
-                  <line
-                    x1={xLeft}
-                    y1={yNum}
-                    x2={xRight}
-                    y2={yNum}
-                    stroke={lvl.color}
-                    strokeWidth={lvl.ratio === 0.618 || lvl.ratio === 0.5 ? 1.5 : 1}
-                    strokeDasharray={isPreview ? '4 3' : undefined}
-                  />
-                  <text
-                    x={xLeft + 4}
-                    y={yNum - 3}
-                    fill={lvl.color}
-                    fontSize="10"
-                    fontWeight="600"
-                  >
-                    {lvl.label} ({lvlPrice.toFixed(precision)})
-                  </text>
-                </g>
-              );
-            })}
-          </g>
+    useEffect(() => {
+      if (syncRef) {
+        syncRef.current = syncDom;
+      }
+      syncDom();
+      const timer = window.setInterval(() => {
+        const el = elRef.current;
+        if (!el) return;
+        const next = formatCandleCountdown(
+          propsRef.current.timeframe,
+          propsRef.current.latestBarTime
         );
-      })}
-    </svg>
-  );
-};
+        if (el.textContent !== next) el.textContent = next;
+      }, 250);
+
+      return () => {
+        window.clearInterval(timer);
+        if (syncRef && syncRef.current === syncDom) {
+          syncRef.current = null;
+        }
+      };
+    }, [syncRef, syncDom, chart, candleSeries, livePrice, isBullTick, timeframe, latestBarTime]);
+
+    return (
+      <div
+        ref={elRef}
+        aria-label="Candle closing countdown"
+        className="pointer-events-none absolute top-0 left-0 z-[22] hidden h-[16px] items-center justify-center rounded-[3px] font-mono-tabular text-[9.5px] font-bold leading-none text-white shadow-sm will-change-transform"
+      />
+    );
+  }
+);
 
 interface SecondarySplitChartProps {
   defaultSymbol: SmcSymbol;
@@ -3160,7 +2979,7 @@ interface SecondarySplitChartProps {
   themeMode: ThemeMode;
 }
 
-const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
+const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
   defaultSymbol,
   defaultTimeframe,
   showEma20,
@@ -3183,6 +3002,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
   const candlesRef = useRef<TerminalCandle[]>([]);
   const subHistoricalLoadedRef = useRef<boolean>(false);
 
+  const subLastBullRef = useRef<boolean | null>(null);
   const subMeta = SYMBOL_OPTIONS.find((s) => s.value === subSymbol) ?? SYMBOL_OPTIONS[2];
 
   useEffect(() => {
@@ -3192,8 +3012,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     const initialSubTheme = getChartThemeOptions(themeMode);
 
     const chart = createChart(el, {
-      width: el.clientWidth || 300,
-      height: el.clientHeight || 320,
+      autoSize: true,
       layout: {
         ...initialSubTheme.layout,
         fontSize: 10,
@@ -3221,12 +3040,14 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         ...initialSubTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
-        barSpacing: 7,
-        minBarSpacing: 0.25,
+        rightOffset: 5,
+        barSpacing: 11,
+        minBarSpacing: 2.5,
+        maxBarSpacing: 36,
         fixLeftEdge: false,
         fixRightEdge: false,
-        lockVisibleTimeRangeOnResize: false,
+        lockVisibleTimeRangeOnResize: true,
+        shiftVisibleRangeOnNewBar: true,
       },
       rightPriceScale: {
         visible: true,
@@ -3235,18 +3056,13 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         ticksVisible: true,
         entireTextOnly: true,
         alignLabels: true,
-        minimumWidth: 52,
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        minimumWidth: 56,
+        scaleMargins: { top: 0.16, bottom: 0.16 },
       },
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#089981',
-      downColor: '#F23645',
-      borderUpColor: '#089981',
-      borderDownColor: '#F23645',
-      wickUpColor: '#089981',
-      wickDownColor: '#F23645',
+      ...getCandleStyleOptions(themeMode),
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: LineStyle.Dashed,
@@ -3287,7 +3103,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
-        chart.applyOptions({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
+        chart.resize(Math.floor(rect.width), Math.floor(rect.height));
       }
     });
     ro.observe(el);
@@ -3329,6 +3145,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
 
   useEffect(() => {
     chartRef.current?.applyOptions(getChartThemeOptions(themeMode));
+    candleRef.current?.applyOptions(getCandleStyleOptions(themeMode));
   }, [themeMode]);
 
   useEffect(() => {
@@ -3367,7 +3184,10 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
           : rawBar;
       const bull = bar.close >= bar.open;
       candleRef.current.update(toPureCandle(bar));
-      candleRef.current.applyOptions({ priceLineColor: bull ? '#089981' : '#F23645' });
+      if (subLastBullRef.current !== bull) {
+        subLastBullRef.current = bull;
+        candleRef.current.applyOptions({ priceLineColor: bull ? '#089981' : '#F23645' });
+      }
       if (arr.length > 0 && arr[arr.length - 1].time === bar.time) {
         arr[arr.length - 1] = bar;
       } else {
@@ -3432,10 +3252,12 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         candleRef.current?.setData(bars.map(toPureCandle));
         subHistoricalLoadedRef.current = true;
         const last = bars[bars.length - 1];
+        const bull = last.close >= last.open;
+        subLastBullRef.current = bull;
         setSubPrice(last.close);
-        setSubBull(last.close >= last.open);
+        setSubBull(bull);
         candleRef.current?.applyOptions({
-          priceLineColor: last.close >= last.open ? '#089981' : '#F23645',
+          priceLineColor: bull ? '#089981' : '#F23645',
         });
 
         const applySubRange = () => {
@@ -3443,11 +3265,11 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
           if (!chart || disposed) return;
           chart.priceScale('right').applyOptions({ autoScale: true });
           const chartWidth = wrapRef.current?.clientWidth || 320;
-          const visibleBars = Math.max(45, Math.min(bars.length, Math.floor(chartWidth / 7)));
+          const visibleBars = Math.max(26, Math.min(bars.length, 76, Math.round(Math.max(180, chartWidth - 60) / 12)));
           if (bars.length > visibleBars) {
             chart.timeScale().setVisibleLogicalRange({
               from: Math.max(0, bars.length - visibleBars),
-              to: bars.length - 1 + 6,
+              to: bars.length - 1 + 4.5,
             });
           } else {
             chart.timeScale().fitContent();
@@ -3518,9 +3340,9 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
         </span>
       </div>
 
-      <div className="relative flex-1 min-h-0">
-        <div ref={wrapRef} className="smc-chart-host touch-none w-full h-full" />
-        <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/90 p-1 backdrop-blur-md shadow-md">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
+        <div ref={wrapRef} className="smc-chart-host absolute inset-0 touch-none" />
+        <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-md">
           <button
             type="button"
             onClick={() => zoomSecondary(0.72)}
@@ -3552,4 +3374,4 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = ({
       </div>
     </div>
   );
-};
+});

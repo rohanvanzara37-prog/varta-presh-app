@@ -9,6 +9,7 @@ interface TradingViewEmbedChartProps {
   themeMode: ThemeMode;
   height?: number | string;
   studies?: string[];
+  isFullScreen?: boolean;
   className?: string;
   containerId?: string;
   onSwitchToSmc?: () => void;
@@ -69,6 +70,7 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
   themeMode,
   height = 500,
   studies = DEFAULT_STUDIES,
+  isFullScreen = false,
   className = '',
   containerId = 'tv_chart_container',
   onSwitchToSmc,
@@ -176,7 +178,8 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
         backgroundColor: themeMode === 'dark' ? '#0B0E14' : 'var(--vp-surface)',
       }}
     >
-      {/* Slim Mobile Page-Scroll Grip + Toolbar Toggles */}
+      {/* Slim Mobile Page-Scroll Grip + Toolbar Toggles — hidden in Full Screen */}
+      {!isFullScreen && (
       <div
         className="flex items-center justify-between gap-2 px-3 py-1.5 border-b shrink-0 touch-pan-y select-none"
         style={{
@@ -227,6 +230,7 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* TradingView Iframe Wrapper with pan-y touch fallback */}
       <div

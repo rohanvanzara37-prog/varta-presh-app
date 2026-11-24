@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Check,
@@ -14,7 +14,12 @@ import { computeSmartChartSummary, type CandleInput } from '../utils/technicalIn
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { LiveMarketWatchlist } from './LiveMarketWatchlist';
 import { MarketTradeSuggestionCard } from './MarketTradeSuggestionCard';
-import { ProSmcTerminal, type SmcTelemetrySnapshot } from './ProSmcTerminal';
+import {
+  ProSmcTerminal,
+  formatCandleCountdown,
+  type SmcTelemetrySnapshot,
+  type SmcTimeframe,
+} from './ProSmcTerminal';
 import { TerminalTopicBoxes } from './TerminalTopicBoxes';
 import { TradingViewEmbedChart } from './TradingViewEmbedChart';
 
@@ -143,6 +148,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   const chartSectionRef = useRef<HTMLElement | null>(null);
   const indicatorsMenuRef = useRef<HTMLDivElement | null>(null);
   const enteredNativeFsRef = useRef(false);
+  const savedScrollYRef = useRef<number>(0);
 
   useEffect(() => {
     if (selectedSymbol) {
@@ -152,10 +158,21 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
 
   const tvWidgetSymbol = selectedSymbol || internalSymbol;
 
-  const handleChooseSymbol = (sym: string) => {
-    setInternalSymbol(sym);
-    onSelectSymbol?.(sym);
-  };
+  const handleChooseSymbol = useCallback(
+    (sym: string) => {
+      setInternalSymbol(sym);
+      onSelectSymbol?.(sym);
+    },
+    [onSelectSymbol]
+  );
+
+  const handleSelectWatchlistAsset = useCallback(
+    (asset: MarketAsset) => {
+      handleChooseSymbol(asset.tvSymbol);
+      onOpenMarketDetails?.(asset);
+    },
+    [handleChooseSymbol, onOpenMarketDetails]
+  );
 
   useEffect(() => {
     if (!indicatorsOpen) return;
@@ -179,6 +196,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     setIsChartFullScreen((prev) => {
       const next = !prev;
       if (next) {
+        savedScrollYRef.current = window.scrollY || window.pageYOffset || 0;
         const el = chartSectionRef.current;
         if (el?.requestFullscreen) {
           el.requestFullscreen()
@@ -225,6 +243,10 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     return () => {
       document.body.style.overflow = prevOverflow;
       document.body.classList.remove('chart-fullscreen-active');
+      const restoreY = savedScrollYRef.current;
+      if (restoreY > 0) {
+        window.requestAnimationFrame(() => window.scrollTo(0, restoreY));
+      }
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFsChange);
     };
@@ -383,6 +405,10 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             <span className="font-bold" style={{ color: 'var(--vp-text)' }}>
               ${formatPrice(liveTelemetry.price)}
             </span>
+            <TelemetryCountdownBadge
+              timeframe={liveTelemetry.timeframe}
+              latestBarTime={liveTelemetry.latestBarTime}
+            />
           </div>
         )}
       </div>
@@ -405,7 +431,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             aria-label="Live TradingView Candlestick Terminal"
             className={
               isChartFullScreen
-                ? 'fixed inset-0 z-[200] flex flex-col w-screen h-[100dvh] overflow-hidden'
+                ? 'fixed inset-0 z-[200] flex flex-col w-full h-full overflow-hidden'
                 : 'space-y-2.5'
             }
             style={
@@ -449,10 +475,11 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                         key={tf.id}
                         type="button"
                         onClick={() => setTvWidgetInterval(tf.id)}
+                        aria-pressed={active}
                         className="vp-pill-btn min-h-[30px] px-2.5 text-xs font-mono-tabular font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                         style={{
-                          backgroundColor: active ? 'var(--vp-primary)' : 'transparent',
-                          color: active ? 'var(--vp-primary-fg)' : 'var(--vp-muted)',
+                          backgroundColor: active ? '#FACC15' : 'transparent',
+                          color: active ? '#0B0E14' : 'var(--vp-muted)',
                         }}
                       >
                         {tf.label}
@@ -573,22 +600,50 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             </div>
 
             {/* Full-Width Responsive TradingView Candlestick Chart */}
-            <div className={isChartFullScreen ? 'relative flex-1 min-h-0 w-full h-full' : 'w-full h-[430px] sm:h-[520px]'}>
+            <div className={isChartFullScreen ? 'relative flex-1 min-h-0 w-full h-full overflow-hidden' : 'w-full h-[430px] sm:h-[520px]'}>
               {isChartFullScreen && (
-                <button
-                  type="button"
-                  onClick={toggleFullScreen}
-                  aria-label="Exit Full Screen"
-                  className="fixed top-3 right-3 z-[220] inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full text-xs font-semibold shadow-2xl border backdrop-blur-md cursor-pointer"
-                  style={{
-                    backgroundColor: 'rgba(13, 17, 23, 0.88)',
-                    borderColor: 'rgba(245, 158, 11, 0.45)',
-                    color: '#F1F5F9',
-                  }}
-                >
-                  <Minimize2 className="h-4 w-4 text-[#F59E0B]" />
-                  <span>Exit Full Screen</span>
-                </button>
+                <div className="pointer-events-none absolute top-2 left-2.5 right-2.5 z-[60] flex items-center justify-between gap-1.5">
+                  <div
+                    role="group"
+                    aria-label="In-chart timeframe selector"
+                    className="pointer-events-auto inline-flex min-w-0 flex-1 max-w-fit items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar rounded-lg border border-[var(--vp-border)] bg-[#0D1117]/95 p-0.5 sm:p-1 shadow-xl touch-pan-x"
+                  >
+                    {COMPACT_TIMEFRAMES.map((tf) => {
+                      const active = tvWidgetInterval === tf.id;
+                      return (
+                        <button
+                          key={`tv-fs-${tf.id}`}
+                          type="button"
+                          onClick={() => setTvWidgetInterval(tf.id)}
+                          aria-pressed={active}
+                          className={`rounded-md px-2 sm:px-2.5 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-[#FACC15] text-[#0B0E14] shadow-[0_0_12px_rgba(250,204,21,0.45)]'
+                              : 'text-[#94A3B8] hover:text-[#F1F5F9]'
+                          }`}
+                        >
+                          {tf.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={toggleFullScreen}
+                    aria-label="Exit Full Screen"
+                    className="pointer-events-auto inline-flex items-center gap-1.5 min-h-[34px] sm:min-h-[38px] px-2.5 sm:px-3.5 rounded-full text-[11px] sm:text-xs font-bold shadow-2xl border cursor-pointer shrink-0 whitespace-nowrap"
+                    style={{
+                      backgroundColor: 'rgba(13, 17, 23, 0.94)',
+                      borderColor: 'rgba(245, 158, 11, 0.65)',
+                      color: '#F1F5F9',
+                    }}
+                  >
+                    <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#F59E0B]" />
+                    <span className="sm:hidden">Exit</span>
+                    <span className="hidden sm:inline">Exit Full Screen</span>
+                  </button>
+                </div>
               )}
               <TradingViewEmbedChart
                 symbol={tvWidgetSymbol}
@@ -596,7 +651,8 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
                 themeMode={themeMode}
                 height="100%"
                 studies={tvStudies}
-                className="h-full w-full"
+                isFullScreen={isChartFullScreen}
+                className={isChartFullScreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full'}
                 onSwitchToSmc={() => setMarketSubTab('smc')}
               />
             </div>
@@ -730,10 +786,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
       <LiveMarketWatchlist
         assets={marketAssets}
         selectedSymbol={tvWidgetSymbol}
-        onSelectAsset={(asset) => {
-          handleChooseSymbol(asset.tvSymbol);
-          onOpenMarketDetails?.(asset);
-        }}
+        onSelectAsset={handleSelectWatchlistAsset}
       />
 
       <ChartSettingsModal
@@ -745,3 +798,35 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     </div>
   );
 };
+
+const TelemetryCountdownBadge: React.FC<{
+  timeframe: SmcTimeframe;
+  latestBarTime?: number;
+}> = memo(({ timeframe, latestBarTime }) => {
+  const [countdown, setCountdown] = useState(() =>
+    formatCandleCountdown(timeframe, latestBarTime)
+  );
+
+  useEffect(() => {
+    const tick = () => {
+      const next = formatCandleCountdown(timeframe, latestBarTime);
+      setCountdown((prev) => (prev === next ? prev : next));
+    };
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [timeframe, latestBarTime]);
+
+  return (
+    <span
+      className="rounded-full border px-1.5 py-0.5 text-[10px] font-bold"
+      style={{
+        borderColor: 'var(--vp-border)',
+        backgroundColor: 'var(--vp-elevated)',
+        color: 'var(--vp-accent-text)',
+      }}
+    >
+      {countdown}
+    </span>
+  );
+});

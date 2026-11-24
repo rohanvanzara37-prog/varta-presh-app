@@ -1224,14 +1224,17 @@ async function startServer() {
           symbols: { tickers: ['OANDA:XAUUSD', 'FX_IDC:XAUUSD', 'TVC:GOLD'] },
           columns: ['close', 'bid', 'ask'],
         }),
-        signal: AbortSignal.timeout(1600),
+        signal: AbortSignal.timeout(1800),
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { data?: Array<{ d?: number[] }> };
       const row = data?.data?.[0]?.d;
+      const close = row?.[0];
+      if (typeof close === 'number' && Number.isFinite(close) && close > 500) {
+        return Number(close.toFixed(2));
+      }
       const bid = row?.[1];
       const ask = row?.[2];
-      const close = row?.[0];
       const validMid =
         typeof bid === 'number' &&
         typeof ask === 'number' &&
@@ -1240,7 +1243,7 @@ async function startServer() {
         bid > 500 &&
         ask > 500
           ? (bid + ask) / 2
-          : close;
+          : null;
       return typeof validMid === 'number' && Number.isFinite(validMid) && validMid > 500
         ? Number(validMid.toFixed(2))
         : null;
@@ -1265,35 +1268,41 @@ async function startServer() {
       return liveGoldSpotInFlight;
     }
 
-    const fastCheck = async <T extends { price: number; provider: string }>(
-      fn: () => Promise<number | null>,
-      provider: string
-    ): Promise<T> => {
-      const price = await fn();
-      if (typeof price === 'number' && Number.isFinite(price) && price > 500) {
-        return { price, provider } as T;
-      }
-      throw new Error(`${provider} unavailable`);
-    };
-
     liveGoldSpotInFlight = (async () => {
       try {
-        const result = await Promise.any([
-          fastCheck(fetchTradingViewCfdGoldSpot, 'oanda'),
-          fastCheck(() => fetchSwissquoteMid('XAU'), 'swissquote'),
-          fastCheck(async () => {
-            const g = await fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 1800);
-            return typeof g?.price === 'number' && g.price > 500 ? Number(g.price.toFixed(2)) : null;
-          }, 'gold-api'),
-        ]);
-        const ts = Date.now();
-        liveGoldSpotCache = {
-          expiresAt: ts + 700,
-          staleUntil: ts + 15_000,
-          value: result,
-        };
-        return result;
-      } catch {
+        // Real-time Swissquote BBO feed updates sub-second; OANDA/gold-api serve as sequential fallbacks
+        // to avoid cached scanner flatlines and multi-dollar inter-provider spikes.
+        let resolved: { price: number; provider: string } | null = null;
+
+        const sq = await fetchSwissquoteMid('XAU');
+        if (typeof sq === 'number' && Number.isFinite(sq) && sq > 500) {
+          resolved = { price: sq, provider: 'swissquote' };
+        }
+
+        if (!resolved) {
+          const oanda = await fetchTradingViewCfdGoldSpot();
+          if (typeof oanda === 'number' && Number.isFinite(oanda) && oanda > 500) {
+            resolved = { price: oanda, provider: 'oanda' };
+          }
+        }
+
+        if (!resolved) {
+          const g = await fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 1800);
+          if (typeof g?.price === 'number' && Number.isFinite(g.price) && g.price > 500) {
+            resolved = { price: Number(g.price.toFixed(2)), provider: 'gold-api' };
+          }
+        }
+
+        if (resolved) {
+          const ts = Date.now();
+          liveGoldSpotCache = {
+            expiresAt: ts + 350,
+            staleUntil: ts + 15_000,
+            value: resolved,
+          };
+          return resolved;
+        }
+
         if (liveGoldSpotCache && liveGoldSpotCache.staleUntil > Date.now()) {
           return liveGoldSpotCache.value;
         }
