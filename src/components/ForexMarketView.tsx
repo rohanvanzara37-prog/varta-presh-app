@@ -201,6 +201,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     if (!isChartFullScreen) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('chart-fullscreen-active');
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -223,6 +224,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => {
       document.body.style.overflow = prevOverflow;
+      document.body.classList.remove('chart-fullscreen-active');
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFsChange);
     };
@@ -403,17 +405,17 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             aria-label="Live TradingView Candlestick Terminal"
             className={
               isChartFullScreen
-                ? 'fixed inset-0 z-[90] flex flex-col gap-2.5 p-3 sm:p-4 overflow-hidden'
+                ? 'fixed inset-0 z-[200] flex flex-col w-screen h-[100dvh] overflow-hidden'
                 : 'space-y-2.5'
             }
             style={
               isChartFullScreen
-                ? { backgroundColor: 'var(--vp-surface)' }
+                ? { backgroundColor: 'var(--vp-canvas)' }
                 : undefined
             }
           >
             {/* Compact Single-Line Coin Selector + Timeframe Pills + Collapsible Indicators Dropdown */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0">
+            <div className={isChartFullScreen ? 'hidden' : 'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0'}>
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
                 {COMPACT_SYMBOLS.map((pair) => {
                   const active = tvWidgetSymbol === pair.symbol;
@@ -571,7 +573,23 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             </div>
 
             {/* Full-Width Responsive TradingView Candlestick Chart */}
-            <div className={isChartFullScreen ? 'flex-1 min-h-0 w-full' : 'w-full h-[430px] sm:h-[520px]'}>
+            <div className={isChartFullScreen ? 'relative flex-1 min-h-0 w-full h-full' : 'w-full h-[430px] sm:h-[520px]'}>
+              {isChartFullScreen && (
+                <button
+                  type="button"
+                  onClick={toggleFullScreen}
+                  aria-label="Exit Full Screen"
+                  className="fixed top-3 right-3 z-[220] inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full text-xs font-semibold shadow-2xl border backdrop-blur-md cursor-pointer"
+                  style={{
+                    backgroundColor: 'rgba(13, 17, 23, 0.88)',
+                    borderColor: 'rgba(245, 158, 11, 0.45)',
+                    color: '#F1F5F9',
+                  }}
+                >
+                  <Minimize2 className="h-4 w-4 text-[#F59E0B]" />
+                  <span>Exit Full Screen</span>
+                </button>
+              )}
               <TradingViewEmbedChart
                 symbol={tvWidgetSymbol}
                 interval={tvWidgetInterval}
@@ -584,14 +602,8 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
             </div>
 
             {/* Compact Technical Confluence Strip */}
-            {smartSummary && (
-              <div
-                className={
-                  isChartFullScreen
-                    ? 'hidden sm:grid sm:grid-cols-3 lg:grid-cols-6 gap-2 shrink-0'
-                    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1'
-                }
-              >
+            {smartSummary && !isChartFullScreen && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1">
                 <div className="vp-glass-card rounded-2xl px-3.5 py-2.5">
                   <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: 'var(--vp-muted)' }}>
                     <Activity className="h-3 w-3" style={{ color: ratingColor }} />

@@ -208,9 +208,10 @@
   touch-action: none !important;
 }
 
-/* Hide app headers and bottom navigation in Full-Screen Landscape chart mode */
+/* Hide app headers and bottom navigation in Full-Screen chart mode */
 body.chart-fullscreen-active {
   overflow: hidden !important;
+  overscroll-behavior: none !important;
 }
 
 body.chart-fullscreen-active header,

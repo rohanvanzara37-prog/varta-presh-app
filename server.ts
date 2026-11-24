@@ -1222,33 +1222,88 @@ async function startServer() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symbols: { tickers: ['OANDA:XAUUSD', 'FX_IDC:XAUUSD', 'TVC:GOLD'] },
-          columns: ['close'],
+          columns: ['close', 'bid', 'ask'],
         }),
-        signal: AbortSignal.timeout(2600),
+        signal: AbortSignal.timeout(1600),
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { data?: Array<{ d?: number[] }> };
-      const close = data?.data?.[0]?.d?.[0];
-      return typeof close === 'number' && Number.isFinite(close) && close > 500
-        ? Number(close.toFixed(2))
+      const row = data?.data?.[0]?.d;
+      const bid = row?.[1];
+      const ask = row?.[2];
+      const close = row?.[0];
+      const validMid =
+        typeof bid === 'number' &&
+        typeof ask === 'number' &&
+        Number.isFinite(bid) &&
+        Number.isFinite(ask) &&
+        bid > 500 &&
+        ask > 500
+          ? (bid + ask) / 2
+          : close;
+      return typeof validMid === 'number' && Number.isFinite(validMid) && validMid > 500
+        ? Number(validMid.toFixed(2))
         : null;
     } catch {
       return null;
     }
   }
 
+  let liveGoldSpotCache: {
+    expiresAt: number;
+    staleUntil: number;
+    value: { price: number; provider: string };
+  } | null = null;
+  let liveGoldSpotInFlight: Promise<{ price: number; provider: string } | null> | null = null;
+
   async function fetchLiveGoldCfdPriceWithProvider(): Promise<{ price: number; provider: string } | null> {
-    const [sq, tv, goldApi] = await Promise.all([
-      fetchSwissquoteMid('XAU'),
-      fetchTradingViewCfdGoldSpot(),
-      fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 2500),
-    ]);
-    if (typeof sq === 'number') return { price: sq, provider: 'swissquote' };
-    if (typeof tv === 'number') return { price: tv, provider: 'oanda' };
-    if (typeof goldApi?.price === 'number' && Number.isFinite(goldApi.price) && goldApi.price > 500) {
-      return { price: Number(goldApi.price.toFixed(2)), provider: 'gold-api' };
+    const now = Date.now();
+    if (liveGoldSpotCache && liveGoldSpotCache.expiresAt > now) {
+      return liveGoldSpotCache.value;
     }
-    return null;
+    if (liveGoldSpotInFlight) {
+      return liveGoldSpotInFlight;
+    }
+
+    const fastCheck = async <T extends { price: number; provider: string }>(
+      fn: () => Promise<number | null>,
+      provider: string
+    ): Promise<T> => {
+      const price = await fn();
+      if (typeof price === 'number' && Number.isFinite(price) && price > 500) {
+        return { price, provider } as T;
+      }
+      throw new Error(`${provider} unavailable`);
+    };
+
+    liveGoldSpotInFlight = (async () => {
+      try {
+        const result = await Promise.any([
+          fastCheck(fetchTradingViewCfdGoldSpot, 'oanda'),
+          fastCheck(() => fetchSwissquoteMid('XAU'), 'swissquote'),
+          fastCheck(async () => {
+            const g = await fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU', 1800);
+            return typeof g?.price === 'number' && g.price > 500 ? Number(g.price.toFixed(2)) : null;
+          }, 'gold-api'),
+        ]);
+        const ts = Date.now();
+        liveGoldSpotCache = {
+          expiresAt: ts + 700,
+          staleUntil: ts + 15_000,
+          value: result,
+        };
+        return result;
+      } catch {
+        if (liveGoldSpotCache && liveGoldSpotCache.staleUntil > Date.now()) {
+          return liveGoldSpotCache.value;
+        }
+        return null;
+      } finally {
+        liveGoldSpotInFlight = null;
+      }
+    })();
+
+    return liveGoldSpotInFlight;
   }
 
   async function fetchYahooHistoricalBars(
@@ -1427,7 +1482,16 @@ async function startServer() {
           };
         }
       }
-      return { source: 'paxg-gold-archive', candles: [], hasMore: false, inceptionDate: '2020-08-27' };
+
+      // Fallback to Yahoo Finance GC=F intraday history if Binance PAXG archive is unreachable
+      const yahooFallback = await fetchYahooHistoricalBars('GC=F', normalizedIv, 2);
+      const olderYahoo = yahooFallback.filter((c) => c.time < before);
+      return {
+        source: 'yahoo-gcf-intraday',
+        candles: olderYahoo.slice(-reqLimit),
+        hasMore: olderYahoo.length > reqLimit,
+        inceptionDate: '2000-08-30',
+      };
     }
 
     const tdKey = process.env.TWELVEDATA_API_KEY?.trim();
@@ -2124,7 +2188,9 @@ async function startServer() {
     clients: Set<WebSocket>;
     lastBar: OhlcBar | null;
     pollTimer: NodeJS.Timeout | null;
+    heartbeatTimer: NodeJS.Timeout | null;
     upstreamWs: WebSocket | null;
+    disposed: boolean;
   }
 
   const streamHubs = new Map<string, StreamHub>();
@@ -2141,7 +2207,9 @@ async function startServer() {
   const cleanupHubIfEmpty = (key: string) => {
     const hub = streamHubs.get(key);
     if (!hub || hub.clients.size > 0) return;
-    if (hub.pollTimer) clearInterval(hub.pollTimer);
+    hub.disposed = true;
+    if (hub.pollTimer) clearTimeout(hub.pollTimer);
+    if (hub.heartbeatTimer) clearInterval(hub.heartbeatTimer);
     if (hub.upstreamWs) {
       try {
         hub.upstreamWs.close();
@@ -2160,7 +2228,7 @@ async function startServer() {
     // Seed active candle from latest klines
     try {
       const seedCandles = await fetchKlinesForSymbol(hub.symbol, hub.interval);
-      if (seedCandles.length > 0) {
+      if (seedCandles.length > 0 && !hub.disposed) {
         hub.lastBar = { ...seedCandles[seedCandles.length - 1] };
         broadcastToHub(hub, {
           type: 'kline',
@@ -2176,49 +2244,63 @@ async function startServer() {
     }
 
     const startSpotTicker = () => {
-      if (hub.pollTimer || hub.clients.size === 0) return;
-      const tick = async () => {
-        if (hub.clients.size === 0) return;
-        const price = await fetchSpotForKlineSymbol(hub.symbol);
-        if (price === null || !Number.isFinite(price)) return;
+      if (hub.pollTimer || hub.clients.size === 0 || hub.disposed) return;
 
-        const nowSec = Math.floor(Date.now() / 1000);
-        const bucketTime = Math.floor(nowSec / intervalSec) * intervalSec;
-        const prev = hub.lastBar;
-
-        let isClosed = false;
-        let nextBar: OhlcBar;
-        if (!prev || bucketTime > prev.time) {
-          isClosed = Boolean(prev);
-          const openPrice = prev ? prev.close : price;
-          nextBar = {
-            time: bucketTime,
-            open: openPrice,
-            high: Number(Math.max(openPrice, price).toFixed(spec.precision)),
-            low: Number(Math.min(openPrice, price).toFixed(spec.precision)),
-            close: price,
-          };
-        } else {
-          nextBar = {
-            time: prev.time,
-            open: prev.open,
-            high: Number(Math.max(prev.high, price).toFixed(spec.precision)),
-            low: Number(Math.min(prev.low, price).toFixed(spec.precision)),
-            close: price,
-          };
-        }
-        hub.lastBar = nextBar;
-        broadcastToHub(hub, {
-          type: 'kline',
-          symbol: hub.symbol,
-          interval: hub.interval,
-          candle: nextBar,
-          isClosed,
-          streamSource: 'spot-ws',
-        });
+      const scheduleNext = (delayMs: number) => {
+        if (hub.disposed || hub.clients.size === 0) return;
+        hub.pollTimer = setTimeout(() => {
+          void tick();
+        }, delayMs);
       };
 
-      hub.pollTimer = setInterval(tick, 1500);
+      const tick = async () => {
+        if (hub.disposed || hub.clients.size === 0) return;
+        try {
+          const price = await fetchSpotForKlineSymbol(hub.symbol);
+          if (price !== null && Number.isFinite(price)) {
+            const nowSec = Math.floor(Date.now() / 1000);
+            const bucketTime = Math.floor(nowSec / intervalSec) * intervalSec;
+            const prev = hub.lastBar;
+
+            let isClosed = false;
+            let nextBar: OhlcBar;
+            if (!prev || bucketTime > prev.time) {
+              isClosed = Boolean(prev);
+              const openPrice = prev ? prev.close : price;
+              nextBar = {
+                time: bucketTime,
+                open: openPrice,
+                high: Number(Math.max(openPrice, price).toFixed(spec.precision)),
+                low: Number(Math.min(openPrice, price).toFixed(spec.precision)),
+                close: price,
+              };
+            } else {
+              nextBar = {
+                time: prev.time,
+                open: prev.open,
+                high: Number(Math.max(prev.high, price).toFixed(spec.precision)),
+                low: Number(Math.min(prev.low, price).toFixed(spec.precision)),
+                close: price,
+              };
+            }
+            hub.lastBar = nextBar;
+            broadcastToHub(hub, {
+              type: 'kline',
+              symbol: hub.symbol,
+              interval: hub.interval,
+              candle: nextBar,
+              isClosed,
+              streamSource: 'spot-ws',
+            });
+          }
+        } catch {
+          // ignore transient poll failure and continue loop
+        } finally {
+          scheduleNext(950);
+        }
+      };
+
+      void tick();
     };
 
     if (spec.source === 'binance') {
@@ -2228,10 +2310,10 @@ async function startServer() {
         hub.upstreamWs = upstream;
 
         upstream.on('message', (raw) => {
-          if (hub.clients.size === 0) return;
+          if (hub.clients.size === 0 || hub.disposed) return;
           try {
             const parsed = JSON.parse(raw.toString()) as {
-              k?: { t: number; o: string; h: string; l: string; c: string; x?: boolean };
+              k?: { t: number; o: string; h: string; l: string; c: string; v?: string; x?: boolean };
             };
             const k = parsed?.k;
             if (!k) return;
@@ -2241,6 +2323,7 @@ async function startServer() {
               high: parseFloat(k.h),
               low: parseFloat(k.l),
               close: parseFloat(k.c),
+              ...(k.v ? { volume: parseFloat(k.v) } : {}),
             };
             hub.lastBar = candle;
             broadcastToHub(hub, {
@@ -2262,13 +2345,23 @@ async function startServer() {
         });
         upstream.on('close', () => {
           hub.upstreamWs = null;
-          if (hub.clients.size > 0) startSpotTicker();
+          if (hub.clients.size > 0 && !hub.disposed) startSpotTicker();
         });
       } catch {
         startSpotTicker();
       }
+    } else if (hub.symbol === 'XAUUSD') {
+      // Dual-channel live XAU/USD feed: rapid genuine OANDA/Swissquote spot sync + continuous heartbeat
+      startSpotTicker();
     } else {
       startSpotTicker();
+    }
+
+    if (!hub.heartbeatTimer) {
+      hub.heartbeatTimer = setInterval(() => {
+        if (hub.disposed || hub.clients.size === 0) return;
+        broadcastToHub(hub, { type: 'heartbeat', ts: Date.now() });
+      }, 4500);
     }
   };
 
@@ -2292,7 +2385,9 @@ async function startServer() {
         clients: new Set<WebSocket>(),
         lastBar: null,
         pollTimer: null,
+        heartbeatTimer: null,
         upstreamWs: null,
+        disposed: false,
       };
       streamHubs.set(key, hub);
       hub.clients.add(ws);
