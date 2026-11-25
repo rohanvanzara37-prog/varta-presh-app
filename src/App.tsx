@@ -703,7 +703,7 @@ export default function App() {
               closedAt: Date.now(),
             },
             ...prev.history,
-          ].slice(0, 20),
+          ].slice(0, 100),
         };
       });
     },
@@ -735,7 +735,7 @@ export default function App() {
         ...prev,
         balance: Math.max(0, Number((prev.balance + totalPnl).toFixed(2))),
         positions: [],
-        history: [...closedRows, ...prev.history].slice(0, 20),
+        history: [...closedRows, ...prev.history].slice(0, 100),
       };
     });
   }, [liveSymbolPrices]);
@@ -769,18 +769,71 @@ export default function App() {
             typeof sl === 'number' && Number.isFinite(sl) && sl > 0
               ? Number(sl.toFixed(spec.precision))
               : undefined;
-          return { ...pos, tp: cleanTp, sl: cleanSl };
+          return {
+            ...pos,
+            tp: cleanTp,
+            sl: cleanSl,
+            trailingDistance: cleanSl === undefined ? undefined : pos.trailingDistance,
+          };
         }),
       }));
     },
     []
   );
 
-  // Auto-trigger TP / SL execution when live price crosses target
+  const handleToggleDemoTrailingStop = useCallback(
+    (positionId: string) => {
+      setDemoAccount((prev) => ({
+        ...prev,
+        positions: prev.positions.map((pos) => {
+          if (pos.id !== positionId || pos.sl === undefined) return pos;
+          if (pos.trailingDistance !== undefined) {
+            return { ...pos, trailingDistance: undefined };
+          }
+          const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+          const mark = liveSymbolPrices[pos.symbol] ?? pos.entryPrice ?? spec.defaultPrice;
+          const rawDist = Math.abs(mark - pos.sl);
+          const minStep = Math.max(spec.defaultPrice * 0.0005, rawDist);
+          return {
+            ...pos,
+            trailingDistance: Number(minStep.toFixed(spec.precision)),
+          };
+        }),
+      }));
+    },
+    [liveSymbolPrices]
+  );
+
+  // Auto-trail Stop Loss on live favorable price moves + Auto-trigger TP / SL execution
   useEffect(() => {
     if (demoAccount.positions.length === 0) return;
+
+    // 1. Trail Stop Loss if trailingDistance is enabled
+    let anyTrailed = false;
+    const trailedPositions = demoAccount.positions.map((pos) => {
+      if (pos.trailingDistance === undefined || pos.sl === undefined) return pos;
+      const mark = liveSymbolPrices[pos.symbol];
+      if (!mark || !Number.isFinite(mark)) return pos;
+      const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+      if (pos.side === 'BUY') {
+        const candidateSl = Number((mark - pos.trailingDistance).toFixed(spec.precision));
+        if (candidateSl > pos.sl && candidateSl < mark) {
+          anyTrailed = true;
+          return { ...pos, sl: candidateSl };
+        }
+      } else {
+        const candidateSl = Number((mark + pos.trailingDistance).toFixed(spec.precision));
+        if (candidateSl < pos.sl && candidateSl > mark) {
+          anyTrailed = true;
+          return { ...pos, sl: candidateSl };
+        }
+      }
+      return pos;
+    });
+
+    // 2. Check TP / SL triggers against (possibly trailed) SL
     const triggeredIds = new Set<string>();
-    for (const pos of demoAccount.positions) {
+    for (const pos of trailedPositions) {
       const mark = liveSymbolPrices[pos.symbol];
       if (!mark || !Number.isFinite(mark)) continue;
       if (pos.side === 'BUY') {
@@ -793,7 +846,8 @@ export default function App() {
         }
       }
     }
-    if (triggeredIds.size === 0) return;
+
+    if (!anyTrailed && triggeredIds.size === 0) return;
 
     setDemoAccount((prev) => {
       let realized = 0;
@@ -801,31 +855,31 @@ export default function App() {
       const remaining: DemoPosition[] = [];
       const now = Date.now();
       for (const pos of prev.positions) {
-        if (!triggeredIds.has(pos.id)) {
-          remaining.push(pos);
+        const updatedPos = trailedPositions.find((tp) => tp.id === pos.id) ?? pos;
+        if (!triggeredIds.has(updatedPos.id)) {
+          remaining.push(updatedPos);
           continue;
         }
-        const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
-        const closePrice = liveSymbolPrices[pos.symbol] ?? pos.entryPrice ?? spec.defaultPrice;
-        const pnl = calcPositionPnl(pos, closePrice);
+        const spec = DEMO_SYMBOL_SPECS[updatedPos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+        const closePrice = liveSymbolPrices[updatedPos.symbol] ?? updatedPos.entryPrice ?? spec.defaultPrice;
+        const pnl = calcPositionPnl(updatedPos, closePrice);
         realized += pnl;
         closedRows.push({
-          id: pos.id,
-          symbol: pos.symbol,
-          side: pos.side,
-          lots: pos.lots,
-          entryPrice: pos.entryPrice,
+          id: updatedPos.id,
+          symbol: updatedPos.symbol,
+          side: updatedPos.side,
+          lots: updatedPos.lots,
+          entryPrice: updatedPos.entryPrice,
           closePrice,
           pnl,
           closedAt: now,
         });
       }
-      if (closedRows.length === 0) return prev;
       return {
         ...prev,
         balance: Math.max(0, Number((prev.balance + realized).toFixed(2))),
         positions: remaining,
-        history: [...closedRows, ...prev.history].slice(0, 20),
+        history: closedRows.length > 0 ? [...closedRows, ...prev.history].slice(0, 100) : prev.history,
       };
     });
   }, [liveSymbolPrices, demoAccount.positions]);
@@ -855,7 +909,7 @@ export default function App() {
           ...prev,
           balance: 0,
           positions: [],
-          history: [...liquidated, ...prev.history].slice(0, 20),
+          history: [...liquidated, ...prev.history].slice(0, 100),
         };
       });
     } else if (demoAccount.balance <= 0 && demoAccount.positions.length === 0) {
@@ -946,8 +1000,10 @@ export default function App() {
         key={activeTab}
         className={
           activeTab === 'terminal' && !activeMarketAsset
-            ? 'vp-tab-stage h-[calc(100dvh-114px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-1.5 sm:px-4 py-1.5 overflow-hidden'
-            : 'vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6'
+            ? 'vp-tab-stage h-[calc(100dvh-110px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-1.5 sm:px-4 py-1.5 overflow-y-auto overflow-x-hidden overscroll-contain'
+            : activeTab === 'news'
+              ? 'vp-tab-stage h-[calc(100dvh-110px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-2 sm:px-4 py-1 overflow-hidden'
+              : 'vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6'
         }
       >
         {activeTab === 'terminal' ? (
@@ -996,6 +1052,7 @@ export default function App() {
               onExecuteDemoOrder={handleExecuteDemoOrder}
               onCloseDemoPosition={handleCloseDemoPosition}
               onUpdateDemoPositionTpSl={handleUpdateDemoPositionTpSl}
+              onToggleDemoTrailingStop={handleToggleDemoTrailingStop}
               onChangeDemoDefaultLot={handleChangeDemoDefaultLot}
               onResetDemoAccount={handleResetDemoAccount}
               onOpenDemoDrawer={() => setDemoDrawerOpen(true)}

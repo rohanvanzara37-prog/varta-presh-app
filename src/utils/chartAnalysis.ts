@@ -1078,3 +1078,392 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     fvgs,
   };
 }
+
+export interface HtfTrendSummary {
+  label: string;
+  bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  tf15mBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  tf1hBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+}
+
+function evalSingleTfBias(rawCandles: TerminalCandle[]): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
+  if (rawCandles.length < 25) return 'NEUTRAL';
+  const candles = rawCandles.length > 140 ? rawCandles.slice(-140) : rawCandles;
+  const lastClose = candles[candles.length - 1].close;
+  const ema20Arr = calcEmaSeries(candles, 20);
+  const ema50Arr = calcEmaSeries(candles, 50);
+  const e20 = ema20Arr[ema20Arr.length - 1]?.value ?? lastClose;
+  const e50 = ema50Arr[ema50Arr.length - 1]?.value ?? lastClose;
+  const spread = Math.abs(e20 - e50) / Math.max(1e-6, lastClose);
+  const struct = analyzeChartStructure(candles);
+  const structTrend = struct?.smc.trend ?? 0;
+
+  if (spread >= 0.0001) {
+    if (e20 > e50 && (lastClose >= e50 || structTrend === 1)) return 'BULLISH';
+    if (e20 < e50 && (lastClose <= e50 || structTrend === -1)) return 'BEARISH';
+  }
+  if (structTrend === 1 && lastClose >= e20) return 'BULLISH';
+  if (structTrend === -1 && lastClose <= e20) return 'BEARISH';
+  return 'NEUTRAL';
+}
+
+export function computeMultiTimeframeTrend(
+  candles15m: TerminalCandle[],
+  candles1h: TerminalCandle[],
+  activeTf: string
+): HtfTrendSummary | null {
+  const b15 = evalSingleTfBias(candles15m);
+  const b1h = evalSingleTfBias(candles1h);
+  if (candles15m.length < 25 && candles1h.length < 25) return null;
+
+  let bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+  if (activeTf === '1m' || activeTf === '5m') {
+    if (b15 === 'BULLISH' && b1h !== 'BEARISH') bias = 'BULLISH';
+    else if (b15 === 'BEARISH' && b1h !== 'BULLISH') bias = 'BEARISH';
+    else if (b1h !== 'NEUTRAL' && b15 === 'NEUTRAL') bias = b1h;
+    else if (b15 !== 'NEUTRAL' && b1h === 'NEUTRAL') bias = b15;
+  } else {
+    bias = b1h !== 'NEUTRAL' ? b1h : b15;
+  }
+
+  return {
+    label: activeTf === '1m' || activeTf === '5m' ? '15m / 1H' : '1H / 4H',
+    bias,
+    tf15mBias: b15,
+    tf1hBias: b1h,
+  };
+}
+
+export interface AiConfluenceRule {
+  id: 'htf' | 'ema' | 'smc' | 'rsi' | 'candle';
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface AiScalpAnalysisState {
+  timeframe: string;
+  score: number;
+  grade: 'A+ High Probability' | 'B Moderate' | 'WAIT — Low Probability';
+  actionable: boolean;
+  direction: 'BUY' | 'SELL' | 'WAIT';
+  entry: number | null;
+  sl: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  rsi14: number;
+  ema20: number;
+  ema50: number;
+  htfBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  htfLabel: string;
+  reason: string;
+  rules: AiConfluenceRule[];
+}
+
+export function computeAiScalpAnalysis(
+  rawCandles: TerminalCandle[],
+  structure: ChartStructureOverlayData | null,
+  timeframe: string,
+  precision = 2,
+  htfTrend?: HtfTrendSummary | null
+): AiScalpAnalysisState | null {
+  if (rawCandles.length < 25) return null;
+  const candles = rawCandles.length > 220 ? rawCandles.slice(-220) : rawCandles;
+  const last = candles[candles.length - 1];
+  const lastClose = last.close;
+
+  // 1. Trend Filter: 20 EMA vs 50 EMA
+  const ema20Arr = calcEmaSeries(candles, 20);
+  const ema50Arr = calcEmaSeries(candles, 50);
+  const ema20 = ema20Arr[ema20Arr.length - 1]?.value ?? lastClose;
+  const ema20Prev = ema20Arr[Math.max(0, ema20Arr.length - 4)]?.value ?? ema20;
+  const ema50 = ema50Arr[ema50Arr.length - 1]?.value ?? lastClose;
+  const emaSpreadPct = Math.abs(ema20 - ema50) / Math.max(1e-6, lastClose);
+
+  // Detect frequent EMA20/50 whipsaws in last 10 bars (choppy market filter)
+  let emaCrossCount = 0;
+  const checkLen = Math.min(10, ema20Arr.length - 1, ema50Arr.length - 1);
+  for (let i = 1; i <= checkLen; i += 1) {
+    const e20Curr = ema20Arr[ema20Arr.length - i]?.value;
+    const e50Curr = ema50Arr[ema50Arr.length - i]?.value;
+    const e20Prev = ema20Arr[ema20Arr.length - i - 1]?.value;
+    const e50Prev = ema50Arr[ema50Arr.length - i - 1]?.value;
+    if (
+      e20Curr !== undefined &&
+      e50Curr !== undefined &&
+      e20Prev !== undefined &&
+      e50Prev !== undefined
+    ) {
+      if ((e20Curr > e50Curr && e20Prev <= e50Prev) || (e20Curr < e50Curr && e20Prev >= e50Prev)) {
+        emaCrossCount += 1;
+      }
+    }
+  }
+
+  let emaBias: 'BUY' | 'SELL' | 'NEUTRAL' = 'NEUTRAL';
+  if (emaSpreadPct >= 0.00012 && emaCrossCount <= 1) {
+    if (ema20 > ema50 && (lastClose >= ema20 * 0.9988 || ema20 >= ema20Prev)) {
+      emaBias = 'BUY';
+    } else if (ema20 < ema50 && (lastClose <= ema20 * 1.0012 || ema20 <= ema20Prev)) {
+      emaBias = 'SELL';
+    }
+  }
+
+  // 2. SMC Structure + Support/Resistance Proximity
+  const smcTrend: 'BUY' | 'SELL' =
+    structure?.smc.trend === -1 ? 'SELL' : structure?.smc.trend === 1 ? 'BUY' : emaBias === 'SELL' ? 'SELL' : 'BUY';
+
+  const htfBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = htfTrend?.bias ?? 'NEUTRAL';
+  const htfLabel = htfTrend?.label ?? '15m / 1H';
+  const isScalpTf = timeframe === '1m' || timeframe === '5m';
+
+  const supportPrice = structure?.smc.supportPrice ?? null;
+  const resistancePrice = structure?.smc.resistancePrice ?? null;
+  const nearSupport =
+    supportPrice !== null && Math.abs(lastClose - supportPrice) / Math.max(1e-6, lastClose) <= 0.0032;
+  const nearResistance =
+    resistancePrice !== null && Math.abs(lastClose - resistancePrice) / Math.max(1e-6, lastClose) <= 0.0032;
+
+  let targetDir: 'BUY' | 'SELL' = emaBias !== 'NEUTRAL' ? emaBias : smcTrend;
+  if (htfBias === 'BULLISH' && nearSupport && emaBias === 'NEUTRAL') {
+    targetDir = 'BUY';
+  } else if (htfBias === 'BEARISH' && nearResistance && emaBias === 'NEUTRAL') {
+    targetDir = 'SELL';
+  }
+
+  const recentBars = candles.slice(-4);
+  const matchingOb = structure?.orderBlocks.find(
+    (ob) => ob.type === (targetDir === 'BUY' ? 'Bullish' : 'Bearish') && !ob.mitigated
+  );
+  const matchingFvg = structure?.fvgs.find(
+    (f) => f.type === (targetDir === 'BUY' ? 'Bullish' : 'Bearish') && !f.mitigated
+  );
+  const obBounce = Boolean(
+    matchingOb &&
+      recentBars.some(
+        (b) =>
+          b.low <= matchingOb.high * 1.0015 &&
+          b.high >= matchingOb.low * 0.9985
+      )
+  );
+  const fvgBounce = Boolean(
+    matchingFvg &&
+      recentBars.some(
+        (b) =>
+          b.low <= matchingFvg.high * 1.0015 &&
+          b.high >= matchingFvg.low * 0.9985
+      )
+  );
+  const smcEvent = structure?.smc.lastEvent ?? 'Structure';
+  const smcAligned =
+    Boolean(structure) &&
+    ((targetDir === 'BUY' && structure!.smc.trend === 1) ||
+      (targetDir === 'SELL' && structure!.smc.trend === -1));
+  const keyLevelBonus = (targetDir === 'BUY' && nearSupport) || (targetDir === 'SELL' && nearResistance);
+  const smcStrongPass = smcAligned || obBounce || fvgBounce || keyLevelBonus;
+
+  // 3. RSI Momentum (14) — filter out overbought (>72) or oversold (<28) traps
+  const rsiArr = calcRsiSeries(candles, 14);
+  const rsi14 = rsiArr[rsiArr.length - 1]?.value ?? 50;
+  let rsiPassed = false;
+  let rsiDetail = `RSI ${rsi14.toFixed(1)}`;
+  if (targetDir === 'BUY') {
+    if (rsi14 > 72) {
+      rsiPassed = false;
+      rsiDetail = `Overbought (${rsi14.toFixed(1)} > 72)`;
+    } else if (rsi14 >= 45) {
+      rsiPassed = true;
+      rsiDetail = `Bullish (${rsi14.toFixed(1)})`;
+    } else {
+      rsiPassed = false;
+      rsiDetail = `Weak (${rsi14.toFixed(1)} < 45)`;
+    }
+  } else {
+    if (rsi14 < 28) {
+      rsiPassed = false;
+      rsiDetail = `Oversold (${rsi14.toFixed(1)} < 28)`;
+    } else if (rsi14 <= 55) {
+      rsiPassed = true;
+      rsiDetail = `Bearish (${rsi14.toFixed(1)})`;
+    } else {
+      rsiPassed = false;
+      rsiDetail = `Weak (${rsi14.toFixed(1)} > 55)`;
+    }
+  }
+
+  // 4. Candle Strength — strong body close without long opposing rejection wick
+  const candleRange = Math.max(1e-6, last.high - last.low);
+  const bodySize = Math.abs(last.close - last.open);
+  const bodyRatio = bodySize / candleRange;
+  const upperWickRatio = (last.high - Math.max(last.open, last.close)) / candleRange;
+  const lowerWickRatio = (Math.min(last.open, last.close) - last.low) / candleRange;
+
+  const isBullCandle = last.close >= last.open;
+  const isBearCandle = last.close <= last.open;
+  const strongCandlePass =
+    targetDir === 'BUY'
+      ? isBullCandle && bodyRatio >= 0.44 && upperWickRatio <= 0.36
+      : isBearCandle && bodyRatio >= 0.44 && lowerWickRatio <= 0.36;
+
+  // 5. Higher Timeframe (15m / 1H) Confirmation
+  const htfAligned =
+    (targetDir === 'BUY' && htfBias === 'BULLISH') ||
+    (targetDir === 'SELL' && htfBias === 'BEARISH');
+  const htfCounterTrend =
+    (targetDir === 'BUY' && htfBias === 'BEARISH') ||
+    (targetDir === 'SELL' && htfBias === 'BULLISH');
+
+  const htfAvailable = Boolean(htfTrend) && htfBias !== 'NEUTRAL';
+  const emaScore = emaBias === targetDir ? 20 : 0;
+  const smcScore = smcAligned && (obBounce || fvgBounce || keyLevelBonus) ? 20 : smcStrongPass ? 20 : 0;
+  const rsiScore = rsiPassed ? 20 : 0;
+  const candleScore = strongCandlePass
+    ? 20
+    : ((targetDir === 'BUY' && isBullCandle) || (targetDir === 'SELL' && isBearCandle)) && bodyRatio >= 0.32
+      ? 10
+      : 0;
+  const htfScore = htfAligned ? 20 : !htfAvailable ? 15 : 0;
+
+  let totalScore = emaScore + smcScore + rsiScore + candleScore + htfScore;
+  if (emaCrossCount >= 2 || emaBias === 'NEUTRAL') {
+    totalScore = Math.min(totalScore, 65);
+  }
+  if (isScalpTf && htfCounterTrend) {
+    totalScore = Math.min(totalScore, 60);
+  }
+  totalScore = Math.max(0, Math.min(100, Math.round(totalScore)));
+
+  const actionable = totalScore >= 75 && emaBias !== 'NEUTRAL' && !(isScalpTf && htfCounterTrend);
+  const grade: AiScalpAnalysisState['grade'] =
+    totalScore >= 75
+      ? 'A+ High Probability'
+      : totalScore >= 50
+        ? 'B Moderate'
+        : 'WAIT — Low Probability';
+
+  const atrBars = candles.slice(-14);
+  const atr =
+    atrBars.reduce((sum, b) => sum + Math.max(b.high - b.low, lastClose * 0.0003), 0) /
+    atrBars.length;
+  const slDist = Math.max(lastClose * 0.0008, Math.min(lastClose * 0.0055, atr * 1.25));
+
+  const entry = actionable ? Number(lastClose.toFixed(precision)) : null;
+  const sl = actionable
+    ? Number(
+        (targetDir === 'BUY' ? Math.max(1e-4, lastClose - slDist) : lastClose + slDist).toFixed(
+          precision
+        )
+      )
+    : null;
+  const tp1 = actionable
+    ? Number(
+        (targetDir === 'BUY' ? lastClose + slDist * 1.5 : Math.max(1e-4, lastClose - slDist * 1.5)).toFixed(
+          precision
+        )
+      )
+    : null;
+  const tp2 = actionable
+    ? Number(
+        (targetDir === 'BUY' ? lastClose + slDist * 2.5 : Math.max(1e-4, lastClose - slDist * 2.5)).toFixed(
+          precision
+        )
+      )
+    : null;
+
+  const reasonParts: string[] = [];
+  if (htfAligned) {
+    reasonParts.push(`${htfLabel} ${htfBias === 'BULLISH' ? 'Bullish' : 'Bearish'}`);
+  }
+  if (keyLevelBonus) {
+    reasonParts.push(targetDir === 'BUY' ? 'at Support' : 'at Resistance');
+  } else if (smcStrongPass) {
+    reasonParts.push(
+      obBounce
+        ? `${targetDir === 'BUY' ? 'Bullish' : 'Bearish'} OB bounce`
+        : fvgBounce
+          ? `${targetDir === 'BUY' ? 'Bullish' : 'Bearish'} FVG tap`
+          : smcEvent
+    );
+  }
+  if (emaScore === 20) reasonParts.push('20/50 EMA trend');
+  if (candleScore === 20) reasonParts.push('strong body close');
+  if (rsiPassed) reasonParts.push(`RSI ${rsi14.toFixed(0)}`);
+
+  const reason = actionable
+    ? reasonParts.join(' + ')
+    : isScalpTf && htfCounterTrend
+      ? `Blocked: ${timeframe} ${targetDir} fights ${htfLabel} ${htfBias} trend`
+      : emaCrossCount >= 2 || emaBias === 'NEUTRAL'
+        ? '20/50 EMA flat or crossing — choppy range detected'
+        : `Low confluence (${totalScore}%) — wait for cleaner confirmation`;
+
+  return {
+    timeframe,
+    score: totalScore,
+    grade,
+    actionable,
+    direction: actionable ? targetDir : 'WAIT',
+    entry,
+    sl,
+    tp1,
+    tp2,
+    rsi14,
+    ema20,
+    ema50,
+    htfBias,
+    htfLabel,
+    reason,
+    rules: [
+      {
+        id: 'htf',
+        label: `HTF ${htfLabel}`,
+        passed: htfAligned,
+        detail: htfCounterTrend
+          ? `Counter (${htfBias === 'BULLISH' ? 'Bull' : 'Bear'})`
+          : htfBias === 'BULLISH'
+            ? keyLevelBonus && targetDir === 'BUY'
+              ? 'Bull + Support'
+              : 'Bullish Trend'
+            : htfBias === 'BEARISH'
+              ? keyLevelBonus && targetDir === 'SELL'
+                ? 'Bear + Resist'
+                : 'Bearish Trend'
+              : 'Ranging',
+      },
+      {
+        id: 'ema',
+        label: '20/50 EMA',
+        passed: emaScore === 20,
+        detail: emaBias === 'NEUTRAL' ? 'Flat/Chop' : `${emaBias === 'BUY' ? 'Bull' : 'Bear'} Stack`,
+      },
+      {
+        id: 'smc',
+        label: 'SMC Struct',
+        passed: smcStrongPass,
+        detail: obBounce
+          ? 'OB Bounce'
+          : fvgBounce
+            ? 'FVG Tap'
+            : keyLevelBonus
+              ? targetDir === 'BUY'
+                ? 'At Support'
+                : 'At Resist'
+              : smcEvent.replace(' (Bull)', '').replace(' (Bear)', ''),
+      },
+      {
+        id: 'rsi',
+        label: 'RSI (14)',
+        passed: rsiPassed,
+        detail: rsiDetail,
+      },
+      {
+        id: 'candle',
+        label: 'Candle Close',
+        passed: candleScore === 20,
+        detail: strongCandlePass ? `${Math.round(bodyRatio * 100)}% Body` : 'Weak / Wick',
+      },
+    ],
+  };
+}
+
+

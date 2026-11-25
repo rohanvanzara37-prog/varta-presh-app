@@ -862,13 +862,19 @@ export const NewsTerminalView: React.FC = () => {
   );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 pb-24 md:pb-8">
-      {/* Sticky Top Live Mini Price Move Strip (Gold, Silver, BTC, ETH via WebSocket) */}
-      <div className="sticky top-[53px] md:top-[61px] z-20 vp-glass-card rounded-2xl px-3 py-2">
-        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-1 text-[10px] font-bold font-mono-tabular text-[var(--vp-bull)] shrink-0">
+    <div
+      className={
+        isCalendarFullScreen
+          ? 'mx-auto max-w-7xl'
+          : 'h-[calc(100dvh-110px)] md:h-[calc(100dvh-64px)] overflow-y-auto overflow-x-hidden overscroll-contain mx-auto max-w-7xl space-y-2 pb-3 pr-0.5'
+      }
+    >
+      {/* Compact Top Live Price Strip */}
+      <div className="rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-2.5 py-1.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="inline-flex items-center gap-1 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2 py-0.5 text-[9.5px] font-bold font-mono-tabular text-[#089981] shrink-0">
             <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
-            <span>LIVE WS</span>
+            <span>LIVE</span>
           </div>
 
           {(
@@ -882,15 +888,15 @@ export const NewsTerminalView: React.FC = () => {
             return (
               <div
                 key={asset.id}
-                className="flex items-center gap-2 rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-1 text-xs font-mono-tabular whitespace-nowrap shrink-0 transition-colors"
+                className="flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-mono-tabular whitespace-nowrap shrink-0"
               >
-                <span className="font-semibold text-[var(--vp-text)]">
+                <span className="font-semibold text-[#131722]">
                   {asset.icon} {asset.label}
                 </span>
-                <span className="font-bold text-[var(--vp-text)]">${formattedPrice}</span>
+                <span className="font-bold text-[#131722]">${formattedPrice}</span>
                 <span
-                  className="font-bold"
-                  style={{ color: isUp ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
+                  className="font-bold text-[10px]"
+                  style={{ color: isUp ? '#089981' : '#F23645' }}
                 >
                   {isUp ? '▲' : '▼'} {isUp ? '+' : ''}
                   {asset.changePct24h.toFixed(2)}%
@@ -905,54 +911,49 @@ export const NewsTerminalView: React.FC = () => {
       <section
         className={
           isCalendarFullScreen
-            ? 'vp-fullscreen-root bg-[#FFFFFF] p-3 sm:p-5 flex flex-col gap-3'
-            : 'vp-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 bg-[#FFFFFF]'
+            ? 'vp-fullscreen-root bg-[#FFFFFF] p-3 sm:p-5 flex flex-col gap-2.5'
+            : 'rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 sm:p-3.5 space-y-2'
         }
       >
-        <div className="shrink-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-0.5 font-bold tracking-wide text-[#089981]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
-                <span>LIVE AUTO-SYNC</span>
-              </span>
-              <span className="text-[var(--vp-muted)]">
-                Updated:{' '}
-                <strong className="text-[var(--vp-text)]">{formatIstTimestamp(lastUpdatedMs)}</strong>
-              </span>
-              <span className="text-[var(--vp-muted)] hidden sm:inline">
-                · {isSyncing ? 'Syncing feeds...' : `Next sync in ${secondsUntilNextSync}s`}
-              </span>
-            </div>
-
+        <div className="shrink-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5">
+          <div className="space-y-0.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <CalendarClock className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--vp-accent-text)] shrink-0" />
-                <h1 className="text-sm sm:text-lg font-bold tracking-tight text-[var(--vp-text)] truncate">
-                  Live Economic Calendar
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CalendarClock className="h-4 w-4 text-[#B45309] shrink-0" />
+                <h1 className="text-xs sm:text-base font-bold tracking-tight text-[#131722] truncate">
+                  Economic Calendar
                 </h1>
+                <span className="inline-flex items-center gap-1 rounded-full border border-[#089981]/30 bg-[#089981]/10 px-1.5 py-0.5 text-[9px] font-bold font-mono-tabular text-[#089981] shrink-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
+                  SYNC
+                </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsCalendarFullScreen((prev) => !prev)}
-                aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
-                title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-[11px] font-bold text-[#131722] cursor-pointer shrink-0 lg:hidden"
-              >
-                {isCalendarFullScreen ? (
-                  <>
-                    <Minimize2 className="h-3.5 w-3.5" />
-                    <span>Exit</span>
-                  </>
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono-tabular text-[#64748B] hidden sm:inline">
+                  {isSyncing ? 'Syncing...' : `${secondsUntilNextSync}s · ${formatIstTimestamp(lastUpdatedMs)}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsCalendarFullScreen((prev) => !prev)}
+                  aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
+                  title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2 text-[10.5px] font-bold text-[#131722] cursor-pointer shrink-0 lg:hidden"
+                >
+                  {isCalendarFullScreen ? (
+                    <>
+                      <Minimize2 className="h-3 w-3" />
+                      <span>Exit</span>
+                    </>
+                  ) : (
+                    <Maximize2 className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
             {(
               [
                 { id: 'UPCOMING_RECENT', label: 'Upcoming & Today' },
@@ -967,9 +968,7 @@ export const NewsTerminalView: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setCalendarFilter(tab.id)}
-                  className={`vp-pill-btn min-h-[32px] px-3 text-[11px] sm:text-xs font-semibold cursor-pointer ${
-                    active ? 'shadow-[0_0_14px_rgba(245,158,11,0.25)]' : 'hover:text-[var(--vp-text)]'
-                  }`}
+                  className="rounded-lg px-2.5 py-1 text-[10.5px] sm:text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   style={{
                     backgroundColor: active ? '#F59E0B' : '#F3F4F6',
                     color: active ? '#131722' : '#475569',
@@ -985,7 +984,7 @@ export const NewsTerminalView: React.FC = () => {
               onClick={() => setIsCalendarFullScreen((prev) => !prev)}
               aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
               title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
-              className="hidden lg:inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-xs font-bold text-[#131722] cursor-pointer shrink-0"
+              className="hidden lg:inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-xs font-bold text-[#131722] cursor-pointer shrink-0 ml-auto"
             >
               {isCalendarFullScreen ? (
                 <>
@@ -999,13 +998,13 @@ export const NewsTerminalView: React.FC = () => {
           </div>
         </div>
 
-        {/* Real-Time 1-Second Countdown Banner to Next High-Impact Event */}
+        {/* Compact Real-Time Countdown Banner to Next High-Impact Event */}
         {nextHighImpactEvent ? (
-          <div className="shrink-0 rounded-xl border border-[#F0B90B]/40 bg-[#FFFBEB]/60 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-            <div className="space-y-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono-tabular">
-                <span className="inline-flex items-center gap-1 rounded bg-[#F23645]/12 px-1.5 py-0.5 font-bold text-[#F23645]">
-                  <Flame className="h-3 w-3" />
+          <div className="shrink-0 rounded-lg border border-[#F0B90B]/40 bg-[#FFFBEB]/70 px-2.5 py-1.5 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono-tabular">
+                <span className="inline-flex items-center gap-0.5 rounded bg-[#F23645]/12 px-1 py-0.2 font-bold text-[#F23645]">
+                  <Flame className="h-2.5 w-2.5" />
                   NEXT HIGH-IMPACT
                 </span>
                 <span className="font-bold text-[#131722]">
@@ -1015,52 +1014,46 @@ export const NewsTerminalView: React.FC = () => {
                   {formatEventIstDateTime(nextHighImpactEvent.timestampMs)}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm font-bold text-[#131722] truncate">
+              <p className="text-[11.5px] sm:text-xs font-bold text-[#131722] truncate">
                 {nextHighImpactEvent.title}
               </p>
-              <div className="flex items-center gap-3 text-[11px] font-mono-tabular text-[#64748B]">
+              <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[#64748B]">
                 <span>
-                  Forecast:{' '}
-                  <strong className="text-[#131722]">
-                    {nextHighImpactEvent.forecast || '—'}
-                  </strong>
+                  Fcst: <strong className="text-[#131722]">{nextHighImpactEvent.forecast || '—'}</strong>
                 </span>
                 <span>
-                  Previous:{' '}
-                  <strong className="text-[#131722]">
-                    {nextHighImpactEvent.previous || '—'}
-                  </strong>
+                  Prev: <strong className="text-[#131722]">{nextHighImpactEvent.previous || '—'}</strong>
                 </span>
               </div>
             </div>
 
-            <div className="shrink-0 flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-3 py-1.5 self-start sm:self-center">
-              <Clock className="h-4 w-4 text-[#B45309]" />
-              <div>
-                <div className="text-[9px] font-mono-tabular uppercase tracking-wider text-[#64748B]">
-                  Countdown
+            <div className="shrink-0 flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#FFFFFF] px-2 py-1">
+              <Clock className="h-3.5 w-3.5 text-[#B45309]" />
+              <div className="text-right">
+                <div className="text-[8.5px] font-mono-tabular uppercase text-[#64748B] leading-none">
+                  T-Minus
                 </div>
-                <div className="text-sm sm:text-base font-extrabold font-mono-tabular text-[#B45309] tracking-tight">
+                <div className="text-xs sm:text-sm font-extrabold font-mono-tabular text-[#B45309] leading-tight">
                   {formatCountdown(nextHighImpactEvent.timestampMs - nowMs)}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="shrink-0 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-xs text-[#64748B] flex items-center justify-between">
-            <span>All scheduled high-impact releases for this week have completed.</span>
-            <span className="font-mono-tabular text-[#089981]">Auto-monitoring next feed</span>
+          <div className="shrink-0 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5 py-1.5 text-[11px] text-[#64748B] flex items-center justify-between">
+            <span>All high-impact releases for this week completed.</span>
+            <span className="font-mono-tabular text-[#089981]">Auto-monitoring</span>
           </div>
         )}
 
-        {/* Mobile-Responsive Internally Scrollable Vertical Event Cards */}
+        {/* Compact Vertical Event Cards inside Single Smooth Scroll Viewport */}
         {calendarError && calendarEvents.length === 0 ? (
-          <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-xs text-[#64748B] flex items-center justify-between gap-3">
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-xs text-[#64748B] flex items-center justify-between gap-2">
             <span>{calendarError}</span>
             <button
               type="button"
               onClick={() => loadAllFeeds(true, false)}
-              className="rounded-lg bg-[#F59E0B] px-3 py-1.5 text-xs font-bold text-[#131722] cursor-pointer"
+              className="rounded-lg bg-[#F59E0B] px-3 py-1 text-xs font-bold text-[#131722] cursor-pointer"
             >
               Retry
             </button>
@@ -1069,8 +1062,8 @@ export const NewsTerminalView: React.FC = () => {
           <div
             className={
               isCalendarFullScreen
-                ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 space-y-2'
-                : 'max-h-[380px] overflow-y-auto overscroll-contain rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 space-y-2'
+                ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-lg border border-[#E5E7EB] bg-[#FFFFFF] p-2 space-y-1.5'
+                : 'space-y-1.5'
             }
           >
             {visibleCalendarEvents.map((ev) => {
@@ -1083,29 +1076,29 @@ export const NewsTerminalView: React.FC = () => {
               return (
                 <article
                   key={ev.id}
-                  className={`w-full rounded-xl border p-2.5 space-y-2 transition-colors ${
+                  className={`w-full rounded-lg border px-2.5 py-1.5 space-y-1 transition-colors ${
                     justReleased
                       ? 'border-[#F59E0B]/50 bg-[#FFFBEB]/60'
                       : 'border-[#E5E7EB] bg-[#FFFFFF] hover:bg-[#F8FAFC]'
                   }`}
                 >
                   {/* Row 1: IST Time + Countdown + Currency + Impact */}
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10.5px] font-mono-tabular">
-                    <div className="flex flex-wrap items-center gap-1.5 text-[#475569] min-w-0">
-                      <span>{formatEventIstDateTime(ev.timestampMs)}</span>
+                  <div className="flex items-center justify-between gap-1.5 text-[10px] font-mono-tabular">
+                    <div className="flex items-center gap-1 text-[#475569] min-w-0 truncate">
+                      <span className="truncate">{formatEventIstDateTime(ev.timestampMs)}</span>
                       {isSoon && (
-                        <span className="font-bold text-[#B45309]">
+                        <span className="font-bold text-[#B45309] shrink-0">
                           ({formatCountdown(diffMs)})
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <span className="font-bold text-[#131722]">
                         {CURRENCY_BADGES[ev.currency] ?? ev.currency}
                       </span>
                       <span
-                        className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold"
+                        className="inline-block rounded px-1 py-0.2 text-[9.5px] font-bold"
                         style={{
                           backgroundColor:
                             ev.impact === 'High'
@@ -1126,51 +1119,41 @@ export const NewsTerminalView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Row 2: Event Title */}
-                  <h3 className="text-xs sm:text-[13px] font-bold text-[#131722] leading-snug break-words">
-                    {ev.title}
-                  </h3>
-
-                  {/* Row 3: Actual | Forecast | Previous */}
-                  <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5 py-1.5 text-[11px] font-mono-tabular">
-                    <div className="min-w-0">
-                      <div className="text-[9px] uppercase text-[#64748B]">Actual</div>
-                      <div className="mt-0.5 truncate">
+                  {/* Row 2: Event Title + Inline Metrics */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                    <h3 className="text-[11.5px] sm:text-xs font-bold text-[#131722] leading-snug break-words">
+                      {ev.title}
+                    </h3>
+                    <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[#475569] shrink-0">
+                      <span>
+                        Act:{' '}
                         {status === 'beat' ? (
-                          <span className="font-extrabold text-[#089981]">▲ {ev.actual}</span>
+                          <strong className="text-[#089981]">▲ {ev.actual}</strong>
                         ) : status === 'miss' ? (
-                          <span className="font-extrabold text-[#F23645]">▼ {ev.actual}</span>
+                          <strong className="text-[#F23645]">▼ {ev.actual}</strong>
                         ) : status === 'inline' ? (
-                          <span className="font-bold text-[#131722]">{ev.actual}</span>
+                          <strong className="text-[#131722]">{ev.actual}</strong>
                         ) : status === 'released-pending' ? (
-                          <span className="text-[10px] font-semibold text-[#B45309]">Syncing...</span>
+                          <strong className="text-[#B45309]">Sync...</strong>
                         ) : (
-                          <span className="text-[#94A3B8]">—</span>
+                          <span>—</span>
                         )}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 text-center">
-                      <div className="text-[9px] uppercase text-[#64748B]">Forecast</div>
-                      <div className="mt-0.5 font-semibold text-[#131722] truncate">
-                        {ev.forecast || '—'}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 text-right">
-                      <div className="text-[9px] uppercase text-[#64748B]">Previous</div>
-                      <div className="mt-0.5 text-[#475569] truncate">
-                        {ev.previous || '—'}
-                      </div>
+                      </span>
+                      <span>
+                        Fcst: <strong className="text-[#131722]">{ev.forecast || '—'}</strong>
+                      </span>
+                      <span>
+                        Prev: <span>{ev.previous || '—'}</span>
+                      </span>
                     </div>
                   </div>
 
-                  {/* Row 4: Asset Impact Pills */}
+                  {/* Row 3: Compact Asset Impact Pills */}
                   <div className="flex flex-wrap items-center gap-1">
                     {assetImpacts.map((badge) => (
                       <span
                         key={badge.key}
-                        className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold font-mono-tabular whitespace-nowrap"
+                        className="inline-flex items-center rounded border px-1 py-0.2 text-[9.5px] font-bold font-mono-tabular whitespace-nowrap"
                         style={getBadgeStyle(badge.tone)}
                       >
                         {badge.label}
@@ -1182,7 +1165,7 @@ export const NewsTerminalView: React.FC = () => {
             })}
 
             {visibleCalendarEvents.length === 0 && (
-              <div className="py-6 text-center text-xs text-[#64748B]">
+              <div className="py-4 text-center text-xs text-[#64748B]">
                 Loading live economic events...
               </div>
             )}
@@ -1191,7 +1174,7 @@ export const NewsTerminalView: React.FC = () => {
       </section>
 
       {/* Top Macro Sentiment Summary + Search/Refresh */}
-      <section className="vp-glass-card rounded-2xl p-4 sm:p-5 space-y-4">
+      <section className="rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 sm:p-4 space-y-2.5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--vp-muted)]">

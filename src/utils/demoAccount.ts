@@ -14,6 +14,7 @@ export interface DemoPosition {
   openedAt: number;
   tp?: number;
   sl?: number;
+  trailingDistance?: number;
 }
 
 export interface DemoClosedTrade {
@@ -90,7 +91,7 @@ export function loadDemoAccount(): DemoAccountState {
           sl: typeof p.sl === 'number' && Number.isFinite(p.sl) && p.sl > 0 ? p.sl : undefined,
         }))
       : [];
-    const history = Array.isArray(parsed.history) ? parsed.history.slice(0, 20) : [];
+    const history = Array.isArray(parsed.history) ? parsed.history.slice(0, 100) : [];
     return { balance, leverage, defaultLot, positions, history };
   } catch {
     return createInitialDemoAccount();
@@ -171,3 +172,34 @@ export function formatUsd(val: number, signed = false): string {
   }
   return `${val < 0 ? '-' : ''}$${absFormatted}`;
 }
+
+export interface DemoPerformanceStats {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRatePct: number;
+  netPnl: number;
+}
+
+export function computeDemoPerformanceStats(history: DemoClosedTrade[]): DemoPerformanceStats {
+  const totalTrades = history.length;
+  if (totalTrades === 0) {
+    return { totalTrades: 0, wins: 0, losses: 0, winRatePct: 0, netPnl: 0 };
+  }
+  let wins = 0;
+  let losses = 0;
+  let netPnl = 0;
+  for (const trade of history) {
+    if (trade.pnl > 0) wins += 1;
+    else if (trade.pnl < 0) losses += 1;
+    netPnl += trade.pnl;
+  }
+  return {
+    totalTrades,
+    wins,
+    losses,
+    winRatePct: (wins / totalTrades) * 100,
+    netPnl: Number(netPnl.toFixed(2)),
+  };
+}
+

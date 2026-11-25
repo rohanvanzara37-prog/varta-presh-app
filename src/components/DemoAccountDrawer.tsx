@@ -5,6 +5,7 @@ import {
   DEMO_SYMBOL_SPECS,
   calcPositionPnl,
   calcRequiredMargin,
+  computeDemoPerformanceStats,
   formatUsd,
   type DemoAccountMetrics,
   type DemoAccountState,
@@ -71,6 +72,7 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
   const spec = DEMO_SYMBOL_SPECS[orderSymbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
   const currentPrice = livePrices[orderSymbol] ?? spec.defaultPrice;
   const requiredMargin = calcRequiredMargin(orderSymbol, orderLots, currentPrice, account.leverage);
+  const perfStats = computeDemoPerformanceStats(account.history);
 
   const handlePlaceOrder = (side: 'BUY' | 'SELL') => {
     const err = onExecuteOrder(orderSymbol, side, orderLots);
@@ -151,6 +153,69 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
               </button>
             </div>
           )}
+
+          {/* Compact Performance Summary Header (Win Rate, Total Trades, Net P&L) */}
+          <section
+            aria-label="Demo Performance Summary"
+            className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2 space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-[#64748B]">
+              <span>Performance Summary</span>
+              {perfStats.totalTrades > 0 && (
+                <span className="font-mono-tabular text-[#0F172A]">
+                  {perfStats.wins}W / {perfStats.losses}L
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2 font-mono-tabular">
+              <div className="rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] px-2.5 py-1.5">
+                <span className="block text-[9.5px] font-sans font-semibold text-[#64748B]">
+                  Win Rate
+                </span>
+                <span
+                  className="block text-xs sm:text-sm font-extrabold mt-0.5"
+                  style={{
+                    color:
+                      perfStats.totalTrades === 0
+                        ? '#0F172A'
+                        : perfStats.winRatePct >= 50
+                          ? '#089981'
+                          : '#F23645',
+                  }}
+                >
+                  {perfStats.winRatePct.toFixed(perfStats.totalTrades > 0 ? 1 : 0)}%
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] px-2.5 py-1.5">
+                <span className="block text-[9.5px] font-sans font-semibold text-[#64748B]">
+                  Total Trades
+                </span>
+                <span className="block text-xs sm:text-sm font-extrabold text-[#0F172A] mt-0.5">
+                  {perfStats.totalTrades}
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] px-2.5 py-1.5 text-right">
+                <span className="block text-[9.5px] font-sans font-semibold text-[#64748B]">
+                  Net P&amp;L
+                </span>
+                <span
+                  className="block text-xs sm:text-sm font-extrabold mt-0.5"
+                  style={{
+                    color:
+                      perfStats.netPnl > 0.005
+                        ? '#089981'
+                        : perfStats.netPnl < -0.005
+                          ? '#F23645'
+                          : '#0F172A',
+                  }}
+                >
+                  {formatUsd(perfStats.netPnl, true)}
+                </span>
+              </div>
+            </div>
+          </section>
 
           {/* Live Account Summary (2x2 Clean Metrics Grid) */}
           <div className="grid grid-cols-2 gap-2">
