@@ -202,7 +202,7 @@ export interface MarketAsset {
   tvSymbol: string;
   displayPair: string;
   name: string;
-  category: 'Metals' | 'Crypto' | 'Indices' | 'Commodities';
+  category: 'Metals' | 'Forex' | 'Crypto' | 'Indices' | 'Commodities';
   livePrice: number;
   changePct24h: number;
   provider: string;

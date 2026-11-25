@@ -31,7 +31,7 @@ interface LiveMarketsPayload {
     tvSymbol: string;
     displayPair: string;
     name: string;
-    category: 'Metals' | 'Crypto' | 'Indices' | 'Commodities';
+    category: 'Metals' | 'Forex' | 'Crypto' | 'Indices' | 'Commodities';
     livePrice: number;
     changePct24h: number;
     provider: string;
@@ -77,7 +77,7 @@ interface YahooChartResponse {
   };
 }
 
-async function fetchYahooQuote(yahooSymbol: string): Promise<{ price: number; changePct: number } | null> {
+async function fetchYahooQuote(yahooSymbol: string, precision = 2): Promise<{ price: number; changePct: number } | null> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=2d`;
   const data = await fetchJsonWithTimeout<YahooChartResponse>(url, 4500, {
     'User-Agent': 'Mozilla/5.0',
@@ -88,28 +88,28 @@ async function fetchYahooQuote(yahooSymbol: string): Promise<{ price: number; ch
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
   const changePct =
     typeof prev === 'number' && prev > 0 ? Number((((price - prev) / prev) * 100).toFixed(2)) : 0;
-  return { price: Number(price.toFixed(2)), changePct };
+  return { price: Number(price.toFixed(precision)), changePct };
 }
 
-async function fetchSwissquoteMid(instrument: 'XAU' | 'XAG'): Promise<number | null> {
+async function fetchSwissquoteMid(instrument: 'XAU' | 'XAG' | 'EUR', precision = 2): Promise<number | null> {
   const data = await fetchJsonWithTimeout<
     Array<{ spreadProfilePrices?: Array<{ bid?: number; ask?: number }> }>
   >(`https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/${instrument}/USD`, 2800);
   const quote = data?.[0]?.spreadProfilePrices?.[0];
-  const minBound = instrument === 'XAU' ? 500 : 5;
+  const minBound = instrument === 'XAU' ? 500 : instrument === 'XAG' ? 5 : 0.2;
   if (
     typeof quote?.bid === 'number' &&
     typeof quote?.ask === 'number' &&
     quote.bid > minBound &&
     quote.ask > minBound
   ) {
-    return Number(((quote.bid + quote.ask) / 2).toFixed(2));
+    return Number(((quote.bid + quote.ask) / 2).toFixed(precision));
   }
   return null;
 }
 
 async function fetchSwissquoteXauMid(): Promise<number | null> {
-  return fetchSwissquoteMid('XAU');
+  return fetchSwissquoteMid('XAU', 2);
 }
 
 async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
@@ -117,11 +117,12 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
     return marketsCache.payload;
   }
 
-  const [xauRes, xagRes, sqXau, cgRes, btcCbRes, xauYQuote, xagYQuote, sp500Quote, oilQuote] =
+  const [xauRes, xagRes, sqXau, sqEur, cgRes, btcCbRes, xauYQuote, xagYQuote, eurYQuote, sp500Quote, oilQuote] =
     await Promise.all([
       fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU'),
       fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAG'),
       fetchSwissquoteXauMid(),
+      fetchSwissquoteMid('EUR', 4),
       fetchJsonWithTimeout<
         Record<string, { usd?: number; usd_24h_change?: number }>
       >(
@@ -130,6 +131,7 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
       fetchJsonWithTimeout<{ data?: { amount?: string } }>('https://api.coinbase.com/v2/prices/BTC-USD/spot'),
       fetchYahooQuote('GC=F'),
       fetchYahooQuote('SI=F'),
+      fetchYahooQuote('EURUSD=X', 4),
       fetchYahooQuote('^GSPC'),
       fetchYahooQuote('CL=F'),
     ]);
@@ -142,6 +144,7 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
     typeof xagRes?.price === 'number' && xagRes.price > 5
       ? Number(xagRes.price.toFixed(2))
       : xagYQuote?.price ?? 31.42;
+  const eurUsd = sqEur ?? eurYQuote?.price ?? 1.085;
 
   const btcFromCg = cgRes?.bitcoin?.usd;
   const btcFromCb = Number(cgRes?.bitcoin?.usd ?? btcCbRes?.data?.amount);
@@ -264,6 +267,16 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
         livePrice: xrpUsd,
         changePct24h: Number((cgRes?.ripple?.usd_24h_change ?? -0.48).toFixed(2)),
         provider: cgRes?.ripple?.usd ? 'CoinGecko Live' : 'Crypto Snapshot',
+      },
+      {
+        id: 'eurusd',
+        tvSymbol: 'FX:EURUSD',
+        displayPair: 'EUR/USD',
+        name: 'Euro / US Dollar',
+        category: 'Forex',
+        livePrice: eurUsd,
+        changePct24h: eurYQuote?.changePct ?? 0.14,
+        provider: sqEur ? 'Swissquote Spot' : eurYQuote ? 'FX Live' : 'FX Snapshot',
       },
       {
         id: 'xagusd',
@@ -682,7 +695,7 @@ async function fetchEconomicCalendar(forceRefresh = false): Promise<EconomicCale
           headers: {
             Origin: 'https://www.tradingview.com',
             Referer: 'https://www.tradingview.com/',
-            'User-Agent': 'Mozilla/5.0 (compatible; VartaPresh-CalendarSync/1.0)',
+            'User-Agent': 'Mozilla/5.0 (compatible; TREDAURA-CalendarSync/1.0)',
             Accept: 'application/json',
           },
         });
@@ -748,7 +761,7 @@ async function fetchEconomicCalendar(forceRefresh = false): Promise<EconomicCale
           const ffRes = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', {
             signal: controller.signal,
             headers: {
-              'User-Agent': 'VartaPresh-CalendarSync/1.0',
+              'User-Agent': 'TREDAURA-CalendarSync/1.0',
               Accept: 'application/json',
             },
           });
@@ -890,7 +903,7 @@ async function fetchRssXml(url: string, ms = 4500): Promise<string> {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'VartaPresh-MarketReader/1.0' },
+      headers: { 'User-Agent': 'TREDAURA-MarketReader/1.0' },
     });
     if (!res.ok) return '';
     return await res.text();
@@ -1249,7 +1262,7 @@ async function startServer() {
   app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, app: 'VartaPress', timestamp: new Date().toISOString() });
+    res.json({ ok: true, app: 'TREDAURA', timestamp: new Date().toISOString() });
   });
 
   app.get('/api/markets/live', async (_req, res) => {
@@ -1263,7 +1276,7 @@ async function startServer() {
       source: 'yahoo' | 'binance' | 'spot-cfd';
       ticker: string;
       dailyTicker?: string;
-      spotAnchor?: 'XAU' | 'XAG' | 'US500';
+      spotAnchor?: 'XAU' | 'XAG' | 'US500' | 'EURUSD';
       precision: number;
       inceptionLabel: string;
     }
@@ -1275,6 +1288,13 @@ async function startServer() {
       spotAnchor: 'XAU',
       precision: 2,
       inceptionLabel: 'Aug 2000',
+    },
+    EURUSD: {
+      source: 'yahoo',
+      ticker: 'EURUSD=X',
+      spotAnchor: 'EURUSD',
+      precision: 4,
+      inceptionLabel: 'Dec 2003',
     },
     XAGUSD: {
       source: 'yahoo',
@@ -1939,8 +1959,14 @@ async function startServer() {
       const spotInfo = await fetchLiveGoldCfdPriceWithProvider();
       return spotInfo?.price ?? null;
     }
+    if (spec.spotAnchor === 'EURUSD') {
+      const sq = await fetchSwissquoteMid('EUR', 4);
+      if (sq) return sq;
+      const q = await fetchYahooQuote('EURUSD=X', 4);
+      return q?.price ?? null;
+    }
     if (spec.spotAnchor === 'XAG') {
-      const sq = await fetchSwissquoteMid('XAG');
+      const sq = await fetchSwissquoteMid('XAG', 2);
       if (sq) return sq;
       const g = await fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAG', 2500);
       return typeof g?.price === 'number' && g.price > 5 ? Number(g.price.toFixed(2)) : null;
@@ -2113,6 +2139,36 @@ async function startServer() {
                 curr.low = Number(Math.min(curr.low, curr.open, curr.close).toFixed(spec.precision));
               }
             }
+          }
+        }
+
+        if (bars.length === 0) {
+          // Synthesize continuous gapless fallback bars anchored to liveSpot so EUR/USD & commodities never stall
+          const anchor =
+            typeof liveSpot === 'number' && liveSpot > 0
+              ? liveSpot
+              : rawSym === 'EURUSD'
+                ? 1.085
+                : rawSym === 'XAGUSD'
+                  ? 33.2
+                  : rawSym === 'US500'
+                    ? 6010.0
+                    : 72.5;
+          const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
+          const nowBucket = Math.floor(Math.floor(Date.now() / 1000) / ivSec) * ivSec;
+          const totalSynth = 120;
+          let prevClose = anchor * 0.996;
+          for (let i = totalSynth - 1; i >= 0; i -= 1) {
+            const t = nowBucket - i * ivSec;
+            const drift = (anchor - prevClose) * 0.08;
+            const wave = Math.sin(i * 0.42) * anchor * 0.00055;
+            const open = Number(prevClose.toFixed(spec.precision));
+            const close = i === 0 ? anchor : Number((open + drift + wave).toFixed(spec.precision));
+            const wick = Math.max(Math.abs(close - open) * 0.7, anchor * 0.00025);
+            const high = Number((Math.max(open, close) + wick).toFixed(spec.precision));
+            const low = Number(Math.max(0.0001, Math.min(open, close) - wick).toFixed(spec.precision));
+            bars.push({ time: t, open, high, low, close, volume: 1200 + (i % 9) * 140 });
+            prevClose = close;
           }
         }
 
@@ -2423,7 +2479,7 @@ async function startServer() {
         config: {
           abortSignal: AbortSignal.timeout(20000),
           systemInstruction:
-            'You are Varta Presh Academy Coach, a disciplined institutional Smart Money Concepts & Risk Management mentor. Always respond in the exact requested Language (English, Hinglish, or Hindi Devanagari). Be educational only (no financial advice). Return concise JSON: diagnosis (max 28 words), correction (max 32 words), riskTip (max 22 words).',
+            'You are TREDAURA Academy Coach, a disciplined institutional Smart Money Concepts & Risk Management mentor. Always respond in the exact requested Language (English, Hinglish, or Hindi Devanagari). Be educational only (no financial advice). Return concise JSON: diagnosis (max 28 words), correction (max 32 words), riskTip (max 22 words).',
           thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           responseMimeType: 'application/json',
           responseSchema: {
@@ -2736,7 +2792,7 @@ async function startServer() {
   });
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`VartaPress server listening on http://0.0.0.0:${PORT}`);
+    console.log(`TREDAURA server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

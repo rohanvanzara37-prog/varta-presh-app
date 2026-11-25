@@ -45,6 +45,7 @@ export interface DemoSymbolSpec {
 
 export const DEMO_SYMBOL_SPECS: Record<SmcSymbol, DemoSymbolSpec> = {
   XAUUSD: { symbol: 'XAUUSD', shortLabel: 'XAU/USD', contractSize: 100, precision: 2, defaultPrice: 3515.4 },
+  EURUSD: { symbol: 'EURUSD', shortLabel: 'EUR/USD', contractSize: 100000, precision: 4, defaultPrice: 1.085 },
   XAGUSD: { symbol: 'XAGUSD', shortLabel: 'XAG/USD', contractSize: 1000, precision: 2, defaultPrice: 33.2 },
   BTCUSDT: { symbol: 'BTCUSDT', shortLabel: 'BTC/USDT', contractSize: 1, precision: 2, defaultPrice: 91850 },
   ETHUSDT: { symbol: 'ETHUSDT', shortLabel: 'ETH/USDT', contractSize: 10, precision: 2, defaultPrice: 3145.5 },

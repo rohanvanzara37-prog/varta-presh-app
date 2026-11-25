@@ -49,7 +49,7 @@ export const PWAInstallButton: React.FC = () => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Install VartaPress on iOS"
+            aria-label="Install TREDAURA on iOS"
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
             onClick={() => setShowGuide(false)}
           >
@@ -61,7 +61,7 @@ export const PWAInstallButton: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold">Install VartaPress on iOS</h3>
+                <h3 className="text-base font-bold">Install TREDAURA on iOS</h3>
                 <button
                   type="button"
                   onClick={() => setShowGuide(false)}

@@ -6,38 +6,27 @@ export interface AcademyCandle {
   close: number;
 }
 
-export interface ChartZoneOverlay {
-  id: string;
-  label: string;
-  startIndex: number;
-  endIndex: number;
-  low: number;
-  high: number;
-  sentiment: 'bull' | 'bear' | 'neutral';
-}
-
-export interface ProgressiveMcqStep {
-  stepNumber: 1 | 2 | 3;
-  question: string;
-  targetCandleIndex: number;
-  targetZoneId: string;
-  options: [
-    { id: string; label: string },
-    { id: string; label: string },
-    { id: string; label: string },
-  ];
-  correctOptionId: string;
-  explanation: string;
-}
+export type AcademyPatternType = 'BOS' | 'OB' | 'FVG';
+export type AcademyDirection = 'BUY' | 'SELL';
 
 export interface AcademyScenario {
   id: string;
   order: number;
   symbol: string;
+  tvSymbol: string;
   timeframe: string;
   title: string;
   decimals: number;
   candles: AcademyCandle[];
-  zones: ChartZoneOverlay[];
-  steps: [ProgressiveMcqStep, ProgressiveMcqStep, ProgressiveMcqStep];
+  futureCandles: AcademyCandle[];
+  setup: {
+    correctPattern: AcademyPatternType;
+    correctDirection: AcademyDirection;
+    entry: number;
+    tp: number;
+    sl: number;
+    pointsGain: number;
+    pointsLoss: number;
+    explanation: string;
+  };
 }

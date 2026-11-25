@@ -1,23 +1,26 @@
 import React, { useMemo } from 'react';
-import type { AcademyCandle, ChartZoneOverlay } from '../../types/academy';
+import type { AcademyCandle, AcademyDirection } from '../../types/academy';
 import type { ThemeMode } from '../../types/news';
 
 interface InteractiveChartStageProps {
   symbol: string;
   decimals: number;
-  candles: AcademyCandle[];
-  zones: ChartZoneOverlay[];
-  targetCandleIndex: number;
-  targetZoneId: string;
-  isAnswered: boolean;
+  initialCount: number;
+  visibleCandles: AcademyCandle[];
+  decisionSubmitted: boolean;
+  chosenDirection?: AcademyDirection | null;
+  entry: number;
+  tp: number;
+  sl: number;
+  outcomeStatus: 'idle' | 'replaying' | 'tp' | 'sl';
   themeMode?: ThemeMode;
 }
 
 const VIEW_W = 460;
 const VIEW_H = 236;
 const PAD_L = 10;
-const PAD_R = 54;
-const PAD_T = 24;
+const PAD_R = 62;
+const PAD_T = 22;
 const PAD_B = 20;
 const PLOT_W = VIEW_W - PAD_L - PAD_R;
 const PLOT_H = VIEW_H - PAD_T - PAD_B;
@@ -29,77 +32,72 @@ function formatPrice(val: number, decimals: number): string {
 export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
   symbol,
   decimals,
-  candles,
-  zones,
-  targetCandleIndex,
-  targetZoneId,
-  isAnswered,
-  themeMode = 'light',
+  initialCount,
+  visibleCandles,
+  decisionSubmitted,
+  chosenDirection = null,
+  entry,
+  tp,
+  sl,
+  outcomeStatus,
 }) => {
-  const isLight = themeMode === 'light';
-  const canvasBg = isLight ? '#FFFFFF' : '#0B0E14';
-  const gridColor = isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)';
-  const axisTextColor = isLight ? '#475569' : '#94A3B8';
+  const canvasBg = '#FFFFFF';
+  const gridColor = '#F1F5F9';
+  const axisTextColor = '#475569';
   const bullColor = '#089981';
   const bearColor = '#F23645';
   const goldColor = '#F59E0B';
 
-  const safeTargetIdx = Math.max(0, Math.min(candles.length - 1, targetCandleIndex));
-  const activeZone = useMemo(
-    () => zones.find((z) => z.id === targetZoneId) ?? zones[0],
-    [zones, targetZoneId]
-  );
+  const decisionIdx = Math.max(0, initialCount - 1);
 
   const { minPrice, maxPrice } = useMemo(() => {
     let lo = Infinity;
     let hi = -Infinity;
-    for (const c of candles) {
+    for (const c of visibleCandles) {
       if (c.low < lo) lo = c.low;
       if (c.high > hi) hi = c.high;
     }
-    if (isAnswered && activeZone) {
-      lo = Math.min(lo, activeZone.low);
-      hi = Math.max(hi, activeZone.high);
+    if (decisionSubmitted) {
+      lo = Math.min(lo, entry, tp, sl);
+      hi = Math.max(hi, entry, tp, sl);
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) {
       return { minPrice: 0, maxPrice: 100 };
     }
-    const pad = (hi - lo) * 0.17;
+    const pad = (hi - lo) * 0.14;
     return { minPrice: lo - pad, maxPrice: hi + pad };
-  }, [candles, isAnswered, activeZone]);
+  }, [visibleCandles, decisionSubmitted, entry, tp, sl]);
 
   const priceToY = (price: number): number => {
     const ratio = (price - minPrice) / Math.max(1e-6, maxPrice - minPrice);
     return PAD_T + PLOT_H * (1 - ratio);
   };
 
-  const totalBars = Math.max(candles.length, 1);
-  const colW = PLOT_W / totalBars;
+  // Reserve total horizontal slots after submit so replay candles march smoothly rightwards
+  const totalSlots = decisionSubmitted
+    ? Math.max(initialCount + 10, visibleCandles.length)
+    : Math.max(initialCount + 3, visibleCandles.length);
+  const colW = PLOT_W / totalSlots;
   const indexToX = (idx: number) => PAD_L + (idx + 0.5) * colW;
   const gridPrices = [0, 0.33, 0.66, 1].map((f) => minPrice + f * (maxPrice - minPrice));
 
-  const targetCandle = candles[safeTargetIdx];
-  const targetCx = indexToX(safeTargetIdx);
-  const targetHighY = targetCandle ? priceToY(targetCandle.high) : PAD_T + PLOT_H / 2;
-  const targetLowY = targetCandle ? priceToY(targetCandle.low) : PAD_T + PLOT_H / 2;
-  const placeBadgeBelow = targetHighY < PAD_T + 28 && targetLowY < PAD_T + PLOT_H - 22;
-  const mysteryBadgeY = placeBadgeBelow
-    ? Math.min(PAD_T + PLOT_H - 13, targetLowY + 17)
-    : Math.max(PAD_T + 13, targetHighY - 17);
+  const decisionX = indexToX(decisionIdx);
+  const entryY = priceToY(entry);
+  const tpY = priceToY(tp);
+  const slY = priceToY(sl);
 
   return (
-    <div className="flex-1 min-h-0 w-full vp-glass-card rounded-2xl p-1.5 flex items-center justify-center overflow-hidden">
+    <div className="flex-1 min-h-0 w-full rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-1.5 flex items-center justify-center overflow-hidden relative">
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="w-full h-full max-h-full select-none rounded-xl"
+        className="w-full h-full max-h-full select-none rounded-lg"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label={`${symbol} candlestick chart`}
+        aria-label={`${symbol} Market Replay chart`}
       >
-        {/* Obsidian Dark / Crisp Light Canvas */}
-        <rect x={0} y={0} width={VIEW_W} height={VIEW_H} fill={canvasBg} rx={10} />
+        <rect x={0} y={0} width={VIEW_W} height={VIEW_H} fill={canvasBg} rx={8} />
 
-        {/* Horizontal Gridlines & Monospace Price Axis */}
+        {/* Horizontal Gridlines & Price Scale */}
         {gridPrices.map((gp, i) => {
           const y = priceToY(gp);
           return (
@@ -116,8 +114,8 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 x={PAD_L + PLOT_W + 6}
                 y={y + 3.5}
                 fill={axisTextColor}
-                fontSize="9.5"
-                fontWeight="500"
+                fontSize="8.8"
+                fontWeight="600"
                 className="font-mono-tabular"
               >
                 {formatPrice(gp, decimals)}
@@ -126,91 +124,141 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           );
         })}
 
-        {/* Revealed Zone Overlay (shown only after an MCQ answer is chosen) */}
-        {isAnswered && activeZone && (() => {
-          const x1 = PAD_L + Math.max(0, activeZone.startIndex) * colW;
-          const x2 = PAD_L + Math.min(totalBars, activeZone.endIndex + 1) * colW;
-          const yTop = priceToY(activeZone.high);
-          const yBot = priceToY(activeZone.low);
-          const fill =
-            activeZone.sentiment === 'bull'
-              ? 'rgba(8, 153, 129, 0.14)'
-              : activeZone.sentiment === 'bear'
-                ? 'rgba(242, 54, 69, 0.14)'
-                : 'rgba(245, 158, 11, 0.16)';
-          const stroke =
-            activeZone.sentiment === 'bull'
-              ? bullColor
-              : activeZone.sentiment === 'bear'
-                ? bearColor
-                : goldColor;
-          const labelW = Math.min(152, Math.max(88, activeZone.label.length * 5.2 + 12));
-          const labelX = Math.min(PAD_L + PLOT_W - labelW - 2, Math.max(PAD_L + 4, x1 + 4));
-          const labelY = Math.max(PAD_T + 14, yBot - 5);
-          return (
-            <g>
-              <rect
-                x={x1}
-                y={yTop}
-                width={Math.max(14, x2 - x1)}
-                height={Math.max(10, yBot - yTop)}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={1.35}
-                strokeDasharray="3 2"
-                rx={4}
-              />
-              <rect
-                x={labelX - 3}
-                y={labelY - 10}
-                width={labelW}
-                height={13}
-                rx={3}
-                fill={isLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(19, 23, 34, 0.94)'}
-                stroke={stroke}
-                strokeWidth={0.7}
-              />
-              <text
-                x={labelX + 2}
-                y={labelY - 0.5}
-                fill={isLight ? '#0F172A' : '#F8FAFC'}
-                fontSize="8.5"
-                fontWeight="700"
-              >
-                {activeZone.label}
-              </text>
-            </g>
-          );
-        })()}
+        {/* Vertical Decision Cutoff Line */}
+        <line
+          x1={decisionX + colW * 0.52}
+          y1={PAD_T}
+          x2={decisionX + colW * 0.52}
+          y2={PAD_T + PLOT_H}
+          stroke={goldColor}
+          strokeWidth={1.2}
+          strokeDasharray="3 3"
+        />
 
-        {/* Target Candle Column Highlight (Brushed Gold #F59E0B) */}
-        {!isAnswered ? (
-          <rect
-            x={targetCx - colW * 0.44}
-            y={PAD_T}
-            width={colW * 0.88}
-            height={PLOT_H}
-            fill="rgba(245, 158, 11, 0.09)"
-            stroke="rgba(245, 158, 11, 0.62)"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            rx={4}
-          />
-        ) : (
-          <rect
-            x={targetCx - colW * 0.46}
-            y={Math.max(PAD_T + 2, targetHighY - 7)}
-            width={colW * 0.92}
-            height={Math.max(18, targetLowY - targetHighY + 14)}
-            fill="rgba(245, 158, 11, 0.22)"
-            stroke={goldColor}
-            strokeWidth={1.85}
-            rx={5}
-          />
+        {!decisionSubmitted && (
+          <g>
+            <rect
+              x={decisionX + colW * 0.62}
+              y={PAD_T + 4}
+              width={92}
+              height={17}
+              rx={4}
+              fill="rgba(245, 158, 11, 0.14)"
+              stroke={goldColor}
+              strokeWidth={0.8}
+            />
+            <text
+              x={decisionX + colW * 0.62 + 46}
+              y={PAD_T + 15.5}
+              textAnchor="middle"
+              fill="#B45309"
+              fontSize="8"
+              fontWeight="800"
+            >
+              10 BARS HIDDEN
+            </text>
+          </g>
         )}
 
-        {/* Candlesticks */}
-        {candles.map((c, idx) => {
+        {/* Entry / TP / SL Horizontal Lines ONLY after decision submitted */}
+        {decisionSubmitted && (
+          <g>
+            {/* TP Line */}
+            <line
+              x1={decisionX + colW * 0.52}
+              y1={tpY}
+              x2={PAD_L + PLOT_W}
+              y2={tpY}
+              stroke={bullColor}
+              strokeWidth={1.25}
+              strokeDasharray="4 3"
+            />
+            <rect
+              x={PAD_L + PLOT_W + 2}
+              y={tpY - 7.5}
+              width={56}
+              height={15}
+              rx={3}
+              fill={bullColor}
+            />
+            <text
+              x={PAD_L + PLOT_W + 30}
+              y={tpY + 3}
+              textAnchor="middle"
+              fill="#FFFFFF"
+              fontSize="8"
+              fontWeight="800"
+              className="font-mono-tabular"
+            >
+              TP {formatPrice(tp, decimals)}
+            </text>
+
+            {/* Entry Line */}
+            <line
+              x1={decisionX + colW * 0.52}
+              y1={entryY}
+              x2={PAD_L + PLOT_W}
+              y2={entryY}
+              stroke="#B45309"
+              strokeWidth={1.1}
+              strokeDasharray="2 2"
+            />
+            <rect
+              x={PAD_L + PLOT_W + 2}
+              y={entryY - 7.5}
+              width={56}
+              height={15}
+              rx={3}
+              fill="#FEF3C7"
+              stroke="#F59E0B"
+              strokeWidth={0.8}
+            />
+            <text
+              x={PAD_L + PLOT_W + 30}
+              y={entryY + 3}
+              textAnchor="middle"
+              fill="#92400E"
+              fontSize="7.8"
+              fontWeight="800"
+              className="font-mono-tabular"
+            >
+              {chosenDirection ?? 'IN'} {formatPrice(entry, decimals)}
+            </text>
+
+            {/* SL Line */}
+            <line
+              x1={decisionX + colW * 0.52}
+              y1={slY}
+              x2={PAD_L + PLOT_W}
+              y2={slY}
+              stroke={bearColor}
+              strokeWidth={1.25}
+              strokeDasharray="4 3"
+            />
+            <rect
+              x={PAD_L + PLOT_W + 2}
+              y={slY - 7.5}
+              width={56}
+              height={15}
+              rx={3}
+              fill={bearColor}
+            />
+            <text
+              x={PAD_L + PLOT_W + 30}
+              y={slY + 3}
+              textAnchor="middle"
+              fill="#FFFFFF"
+              fontSize="8"
+              fontWeight="800"
+              className="font-mono-tabular"
+            >
+              SL {formatPrice(sl, decimals)}
+            </text>
+          </g>
+        )}
+
+        {/* Candlesticks (Initial setup + revealed replay bars 1-by-1) */}
+        {visibleCandles.map((c, idx) => {
           const cx = indexToX(idx);
           const isBull = c.close >= c.open;
           const color = isBull ? bullColor : bearColor;
@@ -219,9 +267,11 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           const yOpen = priceToY(c.open);
           const yClose = priceToY(c.close);
           const bodyTop = Math.min(yOpen, yClose);
-          const bodyH = Math.max(2.5, Math.abs(yOpen - yClose));
-          const bodyW = Math.max(7, Math.min(18, colW * 0.54));
-          const isTarget = idx === safeTargetIdx;
+          const bodyH = Math.max(2.2, Math.abs(yOpen - yClose));
+          const bodyW = Math.max(5.5, Math.min(14, colW * 0.62));
+          const isLatestReplayed =
+            decisionSubmitted && idx >= initialCount && idx === visibleCandles.length - 1;
+          const isDecisionCandle = idx === decisionIdx;
 
           return (
             <g key={`${c.timeLabel}-${idx}`}>
@@ -231,7 +281,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 x2={cx}
                 y2={yLow}
                 stroke={color}
-                strokeWidth={isTarget && isAnswered ? 2.2 : 1.5}
+                strokeWidth={1.35}
               />
               <rect
                 x={cx - bodyW / 2}
@@ -239,17 +289,17 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 width={bodyW}
                 height={bodyH}
                 fill={color}
-                stroke={isTarget && isAnswered ? (isLight ? '#0F172A' : '#F8FAFC') : color}
-                strokeWidth={isTarget && isAnswered ? 1.2 : 0.4}
-                rx={1.5}
+                stroke={isLatestReplayed ? goldColor : isDecisionCandle ? '#131722' : color}
+                strokeWidth={isLatestReplayed ? 1.4 : isDecisionCandle ? 1.1 : 0.4}
+                rx={1.2}
               />
-              {idx % 3 === 0 && (
+              {(idx === 0 || idx === decisionIdx || idx === visibleCandles.length - 1 || idx % 5 === 0) && (
                 <text
                   x={cx}
                   y={VIEW_H - 5}
                   textAnchor="middle"
                   fill={axisTextColor}
-                  fontSize="8.5"
+                  fontSize="7.8"
                   className="font-mono-tabular"
                 >
                   {c.timeLabel}
@@ -259,67 +309,70 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           );
         })}
 
-        {/* Mystery '?' Marker on Target Candle before answering */}
-        {!isAnswered && (
+        {/* Decision Candle Tag */}
+        {(() => {
+          const dc = visibleCandles[decisionIdx];
+          if (!dc) return null;
+          const yHigh = priceToY(dc.high);
+          const badgeY = Math.max(PAD_T + 9, yHigh - 12);
+          return (
+            <g>
+              <rect
+                x={decisionX - 24}
+                y={badgeY - 7}
+                width={48}
+                height={14}
+                rx={3.5}
+                fill={decisionSubmitted ? '#131722' : goldColor}
+              />
+              <text
+                x={decisionX}
+                y={badgeY + 2.5}
+                textAnchor="middle"
+                fill={decisionSubmitted ? '#FFFFFF' : '#131722'}
+                fontSize="7.5"
+                fontWeight="800"
+              >
+                {decisionSubmitted ? 'ENTRY' : 'DECIDE ?'}
+              </text>
+            </g>
+          );
+        })()}
+
+        {/* Outcome Top-Left Status Badge */}
+        {outcomeStatus !== 'idle' && (
           <g>
-            <circle
-              cx={targetCx}
-              cy={mysteryBadgeY}
-              r={11.5}
-              fill={goldColor}
-              stroke="#0B0E14"
-              strokeWidth={1.5}
+            <rect
+              x={PAD_L + 4}
+              y={PAD_T - 16}
+              width={outcomeStatus === 'replaying' ? 88 : 66}
+              height={16}
+              rx={4}
+              fill={
+                outcomeStatus === 'tp'
+                  ? bullColor
+                  : outcomeStatus === 'sl'
+                    ? bearColor
+                    : '#131722'
+              }
             />
             <text
-              x={targetCx}
-              y={mysteryBadgeY + 4.5}
+              x={PAD_L + (outcomeStatus === 'replaying' ? 48 : 37)}
+              y={PAD_T - 5}
               textAnchor="middle"
-              fill="#0B0E14"
-              fontSize="13"
+              fill="#FFFFFF"
+              fontSize="8"
               fontWeight="800"
             >
-              ?
+              {outcomeStatus === 'replaying'
+                ? 'REPLAYING...'
+                : outcomeStatus === 'tp'
+                  ? '✓ TP HIT'
+                  : '✕ SL HIT'}
             </text>
-          </g>
-        )}
-
-        {/* Target Candle Tag after answering */}
-        {isAnswered && (
-          <g>
-            {(() => {
-              const badgeX = Math.max(PAD_L + 22, Math.min(PAD_L + PLOT_W - 22, targetCx));
-              const badgeY = placeBadgeBelow
-                ? Math.min(PAD_T + PLOT_H - 9, targetLowY + 14)
-                : Math.max(PAD_T + 9, targetHighY - 14);
-              return (
-                <>
-                  <rect
-                    x={badgeX - 21}
-                    y={badgeY - 8}
-                    width={42}
-                    height={15}
-                    rx={4}
-                    fill={goldColor}
-                    stroke="#0B0E14"
-                    strokeWidth={0.95}
-                  />
-                  <text
-                    x={badgeX}
-                    y={badgeY + 2.5}
-                    textAnchor="middle"
-                    fill="#0B0E14"
-                    fontSize="8.5"
-                    fontWeight="800"
-                  >
-                    TARGET
-                  </text>
-                </>
-              );
-            })()}
           </g>
         )}
       </svg>
     </div>
   );
 };
-

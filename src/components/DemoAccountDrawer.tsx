@@ -18,6 +18,7 @@ interface DemoAccountDrawerProps {
   metrics: DemoAccountMetrics;
   activeSymbol: SmcSymbol;
   livePrices: Partial<Record<SmcSymbol, number>>;
+  marginCallActive?: boolean;
   onExecuteOrder: (symbol: SmcSymbol, side: 'BUY' | 'SELL', lots: number) => string | null;
   onClosePosition: (positionId: string) => void;
   onCloseAllPositions: () => void;
@@ -27,7 +28,7 @@ interface DemoAccountDrawerProps {
 }
 
 const LEVERAGES: DemoLeverage[] = [50, 100, 200, 500];
-const LOT_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1.0];
+const LOT_PRESETS = [0.01, 0.05, 0.1, 0.5, 1.0];
 
 export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
   isOpen,
@@ -36,6 +37,7 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
   metrics,
   activeSymbol,
   livePrices,
+  marginCallActive = false,
   onExecuteOrder,
   onClosePosition,
   onCloseAllPositions,
@@ -131,6 +133,25 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 bg-[#FFFFFF]">
+          {(marginCallActive || metrics.balance <= 0 || metrics.equity <= 0) && (
+            <div className="rounded-xl border border-[#F23645]/40 bg-[#FEF2F2] px-3 py-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-[#F23645]">Margin Call: Balance Depleted</p>
+                <p className="text-[11px] text-[#475569]">Reset demo funds to continue trading.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onResetAccount();
+                  setOrderNotice('Account reset to $1,000.00');
+                }}
+                className="shrink-0 rounded-lg bg-[#089981] hover:brightness-110 px-2.5 py-1.5 text-[11px] font-bold text-[#FFFFFF] cursor-pointer whitespace-nowrap"
+              >
+                Reset $1,000 Demo
+              </button>
+            </div>
+          )}
+
           {/* Live Account Summary (2x2 Clean Metrics Grid) */}
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
@@ -273,7 +294,7 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-6 gap-1">
+              <div className="grid grid-cols-5 gap-1">
                 {LOT_PRESETS.map((preset) => (
                   <button
                     key={preset}
@@ -284,8 +305,8 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
                     }}
                     className={`rounded-md border py-1 text-[10px] font-mono-tabular font-semibold cursor-pointer transition-colors ${
                       Math.abs(orderLots - preset) < 0.001
-                        ? 'border-[#0F172A] bg-[#0F172A] text-[#FFFFFF]'
-                        : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A]'
+                        ? 'border-[#131722] bg-[#131722] text-[#FFFFFF]'
+                        : 'border-[#E5E7EB] bg-[#F8FAFC] text-[#475569] hover:text-[#131722]'
                     }`}
                   >
                     {preset}
@@ -298,8 +319,9 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
             <div className="grid grid-cols-2 gap-2 pt-0.5">
               <button
                 type="button"
+                disabled={marginCallActive || metrics.balance <= 0 || metrics.equity <= 0}
                 onClick={() => handlePlaceOrder('SELL')}
-                className="flex flex-col items-center justify-center rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] px-3 py-2 text-[#FFFFFF] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
+                className="flex flex-col items-center justify-center rounded-xl bg-[#F23645] hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed px-3 py-2 text-[#FFFFFF] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
               >
                 <span className="inline-flex items-center gap-1 text-xs font-bold">
                   <TrendingDown className="h-3.5 w-3.5" />
@@ -312,8 +334,9 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
 
               <button
                 type="button"
+                disabled={marginCallActive || metrics.balance <= 0 || metrics.equity <= 0}
                 onClick={() => handlePlaceOrder('BUY')}
-                className="flex flex-col items-center justify-center rounded-xl bg-[#059669] hover:bg-[#047857] px-3 py-2 text-[#FFFFFF] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
+                className="flex flex-col items-center justify-center rounded-xl bg-[#089981] hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed px-3 py-2 text-[#FFFFFF] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
               >
                 <span className="inline-flex items-center gap-1 text-xs font-bold">
                   <TrendingUp className="h-3.5 w-3.5" />

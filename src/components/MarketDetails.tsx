@@ -901,7 +901,7 @@ export const MarketDetails: React.FC<MarketDetailsProps> = ({
 
               {tvFailed && (
                 <p className="text-xs shrink-0" style={{ color: 'var(--vp-muted)' }}>
-                  Third-party TradingView script is blocked in this network; showing VartaPress built-in Candlestick + EMA(9) + VWAP + Bollinger terminal.{' '}
+                  Third-party chart script is blocked in this network; showing TREDAURA built-in Candlestick + EMA(9) + VWAP + Bollinger terminal.{' '}
                   <button
                     type="button"
                     onClick={() => {

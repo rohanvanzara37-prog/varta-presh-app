@@ -1,16 +1,22 @@
 {
   "id": "/",
-  "name": "VartaPress — Live News, TV & Gold/Forex Markets",
-  "short_name": "VartaPress",
-  "description": "Mobile-first live news, Live TV streams, Cricket, real-time Gold (XAU/USD), Crypto & Forex TradingView candlestick charts with push notifications.",
+  "name": "TREDAURA — Institutional Multi-Market Trading Terminal",
+  "short_name": "TREDAURA",
+  "description": "Mobile-first institutional pure white trading terminal with real-time Gold (XAU/USD), Crypto & EUR/USD candlestick charts, SMC structure, economic calendar, and Market Replay Academy.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0b0f17",
-  "theme_color": "#1d4ed8",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
   "orientation": "portrait-primary",
-  "categories": ["news", "finance", "entertainment"],
+  "categories": ["finance", "news", "education"],
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",

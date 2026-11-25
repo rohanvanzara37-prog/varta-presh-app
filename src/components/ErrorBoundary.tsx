@@ -45,9 +45,9 @@ export class ErrorBoundary extends React.Component<
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-5 px-5 py-2.5 rounded-lg bg-[#1877F2] hover:bg-[#166FE5] text-white text-sm font-semibold transition-colors cursor-pointer"
+              className="mt-5 px-5 py-2.5 rounded-lg bg-[#131722] hover:bg-[#1E293B] text-[#FFFFFF] text-sm font-semibold transition-colors cursor-pointer"
             >
-              Reload VartaPress
+              Reload TREDAURA
             </button>
           </div>
         </div>

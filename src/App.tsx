@@ -115,6 +115,16 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
     provider: 'Spot Snapshot',
   },
   {
+    id: 'eurusd',
+    tvSymbol: 'FX:EURUSD',
+    displayPair: 'EUR/USD',
+    name: 'Euro / US Dollar',
+    category: 'Forex',
+    livePrice: 1.085,
+    changePct24h: 0.14,
+    provider: 'FX Snapshot',
+  },
+  {
     id: 'us500',
     tvSymbol: 'FOREXCOM:SPXUSD',
     displayPair: 'S&P 500',
@@ -200,9 +210,10 @@ export default function App() {
   );
   const [alertBanner, setAlertBanner] = useState<{ title: string; body: string } | null>(null);
 
-  // $1,000 Exness-Style Paper Demo Account State
+  // $1,000 Paper Demo Account State
   const [demoAccount, setDemoAccount] = useState<DemoAccountState>(() => loadDemoAccount());
   const [demoDrawerOpen, setDemoDrawerOpen] = useState(false);
+  const [marginCallActive, setMarginCallActive] = useState<boolean>(() => loadDemoAccount().balance <= 0);
   const [chartTickPrices, setChartTickPrices] = useState<Partial<Record<SmcSymbol, number>>>({});
 
   const triggeredIdsRef = useRef<Set<string>>(new Set());
@@ -322,7 +333,7 @@ export default function App() {
         } else {
           await setDoc(privRef, {
             uid: user.uid,
-            email: (user.email ?? 'user@vartapress.app').slice(0, 200),
+            email: (user.email ?? 'user@tredaura.app').slice(0, 200),
             savedPostIds: [],
             watchlistSymbols: watchlistSymbols.slice(0, 50),
             pushAlertsEnabled: pushEnabled,
@@ -442,8 +453,8 @@ export default function App() {
       if (res === 'granted') {
         setPushEnabled(true);
         sendPushNotification({
-          title: 'VartaPress Alerts Active',
-          body: 'Gold and Crypto price alerts are enabled.',
+          title: 'TREDAURA Alerts Active',
+          body: 'Gold, Forex, and Crypto price alerts are enabled.',
           tag: 'vp-welcome',
         });
       }
@@ -595,6 +606,7 @@ export default function App() {
   const liveSymbolPrices = useMemo<Partial<Record<SmcSymbol, number>>>(() => {
     const merged: Partial<Record<SmcSymbol, number>> = {
       XAUUSD: DEMO_SYMBOL_SPECS.XAUUSD.defaultPrice,
+      EURUSD: DEMO_SYMBOL_SPECS.EURUSD.defaultPrice,
       XAGUSD: DEMO_SYMBOL_SPECS.XAGUSD.defaultPrice,
       BTCUSDT: DEMO_SYMBOL_SPECS.BTCUSDT.defaultPrice,
       ETHUSDT: DEMO_SYMBOL_SPECS.ETHUSDT.defaultPrice,
@@ -606,6 +618,7 @@ export default function App() {
     };
     for (const asset of marketAssets) {
       if (asset.tvSymbol.includes('XAU')) merged.XAUUSD = asset.livePrice;
+      else if (asset.tvSymbol.includes('EUR')) merged.EURUSD = asset.livePrice;
       else if (asset.tvSymbol.includes('XAG')) merged.XAGUSD = asset.livePrice;
       else if (asset.tvSymbol.includes('BTC')) merged.BTCUSDT = asset.livePrice;
       else if (asset.tvSymbol.includes('ETH')) merged.ETHUSDT = asset.livePrice;
@@ -624,6 +637,7 @@ export default function App() {
   );
 
   const activeDemoSymbol = useMemo<SmcSymbol>(() => {
+    if (selectedMarketSymbol.includes('EUR')) return 'EURUSD';
     if (selectedMarketSymbol.includes('BTC')) return 'BTCUSDT';
     if (selectedMarketSymbol.includes('ETH')) return 'ETHUSDT';
     if (selectedMarketSymbol.includes('SOL')) return 'SOLUSDT';
@@ -637,6 +651,9 @@ export default function App() {
 
   const handleExecuteDemoOrder = useCallback(
     (sym: SmcSymbol, side: 'BUY' | 'SELL', lots: number): string | null => {
+      if (marginCallActive || demoAccount.balance <= 0 || demoMetrics.equity <= 0) {
+        return 'Margin Call: Balance Depleted — Reset $1,000 Demo';
+      }
       const cleanLots = Math.max(0.01, Math.min(10, Number(lots.toFixed(2))));
       const spec = DEMO_SYMBOL_SPECS[sym] ?? DEMO_SYMBOL_SPECS.XAUUSD;
       const entryPrice = liveSymbolPrices[sym] ?? spec.defaultPrice;
@@ -659,7 +676,7 @@ export default function App() {
       }));
       return null;
     },
-    [demoAccount.leverage, demoMetrics.freeMargin, liveSymbolPrices]
+    [marginCallActive, demoAccount.balance, demoAccount.leverage, demoMetrics.equity, demoMetrics.freeMargin, liveSymbolPrices]
   );
 
   const handleCloseDemoPosition = useCallback(
@@ -734,6 +751,7 @@ export default function App() {
 
   const handleResetDemoAccount = useCallback(() => {
     setDemoAccount(createInitialDemoAccount());
+    setMarginCallActive(false);
   }, []);
 
   const handleUpdateDemoPositionTpSl = useCallback(
@@ -812,6 +830,39 @@ export default function App() {
     });
   }, [liveSymbolPrices, demoAccount.positions]);
 
+  // Strict Margin Call / Stop-Out Guard: if Equity <= 0, liquidate all trades and clamp balance >= $0.00
+  useEffect(() => {
+    if (demoAccount.positions.length > 0 && demoMetrics.equity <= 0) {
+      setMarginCallActive(true);
+      setDemoAccount((prev) => {
+        if (prev.positions.length === 0) return { ...prev, balance: 0 };
+        const now = Date.now();
+        const liquidated = prev.positions.map((pos) => {
+          const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+          const closePrice = liveSymbolPrices[pos.symbol] ?? pos.entryPrice ?? spec.defaultPrice;
+          return {
+            id: pos.id,
+            symbol: pos.symbol,
+            side: pos.side,
+            lots: pos.lots,
+            entryPrice: pos.entryPrice,
+            closePrice,
+            pnl: calcPositionPnl(pos, closePrice),
+            closedAt: now,
+          };
+        });
+        return {
+          ...prev,
+          balance: 0,
+          positions: [],
+          history: [...liquidated, ...prev.history].slice(0, 20),
+        };
+      });
+    } else if (demoAccount.balance <= 0 && demoAccount.positions.length === 0) {
+      setMarginCallActive(true);
+    }
+  }, [demoAccount.positions.length, demoAccount.balance, demoMetrics.equity, liveSymbolPrices]);
+
   if (activeTab === 'academy') {
     return (
       <div className="vp-tab-stage min-h-screen bg-[#FFFFFF] text-[#0F172A]">
@@ -828,6 +879,7 @@ export default function App() {
           metrics={demoMetrics}
           activeSymbol={activeDemoSymbol}
           livePrices={liveSymbolPrices}
+          marginCallActive={marginCallActive}
           onExecuteOrder={handleExecuteDemoOrder}
           onClosePosition={handleCloseDemoPosition}
           onCloseAllPositions={handleCloseAllDemoPositions}
@@ -890,7 +942,14 @@ export default function App() {
       )}
 
       {/* Main Workspace */}
-      <main key={activeTab} className="vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6">
+      <main
+        key={activeTab}
+        className={
+          activeTab === 'terminal' && !activeMarketAsset
+            ? 'vp-tab-stage h-[calc(100dvh-114px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-1.5 sm:px-4 py-1.5 overflow-hidden'
+            : 'vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6'
+        }
+      >
         {activeTab === 'terminal' ? (
           activeMarketAsset ? (
             <MarketDetails
@@ -933,10 +992,12 @@ export default function App() {
               demoPositions={demoAccount.positions}
               demoMetrics={demoMetrics}
               demoDefaultLot={demoAccount.defaultLot}
+              marginCallActive={marginCallActive}
               onExecuteDemoOrder={handleExecuteDemoOrder}
               onCloseDemoPosition={handleCloseDemoPosition}
               onUpdateDemoPositionTpSl={handleUpdateDemoPositionTpSl}
               onChangeDemoDefaultLot={handleChangeDemoDefaultLot}
+              onResetDemoAccount={handleResetDemoAccount}
               onOpenDemoDrawer={() => setDemoDrawerOpen(true)}
               onLivePriceTick={handleLivePriceTick}
             />
@@ -953,6 +1014,7 @@ export default function App() {
         metrics={demoMetrics}
         activeSymbol={activeDemoSymbol}
         livePrices={liveSymbolPrices}
+        marginCallActive={marginCallActive}
         onExecuteOrder={handleExecuteDemoOrder}
         onClosePosition={handleCloseDemoPosition}
         onCloseAllPositions={handleCloseAllDemoPositions}

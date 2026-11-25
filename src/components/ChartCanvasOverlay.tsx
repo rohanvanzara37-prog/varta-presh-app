@@ -370,12 +370,12 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           ctx.strokeRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
 
           drawPillLabel(
-            isBull ? 'OB+' : 'OB-',
-            Math.min(plotRight - 42, drawX1 + 22),
+            'OB',
+            Math.min(plotRight - 36, drawX1 + 18),
             drawY + drawH / 2,
             isLight ? 'rgba(255,255,255,0.94)' : 'rgba(13,17,23,0.88)',
             isBull ? 'rgba(5, 150, 105, 0.65)' : 'rgba(220, 38, 38, 0.65)',
-            isBull ? '#059669' : '#DC2626',
+            isBull ? '#089981' : '#F23645',
             { align: 'left', fontSize: 9 }
           );
         }
@@ -391,10 +391,23 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           const drawX1 = Math.max(0, x1);
           const drawY = Math.min(yTop, yBot);
           const drawH = Math.max(2, Math.abs(yBot - yTop));
+          const drawW = Math.max(8, x2 - drawX1);
           const isBull = fvg.type === 'Bullish';
 
-          ctx.fillStyle = isBull ? 'rgba(56, 189, 248, 0.08)' : 'rgba(251, 146, 60, 0.08)';
-          ctx.fillRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
+          ctx.fillStyle = isBull ? 'rgba(8, 153, 129, 0.08)' : 'rgba(242, 54, 69, 0.08)';
+          ctx.fillRect(drawX1, drawY, drawW, drawH);
+
+          if (drawH >= 10 && drawW >= 24) {
+            drawPillLabel(
+              'FVG',
+              Math.min(plotRight - 36, drawX1 + 16),
+              drawY + drawH / 2,
+              'rgba(255,255,255,0.92)',
+              isBull ? 'rgba(8, 153, 129, 0.55)' : 'rgba(242, 54, 69, 0.55)',
+              isBull ? '#089981' : '#F23645',
+              { align: 'left', fontSize: 8.5 }
+            );
+          }
         }
       }
 

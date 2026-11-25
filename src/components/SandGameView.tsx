@@ -124,7 +124,7 @@ export const SandGameView: React.FC<SandGameViewProps> = ({ typography }) => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'VartaPress — Sand & Live Market Arcade',
+          title: 'TREDAURA — Live Market Arcade',
           text: 'Play the Falling Sand Physics Game & XAU/BTC 1m Streak Challenge!',
           url: shareUrl,
         });

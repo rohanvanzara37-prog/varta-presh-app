@@ -28,6 +28,25 @@ const NAV_ITEMS: { id: AppTab; label: string }[] = [
   { id: 'academy', label: 'Academy' },
 ];
 
+export const TredauraMark: React.FC<{ className?: string }> = ({ className = 'h-6 w-6' }) => (
+  <svg
+    viewBox="0 0 32 32"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+    className={className}
+  >
+    <rect x="1" y="1" width="30" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="1.5" />
+    <line x1="9" y1="12" x2="9" y2="23.5" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" />
+    <rect x="7" y="14.5" width="4" height="6.5" rx="1.2" fill="#F59E0B" />
+    <line x1="16" y1="8.5" x2="16" y2="23.5" stroke="#089981" strokeWidth="1.5" strokeLinecap="round" />
+    <rect x="14" y="11" width="4" height="10" rx="1.2" fill="#089981" />
+    <line x1="23" y1="5.5" x2="23" y2="23.5" stroke="#089981" strokeWidth="1.6" strokeLinecap="round" />
+    <rect x="21" y="7.5" width="4" height="12.5" rx="1.2" fill="#089981" />
+    <path d="M6.5 25.5H25.5" stroke="#131722" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
 export const HeaderNav: React.FC<HeaderNavProps> = ({
   activeTab,
   onSelectTab,
@@ -44,18 +63,19 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 }) => {
   const alertsActive = pushPermission === 'granted' && pushEnabled;
   const pnlColor =
-    demoFloatingPnl > 0.005 ? '#059669' : demoFloatingPnl < -0.005 ? '#DC2626' : '#0F172A';
+    demoFloatingPnl > 0.005 ? '#089981' : demoFloatingPnl < -0.005 ? '#F23645' : '#131722';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E2E8F0] bg-[#FFFFFF]/95 backdrop-blur-xl transition-colors duration-200">
-      <div className="mx-auto flex h-[52px] md:h-[58px] max-w-7xl items-center justify-between gap-2 lg:gap-6 px-2.5 sm:px-6">
-        {/* Zone 1: Single-line Brand Wordmark */}
+    <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FFFFFF]/95 backdrop-blur-xl transition-colors duration-200">
+      <div className="mx-auto flex h-[50px] md:h-[56px] max-w-7xl items-center justify-between gap-2 lg:gap-6 px-2.5 sm:px-6">
+        {/* Zone 1: TREDAURA Brand Logo + Geometric Gold-Emerald Bull-Bar Icon */}
         <button
           type="button"
           onClick={() => onSelectTab('terminal')}
-          className="text-base sm:text-lg md:text-xl font-extrabold tracking-tight text-[#0F172A] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F59E0B] focus-visible:outline-offset-4 rounded-sm transition-colors"
+          className="inline-flex items-center gap-2 text-sm sm:text-base md:text-lg font-extrabold tracking-tight text-[#131722] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F59E0B] focus-visible:outline-offset-4 rounded-md transition-colors"
         >
-          Varta Presh
+          <TredauraMark className="h-6 w-6 sm:h-7 sm:w-7 shrink-0" />
+          <span className="tracking-[-0.02em]">TREDAURA</span>
         </button>
 
         {/* Zone 2: Clean Single-Line Desktop Navigation Links */}
@@ -71,16 +91,16 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 type="button"
                 onClick={() => onSelectTab(item.id)}
                 aria-current={isActive ? 'page' : undefined}
-                className="relative py-2 whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer hover:text-[#0F172A]"
+                className="relative py-2 whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer hover:text-[#131722]"
                 style={{
-                  color: isActive ? '#B45309' : '#64748B',
+                  color: isActive ? '#131722' : '#64748B',
                 }}
               >
                 {item.label}
                 {isActive && (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full bg-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.55)]"
+                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full bg-[#089981]"
                   />
                 )}
               </button>
@@ -90,17 +110,17 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
         {/* Zone 3: Top-Right Demo Pill + Compact Utility Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Exness-Style Demo Account Pill (Varta Presh branded, zero third-party logos) */}
+          {/* Paper Demo Account Pill (100% TREDAURA original, zero third-party logos) */}
           <button
             type="button"
             onClick={onOpenDemoDrawer}
             aria-label={`Open Demo Account Panel (${formatUsd(demoEquity)})`}
-            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-[#CBD5E1] bg-[#FFFFFF] hover:bg-[#F8FAFC] px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold shadow-sm cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-[#FFFFFF] hover:bg-[#F8FAFC] px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold shadow-xs cursor-pointer whitespace-nowrap shrink-0 transition-colors"
           >
-            <span className="rounded bg-[#ECFDF5] border border-[#059669]/30 px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-wide text-[#059669]">
+            <span className="rounded bg-[#ECFDF5] border border-[#089981]/30 px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-wide text-[#089981]">
               DEMO
             </span>
-            <span className="text-[#CBD5E1]" aria-hidden="true">
+            <span className="text-[#E5E7EB]" aria-hidden="true">
               |
             </span>
             <span className="font-mono-tabular font-bold" style={{ color: pnlColor }}>
@@ -114,11 +134,11 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             onClick={onTogglePush}
             aria-label={alertsActive ? 'Disable push price alerts' : 'Enable push price alerts'}
             title={alertsActive ? 'Alerts On' : 'Enable Alerts'}
-            className="vp-pill-btn hidden xs:inline-flex sm:inline-flex min-h-[34px] items-center gap-1.5 border px-2 sm:px-3 text-xs font-semibold cursor-pointer whitespace-nowrap"
+            className="vp-pill-btn hidden xs:inline-flex sm:inline-flex min-h-[32px] items-center gap-1.5 border px-2 sm:px-3 text-xs font-semibold cursor-pointer whitespace-nowrap"
             style={{
               backgroundColor: alertsActive ? 'rgba(245, 158, 11, 0.12)' : '#F8FAFC',
-              borderColor: alertsActive ? '#F59E0B' : '#E2E8F0',
-              color: alertsActive ? '#B45309' : '#0F172A',
+              borderColor: alertsActive ? '#F59E0B' : '#E5E7EB',
+              color: alertsActive ? '#B45309' : '#131722',
             }}
           >
             {alertsActive ? (
@@ -143,7 +163,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               type="button"
               onClick={onSignOut}
               title={`Signed in as ${firebaseUser.email ?? 'User'} — Sign out`}
-              className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1.5 border border-[#E2E8F0] bg-[#F8FAFC] px-2 sm:px-3 text-xs font-semibold text-[#0F172A] cursor-pointer whitespace-nowrap"
+              className="vp-pill-btn inline-flex min-h-[32px] items-center gap-1.5 border border-[#E5E7EB] bg-[#F8FAFC] px-2 sm:px-3 text-xs font-semibold text-[#131722] cursor-pointer whitespace-nowrap"
             >
               <LogOut className="h-3.5 w-3.5 text-[#64748B]" />
               <span className="hidden md:inline max-w-[80px] truncate">
@@ -155,7 +175,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               type="button"
               disabled={isSigningIn}
               onClick={onSignIn}
-              className="vp-pill-btn inline-flex min-h-[34px] items-center gap-1 bg-[#F59E0B] hover:bg-[#FBBF24] disabled:opacity-60 px-2.5 sm:px-3.5 text-xs font-bold text-[#0F172A] shadow-sm cursor-pointer whitespace-nowrap"
+              className="vp-pill-btn inline-flex min-h-[32px] items-center gap-1 bg-[#131722] hover:bg-[#1E293B] disabled:opacity-60 px-2.5 sm:px-3.5 text-xs font-bold text-[#FFFFFF] shadow-xs cursor-pointer whitespace-nowrap"
             >
               <LogIn className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{isSigningIn ? 'Signing in...' : 'Sync'}</span>

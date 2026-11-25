@@ -49,6 +49,7 @@ export type { OmyeEngineState, SmcAnalysisState, ZoneRange } from '../utils/char
 
 export type SmcSymbol =
   | 'XAUUSD'
+  | 'EURUSD'
   | 'XAGUSD'
   | 'BTCUSDT'
   | 'ETHUSDT'
@@ -79,12 +80,30 @@ interface ProSmcTerminalProps {
   demoPositions?: DemoPosition[];
   demoMetrics?: DemoAccountMetrics;
   demoDefaultLot?: number;
+  marginCallActive?: boolean;
   onExecuteDemoOrder?: (symbol: SmcSymbol, side: 'BUY' | 'SELL', lots: number) => string | null;
   onCloseDemoPosition?: (positionId: string) => void;
   onUpdateDemoPositionTpSl?: (positionId: string, tp: number | undefined, sl: number | undefined) => void;
   onChangeDemoDefaultLot?: (lots: number) => void;
+  onResetDemoAccount?: () => void;
   onOpenDemoDrawer?: () => void;
   onLivePriceTick?: (symbol: SmcSymbol, price: number) => void;
+}
+
+function getMarketSessionBadge(nowMs = Date.now()): {
+  label: 'Asian' | 'London' | 'NY Open';
+  dotColor: string;
+  bgColor: string;
+  textColor: string;
+} {
+  const utcHour = new Date(nowMs).getUTCHours();
+  if (utcHour >= 13 && utcHour < 22) {
+    return { label: 'NY Open', dotColor: '#089981', bgColor: '#ECFDF5', textColor: '#089981' };
+  }
+  if (utcHour >= 8 && utcHour < 13) {
+    return { label: 'London', dotColor: '#F59E0B', bgColor: '#FFFBEB', textColor: '#B45309' };
+  }
+  return { label: 'Asian', dotColor: '#475569', bgColor: '#F8FAFC', textColor: '#475569' };
 }
 
 function getChartThemeOptions(_themeMode: ThemeMode) {
@@ -96,29 +115,29 @@ function getChartThemeOptions(_themeMode: ThemeMode) {
     },
     grid: {
       vertLines: {
-        color: 'rgba(15, 23, 42, 0.05)',
+        color: 'rgba(19, 23, 34, 0.045)',
         style: LineStyle.Solid,
       },
       horzLines: {
-        color: 'rgba(15, 23, 42, 0.05)',
+        color: 'rgba(19, 23, 34, 0.045)',
         style: LineStyle.Solid,
       },
     },
     crosshair: {
       vertLine: {
         color: 'rgba(180, 83, 9, 0.45)',
-        labelBackgroundColor: '#0F172A',
+        labelBackgroundColor: '#131722',
       },
       horzLine: {
         color: 'rgba(180, 83, 9, 0.45)',
-        labelBackgroundColor: '#0F172A',
+        labelBackgroundColor: '#131722',
       },
     },
     timeScale: {
-      borderColor: '#E2E8F0',
+      borderColor: '#E5E7EB',
     },
     rightPriceScale: {
-      borderColor: '#E2E8F0',
+      borderColor: '#E5E7EB',
     },
   };
 }
@@ -147,14 +166,15 @@ interface SymbolMeta {
 
 const SYMBOL_OPTIONS: Array<SymbolMeta & { tvSymbol: string }> = [
   { value: 'XAUUSD', tvSymbol: 'OANDA:XAUUSD', shortLabel: 'XAU/USD', label: 'XAU/USD · Gold', isCrypto: false, precision: 2, minMove: 0.01 },
+  { value: 'BTCUSDT', tvSymbol: 'BINANCE:BTCUSDT', shortLabel: 'BTC/USD', label: 'BTC/USD · Bitcoin', isCrypto: true, precision: 2, minMove: 0.01 },
+  { value: 'ETHUSDT', tvSymbol: 'BINANCE:ETHUSDT', shortLabel: 'ETH/USD', label: 'ETH/USD · Ethereum', isCrypto: true, precision: 2, minMove: 0.01 },
+  { value: 'EURUSD', tvSymbol: 'FX:EURUSD', shortLabel: 'EUR/USD', label: 'EUR/USD · Euro', isCrypto: false, precision: 4, minMove: 0.0001 },
   { value: 'XAGUSD', tvSymbol: 'OANDA:XAGUSD', shortLabel: 'XAG/USD', label: 'XAG/USD · Silver', isCrypto: false, precision: 2, minMove: 0.01 },
-  { value: 'BTCUSDT', tvSymbol: 'BINANCE:BTCUSDT', shortLabel: 'BTC/USDT', label: 'BTC/USDT · Bitcoin', isCrypto: true, precision: 2, minMove: 0.01 },
-  { value: 'ETHUSDT', tvSymbol: 'BINANCE:ETHUSDT', shortLabel: 'ETH/USDT', label: 'ETH/USDT · Ethereum', isCrypto: true, precision: 2, minMove: 0.01 },
-  { value: 'SOLUSDT', tvSymbol: 'BINANCE:SOLUSDT', shortLabel: 'SOL/USDT', label: 'SOL/USDT · Solana', isCrypto: true, precision: 2, minMove: 0.01 },
+  { value: 'SOLUSDT', tvSymbol: 'BINANCE:SOLUSDT', shortLabel: 'SOL/USD', label: 'SOL/USD · Solana', isCrypto: true, precision: 2, minMove: 0.01 },
   { value: 'US500', tvSymbol: 'FOREXCOM:SPXUSD', shortLabel: 'US500', label: 'US500 · S&P 500', isCrypto: false, precision: 2, minMove: 0.01 },
   { value: 'USOIL', tvSymbol: 'TVC:USOIL', shortLabel: 'USOIL', label: 'USOIL · WTI Crude', isCrypto: false, precision: 2, minMove: 0.01 },
-  { value: 'BNBUSDT', tvSymbol: 'BINANCE:BNBUSDT', shortLabel: 'BNB/USDT', label: 'BNB/USDT · BNB', isCrypto: true, precision: 2, minMove: 0.01 },
-  { value: 'XRPUSDT', tvSymbol: 'BINANCE:XRPUSDT', shortLabel: 'XRP/USDT', label: 'XRP/USDT · Ripple', isCrypto: true, precision: 4, minMove: 0.0001 },
+  { value: 'BNBUSDT', tvSymbol: 'BINANCE:BNBUSDT', shortLabel: 'BNB/USD', label: 'BNB/USD · BNB', isCrypto: true, precision: 2, minMove: 0.01 },
+  { value: 'XRPUSDT', tvSymbol: 'BINANCE:XRPUSDT', shortLabel: 'XRP/USD', label: 'XRP/USD · Ripple', isCrypto: true, precision: 4, minMove: 0.0001 },
 ];
 
 const TIMEFRAME_OPTIONS: { value: SmcTimeframe; label: string }[] = [
@@ -180,6 +200,7 @@ const COMPACT_TIMEFRAMES: { value: SmcTimeframe; label: string }[] = [
 function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
   if (!tvSymbol) return null;
   if (tvSymbol.includes('XAU')) return 'XAUUSD';
+  if (tvSymbol.includes('EUR')) return 'EURUSD';
   if (tvSymbol.includes('XAG')) return 'XAGUSD';
   if (tvSymbol.includes('SPX') || tvSymbol.includes('US500')) return 'US500';
   if (tvSymbol.includes('USOIL')) return 'USOIL';
@@ -408,10 +429,12 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   demoPositions = [],
   demoMetrics,
   demoDefaultLot = 0.1,
+  marginCallActive = false,
   onExecuteDemoOrder,
   onCloseDemoPosition,
   onUpdateDemoPositionTpSl,
   onChangeDemoDefaultLot,
+  onResetDemoAccount,
   onOpenDemoDrawer,
   onLivePriceTick,
 }) => {
@@ -432,6 +455,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
   const [liveRsi, setLiveRsi] = useState<number | null>(null);
   const [quickOrderNote, setQuickOrderNote] = useState<string | null>(null);
+  const [customLotInput, setCustomLotInput] = useState<string>(() => demoDefaultLot.toFixed(2));
+  const [sessionBadge, setSessionBadge] = useState(() => getMarketSessionBadge());
+  const [crosshairPts, setCrosshairPts] = useState<{ range: string; body: string; isBull: boolean } | null>(null);
 
   // Bar Replay & Full-Screen
   const [replayActive, setReplayActive] = useState(false);
@@ -487,12 +513,23 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const isTouchPanningRef = useRef<boolean>(false);
   const touchPanCooldownUntilRef = useRef<number>(0);
 
+  const symbolMeta = SYMBOL_OPTIONS.find((s) => s.value === symbol) ?? SYMBOL_OPTIONS[0];
+  const latestBarTime = latestBarSnapshot?.time;
+  const precisionRef = useRef<number>(symbolMeta.precision);
+  precisionRef.current = symbolMeta.precision;
+
+  useEffect(() => {
+    setCustomLotInput(demoDefaultLot.toFixed(2));
+  }, [demoDefaultLot]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setSessionBadge(getMarketSessionBadge()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   useEffect(() => {
     replayActiveRef.current = replayActive;
   }, [replayActive]);
-
-  const symbolMeta = SYMBOL_OPTIONS.find((s) => s.value === symbol) ?? SYMBOL_OPTIONS[0];
-  const latestBarTime = latestBarSnapshot?.time;
 
   useEffect(() => {
     if (livePrice !== null && Number.isFinite(livePrice)) {
@@ -713,8 +750,37 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       }
     });
 
-    chart.subscribeCrosshairMove(() => {
+    chart.subscribeCrosshairMove((param) => {
       scheduleOverlayTick();
+      if (!param || !param.point || !param.time) {
+        setCrosshairPts((prev) => (prev === null ? prev : null));
+        return;
+      }
+      const rawData = param.seriesData.get(candleSeries) as
+        | { open?: number; high?: number; low?: number; close?: number }
+        | undefined;
+      const bar =
+        rawData &&
+        typeof rawData.open === 'number' &&
+        typeof rawData.high === 'number' &&
+        typeof rawData.low === 'number' &&
+        typeof rawData.close === 'number'
+          ? rawData
+          : latestCandlesRef.current.find((c) => c.time === param.time);
+      if (!bar || typeof bar.open !== 'number' || typeof bar.high !== 'number' || typeof bar.low !== 'number' || typeof bar.close !== 'number') {
+        setCrosshairPts((prev) => (prev === null ? prev : null));
+        return;
+      }
+      const prec = precisionRef.current;
+      const rangeVal = Math.abs(bar.high - bar.low).toFixed(prec);
+      const bodyDiff = bar.close - bar.open;
+      const bodyStr = `${bodyDiff >= 0 ? '+' : '-'}${Math.abs(bodyDiff).toFixed(prec)}`;
+      const isBull = bodyDiff >= 0;
+      setCrosshairPts((prev) =>
+        prev && prev.range === rangeVal && prev.body === bodyStr && prev.isBull === isBull
+          ? prev
+          : { range: rangeVal, body: bodyStr, isBull }
+      );
     });
 
     const syncRetinaSize = () => {
@@ -1343,6 +1409,55 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     const tfSec = TIMEFRAME_SECONDS[timeframe] ?? 900;
     let lastRealClosePrice: number | null = null;
     let smoothTickTimer: number | null = null;
+    let animTargetCandle: TerminalCandle | null = null;
+    let animCurrentCandle: TerminalCandle | null = null;
+    let animRafId: number | null = null;
+    let lastStatePushMs = 0;
+
+    const tickAnimFrame = () => {
+      if (disposed) return;
+      if (
+        !replayActiveRef.current &&
+        historicalLoadedRef.current &&
+        candleSeriesRef.current &&
+        animTargetCandle &&
+        animCurrentCandle
+      ) {
+        if (animCurrentCandle.time !== animTargetCandle.time) {
+          animCurrentCandle = { ...animTargetCandle };
+        } else {
+          const diff = animTargetCandle.close - animCurrentCandle.close;
+          const nextClose =
+            Math.abs(diff) <= symbolMeta.minMove * 0.5
+              ? animTargetCandle.close
+              : Number((animCurrentCandle.close + diff * 0.28).toFixed(symbolMeta.precision));
+          animCurrentCandle = {
+            ...animTargetCandle,
+            close: nextClose,
+            high: Math.max(animTargetCandle.high, nextClose),
+            low: Math.min(animTargetCandle.low, nextClose),
+          };
+        }
+
+        const isBullAnim = animCurrentCandle.close >= animCurrentCandle.open;
+        candleSeriesRef.current.update(toPureCandle(animCurrentCandle));
+        if (lastPriceLineBullRef.current !== isBullAnim) {
+          lastPriceLineBullRef.current = isBullAnim;
+          candleSeriesRef.current.applyOptions({
+            priceLineColor: isBullAnim ? '#089981' : '#F23645',
+          });
+        }
+        const nowPerf = performance.now();
+        if (nowPerf - lastStatePushMs >= 100 || animCurrentCandle.close === animTargetCandle.close) {
+          lastStatePushMs = nowPerf;
+          setLivePrice(animCurrentCandle.close);
+          setIsBullTick(isBullAnim);
+        }
+        scheduleOverlayRafRef.current?.();
+      }
+      animRafId = window.requestAnimationFrame(tickAnimFrame);
+    };
+    animRafId = window.requestAnimationFrame(tickAnimFrame);
 
     const applyIncomingCandle = (
       incomingRaw: TerminalCandle,
@@ -1409,14 +1524,11 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         return;
       }
 
-      // Update Lightweight Charts series & only mutate priceLineColor when bull/bear flips
       const isBull = liveCandle.close >= liveCandle.open;
-      candleSeriesRef.current.update(toPureCandle(liveCandle));
-      if (lastPriceLineBullRef.current !== isBull) {
-        lastPriceLineBullRef.current = isBull;
-        candleSeriesRef.current.applyOptions({
-          priceLineColor: isBull ? '#089981' : '#F23645',
-        });
+      animTargetCandle = liveCandle;
+      if (!animCurrentCandle || animCurrentCandle.time !== liveCandle.time) {
+        animCurrentCandle = { ...liveCandle };
+        candleSeriesRef.current.update(toPureCandle(liveCandle));
       }
 
       const arr = latestCandlesRef.current;
@@ -1433,8 +1545,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         arr.push(liveCandle);
       }
 
-      setLivePrice(liveCandle.close);
-      setIsBullTick(isBull);
       setLatestBarSnapshot(liveCandle);
 
       setSmc((prev) => {
@@ -1479,6 +1589,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           fullCandlesRef.current = merged;
           latestCandlesRef.current = merged;
           lastRealClosePrice = merged[merged.length - 1].close;
+          animTargetCandle = merged[merged.length - 1];
+          animCurrentCandle = { ...animTargetCandle };
           setReplayTotal(merged.length);
           candleSeriesRef.current?.setData(merged.map(toPureCandle));
           if (chart && prevRange) {
@@ -1558,7 +1670,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           true
         );
       }
-    }, 1000);
+    }, 850);
 
     const scheduleReconnect = (connectFn: () => void) => {
       if (disposed) return;
@@ -1754,10 +1866,12 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
         const latest = candles[candles.length - 1];
         lastRealClosePrice = latest.close;
+        animTargetCandle = latest;
+        animCurrentCandle = { ...latest };
         const initBull = latest.close >= latest.open;
         lastPriceLineBullRef.current = initBull;
         candleSeriesRef.current?.applyOptions({
-          priceLineColor: initBull ? '#059669' : '#DC2626',
+          priceLineColor: initBull ? '#089981' : '#F23645',
         });
 
         historicalLoadedRef.current = true;
@@ -1788,6 +1902,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       controller.abort();
       document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
       window.removeEventListener('online', handleVisibilityOrOnline);
+      if (animRafId !== null) window.cancelAnimationFrame(animRafId);
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       if (watchdogTimer !== null) window.clearInterval(watchdogTimer);
       if (goldPollTimer !== null) window.clearInterval(goldPollTimer);
@@ -2024,19 +2139,28 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
   const handleQuickDemoOrder = (side: 'BUY' | 'SELL') => {
     if (!onExecuteDemoOrder) return;
-    const err = onExecuteDemoOrder(symbol, side, demoDefaultLot);
+    if (marginCallActive || displayBalance <= 0 || displayEquity <= 0) {
+      setQuickOrderNote('Margin Call: Balance Depleted');
+      return;
+    }
+    const parsedLot = Number.parseFloat(customLotInput);
+    const chosenLot = Number.isFinite(parsedLot) && parsedLot >= 0.01 ? Math.min(10, Number(parsedLot.toFixed(2))) : demoDefaultLot;
+    onChangeDemoDefaultLot?.(chosenLot);
+    const err = onExecuteDemoOrder(symbol, side, chosenLot);
     if (err) {
       setQuickOrderNote(err);
     } else {
       const px = livePrice ?? activeSpec.defaultPrice;
-      setQuickOrderNote(`${side} ${demoDefaultLot.toFixed(2)} ${activeSpec.shortLabel} @ $${px.toFixed(activeSpec.precision)}`);
+      setQuickOrderNote(`${side} ${chosenLot.toFixed(2)} ${activeSpec.shortLabel} @ $${px.toFixed(activeSpec.precision)}`);
     }
   };
+
+  const isDepleted = marginCallActive || displayBalance <= 0 || displayEquity <= 0;
 
   return (
     <section
       ref={terminalSectionRef}
-      aria-label="Varta Presh Trading Terminal"
+      aria-label="TREDAURA Trading Terminal"
       style={
         isFullScreen
           ? {
@@ -2052,28 +2176,27 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       className={
         isFullScreen
           ? 'vp-fullscreen-root flex flex-col bg-[#FFFFFF] text-[#131722] overflow-hidden'
-          : 'space-y-2.5 bg-[#FFFFFF] text-[#0F172A] w-full overflow-x-hidden'
+          : 'h-full min-h-0 flex flex-col gap-1.5 bg-[#FFFFFF] text-[#131722] w-full overflow-hidden'
       }
     >
-      {/* 1. Top Row: Primary Live Chart */}
+      {/* 1. Top 65% Area: Live Institutional Chart */}
       <div
         className={
           isFullScreen
             ? 'flex-1 min-h-0 flex flex-col w-full h-full bg-[#FFFFFF]'
-            : 'w-full'
+            : 'h-[65%] min-h-0 flex flex-col w-full'
         }
       >
-        {/* Chart 1 (Primary) */}
         <div
           className={
             isFullScreen
               ? 'relative flex-1 flex flex-col min-w-0 min-h-0 h-full w-full overflow-hidden bg-[#FFFFFF]'
-              : 'flex flex-col rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] shadow-sm overflow-hidden min-w-0'
+              : 'flex-1 min-h-0 flex flex-col rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] overflow-hidden min-w-0'
           }
         >
           {/* Dedicated 48px Full-Screen Header Bar */}
           {isFullScreen && (
-            <div className="h-[48px] shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 flex items-center justify-between gap-2">
+            <div className="h-[48px] shrink-0 border-b border-[#E5E7EB] bg-[#FFFFFF] px-2.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="font-bold text-xs text-[#131722] whitespace-nowrap">
                   {symbolMeta.shortLabel}
@@ -2099,8 +2222,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         aria-pressed={active}
                         className={`rounded-md px-2 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                           active
-                            ? 'bg-[#0F172A] text-[#FFFFFF]'
-                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
+                            ? 'bg-[#131722] text-[#FFFFFF]'
+                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#131722] hover:bg-[#F1F5F9]'
                         }`}
                       >
                         {tf.label}
@@ -2114,7 +2237,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 type="button"
                 onClick={toggleFullScreen}
                 aria-label="Exit Full Screen"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-[#FFFFFF] px-2.5 text-xs font-bold text-[#131722] shadow-sm cursor-pointer shrink-0 whitespace-nowrap hover:bg-[#F8FAFC]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#FFFFFF] px-2.5 text-xs font-bold text-[#131722] cursor-pointer shrink-0 whitespace-nowrap hover:bg-[#F8FAFC]"
               >
                 <Minimize2 className="h-3.5 w-3.5 text-[#131722]" />
                 <span>Exit</span>
@@ -2122,20 +2245,20 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             </div>
           )}
 
-          {/* Dedicated Non-Overlapping Chart 1 Header (Symbol + Live Price + 1m-4H Timeframe Buttons) */}
+          {/* Clean Institutional Header (Market Switcher + Live Session + Price + 1m-4H Buttons) */}
           {!isFullScreen && (
-            <div className="shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 py-1.5 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
+            <div className="shrink-0 border-b border-[#E5E7EB] bg-[#FFFFFF] px-2.5 py-1 space-y-1">
+              <div className="flex items-center justify-between gap-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span
                     className={`h-2 w-2 rounded-full shrink-0 ${
                       streamStatus === 'LIVE WS'
-                        ? 'bg-[#059669] animate-pulse'
+                        ? 'bg-[#089981] animate-pulse'
                         : 'bg-[#F59E0B]'
                     }`}
                   />
                   <select
-                    aria-label="Chart 1 symbol"
+                    aria-label="Market selector"
                     value={symbol}
                     onChange={(e) => {
                       const nextSym = e.target.value as SmcSymbol;
@@ -2143,7 +2266,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                       const found = SYMBOL_OPTIONS.find((opt) => opt.value === nextSym);
                       if (found) onSelectTvSymbol?.(found.tvSymbol);
                     }}
-                    className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] px-2 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate max-w-[140px]"
+                    className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] text-[#131722] px-1.5 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate max-w-[132px]"
                   >
                     {SYMBOL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -2151,12 +2274,21 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                       </option>
                     ))}
                   </select>
+
+                  <span
+                    aria-label="Active trading session"
+                    className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0"
+                    style={{ backgroundColor: sessionBadge.bgColor, color: sessionBadge.textColor }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: sessionBadge.dotColor }} />
+                    {sessionBadge.label}
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <span
-                    className="font-mono-tabular text-xs sm:text-[13px] font-bold"
-                    style={{ color: isBullTick ? '#059669' : '#DC2626' }}
+                    className="font-mono-tabular text-xs font-bold"
+                    style={{ color: isBullTick ? '#089981' : '#F23645' }}
                   >
                     ${formatTerminalPrice(livePrice, symbolMeta.precision)}
                   </span>
@@ -2171,7 +2303,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     onClick={toggleFullScreen}
                     aria-label="Enter Full Screen"
                     title="Full Screen"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
                   >
                     <Maximize2 className="h-3 w-3" />
                   </button>
@@ -2180,17 +2312,17 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     onClick={() => setSettingsOpen(true)}
                     aria-label="Chart Settings"
                     title="Chart Settings"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
                   >
                     <Settings className="h-3 w-3" />
                   </button>
                 </div>
               </div>
 
-              {/* Clean Non-Overlapping 1m–4H Buttons */}
+              {/* Clean Non-Overlapping 1m–4H Timeframe Bar */}
               <div
                 role="group"
-                aria-label="Chart 1 timeframe selector"
+                aria-label="Chart timeframe selector"
                 className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar"
               >
                 <div className="flex items-center gap-1">
@@ -2202,10 +2334,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         type="button"
                         onClick={() => setTimeframe(tf.value)}
                         aria-pressed={active}
-                        className={`rounded-md px-2 py-0.5 text-[10.5px] font-mono-tabular font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                        className={`rounded-md px-2 py-0.5 text-[10px] font-mono-tabular font-bold whitespace-nowrap cursor-pointer transition-colors ${
                           active
-                            ? 'bg-[#0F172A] text-[#FFFFFF] shadow-sm'
-                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
+                            ? 'bg-[#131722] text-[#FFFFFF]'
+                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#131722] hover:bg-[#F1F5F9]'
                         }`}
                       >
                         {tf.label}
@@ -2220,20 +2352,28 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             </div>
           )}
 
-          {/* Chart 1 Canvas Container */}
+          {/* Chart Canvas Container (OHLC Header Hidden) */}
           <div
             style={
               isFullScreen
                 ? { height: 'calc(100dvh - 48px)', backgroundColor: '#FFFFFF' }
                 : { backgroundColor: '#FFFFFF' }
             }
-            className={`relative min-w-0 min-h-0 overflow-hidden bg-[#FFFFFF] ${
-              isFullScreen ? 'flex-1 w-full' : 'h-[265px] sm:h-[320px] lg:h-[370px]'
-            }`}
+            className="relative flex-1 min-w-0 min-h-0 overflow-hidden bg-[#FFFFFF]"
           >
             <div ref={chartWrapRef} className="smc-chart-host absolute inset-0 z-[1] bg-[#FFFFFF] touch-none" />
 
-            {/* High-DPI Canvas SMC Overlay (CHoCH, OB+, S1, S2, Patterns, Live Pulse) */}
+            {/* Crosshair Candle Point Meter Floating Pill (Range & Body) */}
+            {crosshairPts && (
+              <div className="pointer-events-none absolute top-1.5 left-1/2 -translate-x-1/2 z-[28] rounded-full border border-[#E5E7EB] bg-[#FFFFFF]/95 px-2.5 py-0.5 font-mono-tabular text-[10px] font-bold text-[#131722] shadow-sm whitespace-nowrap">
+                Range: {crosshairPts.range} pts |{' '}
+                <span style={{ color: crosshairPts.isBull ? '#089981' : '#F23645' }}>
+                  Body: {crosshairPts.body} pts
+                </span>
+              </div>
+            )}
+
+            {/* High-DPI Canvas SMC Overlay */}
             <ChartCanvasOverlay
               redrawRef={overlayRedrawRef}
               chart={chartApiRef.current}
@@ -2256,7 +2396,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               isBullTick={isBullTick}
             />
 
-            {/* Right-Axis Candle Countdown Stacked Under Live Price */}
+            {/* Right-Axis Candle Countdown Stacked Directly Under Single Live Price Badge */}
             <PriceAxisCountdownTag
               syncRef={countdownSyncRef}
               chart={chartApiRef.current}
@@ -2267,7 +2407,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               latestBarTime={latestBarTime}
             />
 
-            {/* Collision-Free Right-Edge Trade Price Badges + TradingView-Style Draggable Entry/TP/SL Handles */}
+            {/* Far-Right Edge Entry Pills & Draggable TP/SL + Green Confirm */}
             <TradeLinesOverlay
               syncRef={tradeOverlaySyncRef}
               chart={chartApiRef.current}
@@ -2288,7 +2428,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 <button
                   type="button"
                   onClick={() => setReplayPlaying((p) => !p)}
-                  className="vp-pill-btn inline-flex h-6 items-center gap-1 bg-[#F59E0B] px-2 text-[10px] font-bold text-[#0F172A] cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-1 bg-[#F59E0B] px-2 text-[10px] font-bold text-[#131722] cursor-pointer"
                 >
                   {replayPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                   {replayPlaying ? 'Pause' : 'Play'}
@@ -2297,7 +2437,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={() => applyReplaySlice(replayIndex + 1)}
                   disabled={replayIndex >= replayTotal}
-                  className="vp-pill-btn inline-flex h-6 items-center gap-0.5 bg-[#F1F5F9] px-2 text-[10px] font-semibold text-[#0F172A] cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-0.5 bg-[#F1F5F9] px-2 text-[10px] font-semibold text-[#131722] cursor-pointer"
                 >
                   <SkipForward className="h-3 w-3" />
                   +1
@@ -2313,7 +2453,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={() => applyReplaySlice(Math.max(24, Math.floor(replayTotal * 0.55)))}
                   title="Restart Replay"
-                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#F1F5F9] text-[#0F172A] cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#F1F5F9] text-[#131722] cursor-pointer"
                 >
                   <RotateCcw className="h-3 w-3" />
                 </button>
@@ -2321,7 +2461,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={toggleReplayMode}
                   title="Exit Replay"
-                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#FEF2F2] text-[#DC2626] cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#FEF2F2] text-[#F23645] cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -2332,14 +2472,14 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             {!isFullScreen && (
               <div
                 role="group"
-                aria-label="Chart 1 zoom controls"
-                className="absolute bottom-7 left-2 z-[25] flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/95 p-0.5 shadow-sm"
+                aria-label="Chart zoom controls"
+                className="absolute bottom-7 left-2 z-[25] flex items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#FFFFFF]/95 p-0.5 shadow-sm"
               >
                 <button
                   type="button"
                   onClick={handleZoomIn}
                   aria-label="Zoom In"
-                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
+                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#131722] hover:bg-[#E2E8F0] cursor-pointer"
                 >
                   +
                 </button>
@@ -2347,7 +2487,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={handleZoomOut}
                   aria-label="Zoom Out"
-                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
+                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#131722] hover:bg-[#E2E8F0] cursor-pointer"
                 >
                   -
                 </button>
@@ -2363,7 +2503,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={handleJumpLive}
                   aria-label="Snap Live"
-                  className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
+                  className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#131722] hover:bg-[#E2E8F0] cursor-pointer"
                 >
                   Live
                 </button>
@@ -2373,7 +2513,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             {/* Initial Loading Overlay */}
             {isLoadingInitial && !loadError && (
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[#FFFFFF]/70">
-                <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3.5 py-1.5 text-xs font-semibold text-[#0F172A] shadow-sm">
+                <div className="rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-1.5 text-xs font-semibold text-[#131722] shadow-sm">
                   Loading {symbolMeta.shortLabel} ({currentTfLabel})...
                 </div>
               </div>
@@ -2385,7 +2525,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 <button
                   type="button"
                   onClick={() => setReloadNonce((n) => n + 1)}
-                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#0F172A] cursor-pointer"
+                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#131722] cursor-pointer"
                 >
                   Retry Chart
                 </button>
@@ -2393,257 +2533,175 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             )}
           </div>
         </div>
-
       </div>
 
-      {/* 2. Bottom Row: ONLY a 2x2 Grid of 4 Compact Info / Signal & Demo Execution Boxes */}
+      {/* 2. Bottom 35% Area: Unified Signal + Order Execution Panel (Zero Scrolling) */}
       {!isFullScreen && (
         <div
-          aria-label="Live Signal and Demo Execution 2x2 Grid"
-          className="grid grid-cols-2 gap-2.5 w-full"
+          aria-label="Unified Signal and Trade Panel"
+          className="h-[35%] min-h-0 rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-2.5 py-2 flex flex-col justify-between gap-1 overflow-hidden"
         >
-          {/* Box 1: Live Setup (1:2 R:R) */}
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
-            <div className="flex items-center justify-between gap-1.5 mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] truncate">
-                {symbolMeta.shortLabel} · Setup (1:2)
-              </span>
+          {/* Row 1: Signal, SMC Structure, Open Trades & Live Account Trigger */}
+          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
               <span
-                className={`rounded-md px-1.5 py-0.5 text-[9.5px] font-bold shrink-0 ${
-                  !smc
-                    ? 'bg-[#F1F5F9] text-[#475569]'
-                    : smc.trend === 1
-                      ? 'bg-[#ECFDF5] text-[#059669]'
-                      : 'bg-[#FEF2F2] text-[#DC2626]'
-                }`}
+                className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap"
+                style={{
+                  backgroundColor: !smc ? '#F1F5F9' : smc.trend === 1 ? '#ECFDF5' : '#FEF2F2',
+                  color: !smc ? '#475569' : smc.trend === 1 ? '#089981' : '#F23645',
+                }}
               >
-                {!smc ? 'SCANNING' : smc.trend === 1 ? 'BUY' : 'SELL'}
+                Signal: {!smc ? 'WAIT' : smc.trend === 1 ? 'BUY' : 'SELL'}
               </span>
-            </div>
 
-            <div className="space-y-1 text-[11px] sm:text-xs">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[#64748B] truncate">Entry</span>
-                <span className="font-mono-tabular font-bold text-[#B45309]">
-                  ${formatTerminalPrice(smc?.entry ?? null, symbolMeta.precision)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[#64748B] truncate">Target (TP)</span>
-                <span className="font-mono-tabular font-bold text-[#059669]">
-                  ${formatTerminalPrice(smc?.tp ?? null, symbolMeta.precision)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[#64748B] truncate">Stop (SL)</span>
-                <span className="font-mono-tabular font-bold text-[#DC2626]">
-                  ${formatTerminalPrice(smc?.sl ?? null, symbolMeta.precision)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Box 2: OMYE · 1m Engine */}
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
-            <div className="flex items-center justify-between gap-1.5 mb-1.5">
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#059669] animate-pulse shrink-0" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F172A] truncate">
-                  OMYE · 1m
-                </span>
-              </div>
               <span
-                className={`rounded-md px-1.5 py-0.5 text-[9.5px] font-bold shrink-0 ${
-                  !omye || omye.signal === 'NEUTRAL'
-                    ? 'bg-[#F1F5F9] text-[#B45309]'
-                    : omye.signal.includes('BUY')
-                      ? 'bg-[#ECFDF5] text-[#059669]'
-                      : 'bg-[#FEF2F2] text-[#DC2626]'
-                }`}
+                className="inline-flex items-center rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap"
+                style={{ color: smc?.trend === -1 ? '#F23645' : '#089981' }}
               >
-                {omye?.signal ?? 'SYNC'}
+                SMC: {smc?.lastEvent ?? 'BOS'}
+              </span>
+
+              <span className="inline-flex items-center rounded-md border border-[#E5E7EB] bg-[#FFFFFF] px-1.5 py-0.5 text-[10px] font-semibold text-[#131722] whitespace-nowrap">
+                Open Trades: {activePositions.length}
               </span>
             </div>
 
-            <div className="space-y-1.5 text-[10.5px]">
-              <div>
-                <div className="flex items-center justify-between text-[9.5px] text-[#64748B] mb-0.5 font-mono-tabular">
-                  <span>Bull {omye?.bullPressurePct ?? 50}%</span>
-                  <span>RSI {omye ? omye.rsi1m.toFixed(1) : '--'}</span>
-                  <span>Bear {100 - (omye?.bullPressurePct ?? 50)}%</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-[#DC2626]/45 overflow-hidden">
-                  <div
-                    className="h-full bg-[#059669] transition-all duration-300"
-                    style={{ width: `${omye?.bullPressurePct ?? 50}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-1 text-[9.5px] sm:text-[10px] font-mono-tabular">
-                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
-                  <span className="block text-[#64748B] text-[9px]">Entry</span>
-                  <span className="font-bold text-[#B45309]">
-                    {formatTerminalPrice(omye?.entry ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
-                  <span className="block text-[#64748B] text-[9px]">TP</span>
-                  <span className="font-bold text-[#059669]">
-                    {formatTerminalPrice(omye?.tp ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
-                  <span className="block text-[#64748B] text-[9px]">SL</span>
-                  <span className="font-bold text-[#DC2626]">
-                    {formatTerminalPrice(omye?.sl ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Box 3: Smart Money (SMC) Levels & Zones */}
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
-            <div className="flex items-center justify-between gap-1.5 mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] truncate">
-                Smart Money (SMC)
-              </span>
-              <span className="text-[10px] font-bold text-[#B45309] truncate">
-                {smc?.pattern ? smc.pattern.name : 'Structure'}
-              </span>
-            </div>
-
-            <div className="space-y-1 text-[10.5px] sm:text-[11px]">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[#64748B] shrink-0">OB</span>
-                {smc?.orderBlock ? (
-                  <span
-                    className="font-mono-tabular font-semibold truncate"
-                    style={{ color: smc.orderBlock.type === 'Bullish' ? '#059669' : '#DC2626' }}
-                  >
-                    {smc.orderBlock.type === 'Bullish' ? 'OB+' : 'OB-'}{' '}
-                    {formatTerminalPrice(smc.orderBlock.low, symbolMeta.precision)}
-                  </span>
-                ) : (
-                  <span className="font-mono-tabular text-[#64748B]">Forming</span>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[#64748B] shrink-0">Event</span>
-                <span
-                  className="font-mono-tabular font-bold truncate"
-                  style={{ color: smc?.trend === -1 ? '#DC2626' : '#059669' }}
-                >
-                  {smc?.lastEvent ?? 'BOS'} ({smc ? `${smc.bosCount}/${smc.chochCount}` : '0/0'})
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-1 pt-0.5 border-t border-[#F1F5F9] font-mono-tabular text-[10px]">
-                <span className="text-[#059669] font-semibold truncate">
-                  S1 {formatTerminalPrice(smc?.supportPrice ?? null, symbolMeta.precision)}
-                </span>
-                <span className="text-[#DC2626] font-semibold truncate">
-                  R1 {formatTerminalPrice(smc?.resistancePrice ?? null, symbolMeta.precision)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Box 4: $1,000 Demo Quick Trade & Live P&L */}
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
-            <div className="flex items-center justify-between gap-1.5 mb-1">
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="rounded bg-[#ECFDF5] border border-[#059669]/30 px-1 py-0.5 text-[9px] font-extrabold text-[#059669] shrink-0">
-                  DEMO
-                </span>
-                <span className="font-mono-tabular text-[10.5px] font-bold text-[#0F172A] truncate">
-                  {formatUsd(displayEquity)}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenDemoDrawer}
-                className="text-[10px] font-bold text-[#B45309] hover:underline cursor-pointer whitespace-nowrap shrink-0"
-              >
-                Panel ({demoPositions.length})
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-1 text-[10px] font-mono-tabular mb-1.5">
-              <span className="text-[#64748B] truncate">
-                {activePositions.length > 0
-                  ? `${activePositions.length} open · Bal ${formatUsd(displayBalance)}`
-                  : `Lot ${demoDefaultLot.toFixed(2)} · Ready`}
-              </span>
+            <div className="flex items-center gap-1.5 shrink-0 font-mono-tabular">
               <span
-                className="font-bold shrink-0"
+                className="text-[10.5px] font-bold whitespace-nowrap"
                 style={{
                   color:
                     totalFloatingPnl > 0.005
-                      ? '#059669'
+                      ? '#089981'
                       : totalFloatingPnl < -0.005
-                        ? '#DC2626'
+                        ? '#F23645'
                         : '#475569',
                 }}
               >
-                P&L {formatUsd(activePositions.length > 0 ? activeFloatingPnl : totalFloatingPnl, true)}
+                {formatUsd(activePositions.length > 0 ? activeFloatingPnl : totalFloatingPnl, true)}
+              </span>
+              <button
+                type="button"
+                onClick={onOpenDemoDrawer}
+                className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-1.5 py-0.5 text-[10px] font-bold text-[#131722] cursor-pointer whitespace-nowrap"
+              >
+                Panel
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Live Structural Levels & Equity Readout */}
+          <div className="grid grid-cols-4 gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-1 font-mono-tabular text-[10px]">
+            <div className="min-w-0">
+              <span className="block text-[9px] text-[#64748B]">Entry</span>
+              <span className="font-bold text-[#B45309] truncate block">
+                {formatTerminalPrice(smc?.entry ?? livePrice, symbolMeta.precision)}
               </span>
             </div>
+            <div className="min-w-0">
+              <span className="block text-[9px] text-[#64748B]">TP (1:2)</span>
+              <span className="font-bold text-[#089981] truncate block">
+                {formatTerminalPrice(smc?.tp ?? null, symbolMeta.precision)}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <span className="block text-[9px] text-[#64748B]">SL</span>
+              <span className="font-bold text-[#F23645] truncate block">
+                {formatTerminalPrice(smc?.sl ?? null, symbolMeta.precision)}
+              </span>
+            </div>
+            <div className="min-w-0 text-right">
+              <span className="block text-[9px] text-[#64748B]">Equity</span>
+              <span className="font-bold text-[#131722] truncate block">
+                {formatUsd(displayEquity)}
+              </span>
+            </div>
+          </div>
 
-            <div className="flex items-center gap-1 mb-1.5">
-              {[0.05, 0.1, 0.25].map((lotOpt) => {
-                const active = Math.abs(demoDefaultLot - lotOpt) < 0.001;
-                return (
-                  <button
-                    key={lotOpt}
-                    type="button"
-                    onClick={() => onChangeDemoDefaultLot?.(lotOpt)}
-                    className={`flex-1 rounded border py-0.5 text-[9.5px] font-mono-tabular font-bold cursor-pointer ${
-                      active
-                        ? 'border-[#0F172A] bg-[#0F172A] text-[#FFFFFF]'
-                        : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]'
-                    }`}
-                  >
-                    {lotOpt}
-                  </button>
-                );
-              })}
-              {activePositions.length > 0 && onCloseDemoPosition && (
+          {/* Row 3 & 4: Margin Call Depleted Guard OR Quick Lot + Custom Lot Input + Buy/Sell Execution */}
+          {isDepleted ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 rounded-lg border border-[#F23645]/40 bg-[#FEF2F2] px-3 py-1.5">
+              <p className="text-[11px] font-bold text-[#F23645] text-center">
+                Margin Call: Balance Depleted
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onResetDemoAccount?.();
+                  setQuickOrderNote('Demo account reset to $1,000.00');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#089981] hover:brightness-110 px-3 py-1.5 text-xs font-bold text-[#FFFFFF] cursor-pointer shadow-sm"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset $1,000 Demo
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1">
+                {[0.01, 0.05, 0.1, 0.5, 1.0].map((lotOpt) => {
+                  const active = Math.abs(demoDefaultLot - lotOpt) < 0.001;
+                  return (
+                    <button
+                      key={lotOpt}
+                      type="button"
+                      onClick={() => {
+                        onChangeDemoDefaultLot?.(lotOpt);
+                        setCustomLotInput(lotOpt.toFixed(2));
+                      }}
+                      className={`flex-1 rounded-md border py-1 text-[10px] font-mono-tabular font-bold cursor-pointer whitespace-nowrap ${
+                        active
+                          ? 'border-[#131722] bg-[#131722] text-[#FFFFFF]'
+                          : 'border-[#E5E7EB] bg-[#F8FAFC] text-[#475569] hover:text-[#131722]'
+                      }`}
+                    >
+                      {lotOpt}
+                    </button>
+                  );
+                })}
+
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="10"
+                  aria-label="Custom Lot Size"
+                  value={customLotInput}
+                  onChange={(e) => {
+                    setCustomLotInput(e.target.value);
+                    const val = Number.parseFloat(e.target.value);
+                    if (Number.isFinite(val) && val >= 0.01) {
+                      onChangeDemoDefaultLot?.(Math.min(10, Number(val.toFixed(2))));
+                    }
+                  }}
+                  className="w-14 rounded-md border border-[#E5E7EB] bg-[#FFFFFF] py-1 px-1 text-center font-mono-tabular text-[10px] font-bold text-[#131722] outline-none focus:border-[#089981]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => onCloseDemoPosition(activePositions[0].id)}
-                  className="rounded border border-[#DC2626]/40 bg-[#FEF2F2] px-1.5 py-0.5 text-[9.5px] font-bold text-[#DC2626] cursor-pointer whitespace-nowrap"
+                  onClick={() => handleQuickDemoOrder('SELL')}
+                  className="rounded-lg bg-[#F23645] hover:brightness-110 py-1.5 text-xs font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98] transition-all"
                 >
-                  Close
+                  SELL {demoDefaultLot.toFixed(2)}
                 </button>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemoOrder('BUY')}
+                  className="rounded-lg bg-[#089981] hover:brightness-110 py-1.5 text-xs font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  BUY {demoDefaultLot.toFixed(2)}
+                </button>
+              </div>
+            </>
+          )}
 
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoOrder('SELL')}
-                className="rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] py-1 text-[10.5px] font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98]"
-              >
-                SELL {demoDefaultLot.toFixed(2)}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoOrder('BUY')}
-                className="rounded-lg bg-[#059669] hover:bg-[#047857] py-1 text-[10.5px] font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98]"
-              >
-                BUY {demoDefaultLot.toFixed(2)}
-              </button>
-            </div>
-
-            {quickOrderNote && (
-              <p className="mt-1 text-[9.5px] font-medium text-[#475569] truncate">
-                {quickOrderNote}
-              </p>
-            )}
-          </div>
+          {quickOrderNote && !isDepleted && (
+            <p className="text-[9.5px] font-medium text-[#64748B] truncate leading-none">
+              {quickOrderNote}
+            </p>
+          )}
         </div>
       )}
 
@@ -3027,13 +3085,13 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
         }
       }
 
-      // Separate close Entry bars vertically (~24px) so compact pills never stack on top of each other
+      // Separate close Entry bars vertically (~18px) so far-right compact pills never stack
       entryPlotHandles.sort((a, b) => a.rawY - b.rawY);
       for (let i = 1; i < entryPlotHandles.length; i++) {
-        entryPlotHandles[i].y = Math.max(entryPlotHandles[i].y, entryPlotHandles[i - 1].y + 24);
+        entryPlotHandles[i].y = Math.max(entryPlotHandles[i].y, entryPlotHandles[i - 1].y + 18);
       }
 
-      // Resolve vertical collisions on right price axis (including avoiding live price + countdown band)
+      // Deduplicate/prevent overlap on right price axis (keeping only 1 live price badge + clean trade badges)
       const MIN_GAP = 19;
       const minTop = 10;
       const maxTop = Math.max(minTop + MIN_GAP, pane.height - 12);
@@ -3050,9 +3108,17 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
       }
 
       rawAxisBadges.sort((a, b) => a.rawY - b.rawY);
+      const filteredAxisBadges: AxisPriceBadgeItem[] = [];
+      for (const b of rawAxisBadges) {
+        const duplicateSamePrice = filteredAxisBadges.some(
+          (prev) => prev.kind === b.kind && Math.abs(prev.rawY - b.rawY) < 4
+        );
+        if (!duplicateSamePrice) filteredAxisBadges.push(b);
+      }
+
       const placedYs: number[] = [];
-      for (let i = 0; i < rawAxisBadges.length; i++) {
-        let y = Math.max(minTop, Math.min(maxTop, rawAxisBadges[i].rawY));
+      for (let i = 0; i < filteredAxisBadges.length; i++) {
+        let y = Math.max(minTop, Math.min(maxTop, filteredAxisBadges[i].rawY));
         if (i > 0) {
           y = Math.max(y, placedYs[i - 1] + MIN_GAP);
         }
@@ -3073,7 +3139,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
         }
       }
 
-      const resolvedAxisBadges = rawAxisBadges.map((b, idx) => ({
+      const resolvedAxisBadges = filteredAxisBadges.map((b, idx) => ({
         ...b,
         y: Math.max(minTop, Math.min(maxTop, placedYs[idx] ?? b.y)),
       }));
@@ -3188,7 +3254,6 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
 
           if (!onUpdateTpSl) return;
 
-          // If user simply tapped [TP] or [SL] without dragging and line wasn't active yet, pull out a clean default line
           const existing = kind === 'tp' ? pos.tp : pos.sl;
           let finalPrice = latestPrice;
           if (movedPx < 4 && existing === undefined) {
@@ -3233,7 +3298,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
         const base =
           (kind === 'tp' ? pos.tp : pos.sl) ?? getDefaultLevelPrice(pos, kind);
         const step = Math.max(minMove * 5, base * 0.00035);
-        const dir = e.deltaY < 0 ? 1 : -1; // Scroll up raises price, scroll down lowers price
+        const dir = e.deltaY < 0 ? 1 : -1;
         const nextPrice = Number(Math.max(minMove, base + dir * step).toFixed(precision));
         if (kind === 'tp') {
           onUpdateTpSl(pos.id, nextPrice, pos.sl);
@@ -3270,7 +3335,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
             </div>
           ))}
 
-        {/* Slim TradingView-Style Entry Bar & Draggable TP/SL Line Pills */}
+        {/* Far-Right Edge Ultra-Compact Entry Tags & Draggable TP/SL Pills */}
         {paneWidth > 0 &&
           plotHandles.map((h) => {
             const pos = positions.find((p) => p.id === h.positionId);
@@ -3286,13 +3351,12 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                 <div
                   key={h.key}
                   style={{
-                    transform: `translate3d(0, ${Math.round(h.y - 11)}px, 0)`,
-                    right: `${scaleWidth + 6}px`,
+                    transform: `translate3d(0, ${Math.round(h.y - 8)}px, 0)`,
+                    right: `${scaleWidth + 2}px`,
                     borderColor: accentColor,
                   }}
-                  className="pointer-events-auto absolute top-0 inline-flex h-[22px] items-center rounded-[4px] border bg-[#FFFFFF] shadow-sm overflow-hidden font-mono-tabular text-[9.5px] font-bold select-none"
+                  className="pointer-events-auto absolute top-0 inline-flex h-[16px] items-center rounded-[3px] border bg-[#FFFFFF]/95 shadow-sm overflow-hidden font-mono-tabular text-[9px] font-bold select-none"
                 >
-                  {/* Draggable / Scrollable [ TP ] handle */}
                   <button
                     type="button"
                     onPointerDown={(e) => {
@@ -3308,7 +3372,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                     }}
                     onWheel={(e) => handleWheelNudgeTpSl(e, pos, 'tp')}
                     title="Drag or scroll up/down to pull Take Profit line"
-                    className={`h-full px-1.5 flex items-center border-r border-[#E2E8F0] cursor-ns-resize touch-none transition-colors ${
+                    className={`h-full px-1 flex items-center border-r border-[#E5E7EB] cursor-ns-resize touch-none transition-colors ${
                       hasTp
                         ? 'bg-[#089981] text-[#FFFFFF]'
                         : 'bg-[#ECFDF5] text-[#089981] hover:bg-[#D1FAE5]'
@@ -3317,7 +3381,6 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                     TP
                   </button>
 
-                  {/* Draggable / Scrollable [ SL ] handle */}
                   <button
                     type="button"
                     onPointerDown={(e) => {
@@ -3333,7 +3396,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                     }}
                     onWheel={(e) => handleWheelNudgeTpSl(e, pos, 'sl')}
                     title="Drag or scroll up/down to pull Stop Loss line"
-                    className={`h-full px-1.5 flex items-center border-r border-[#E2E8F0] cursor-ns-resize touch-none transition-colors ${
+                    className={`h-full px-1 flex items-center border-r border-[#E5E7EB] cursor-ns-resize touch-none transition-colors ${
                       hasSl
                         ? 'bg-[#F23645] text-[#FFFFFF]'
                         : 'bg-[#FEF2F2] text-[#F23645] hover:bg-[#FEE2E2]'
@@ -3342,13 +3405,12 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                     SL
                   </button>
 
-                  {/* Compact [ 0.01 | -$2.19 | × ] segment */}
-                  <span className="px-1.5 text-[#0F172A] leading-none">
+                  <span className="px-1 text-[#131722] leading-none">
                     {h.lots.toFixed(2)}
                   </span>
                   <span className="text-[#CBD5E1]">|</span>
                   <span
-                    className="px-1.5 leading-none"
+                    className="px-1 leading-none"
                     style={{ color: accentColor }}
                   >
                     {formatUsd(h.pnl, true)}
@@ -3362,7 +3424,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                       e.stopPropagation();
                       onClosePosition?.(pos.id);
                     }}
-                    className="h-full px-1.5 flex items-center justify-center text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#F23645] cursor-pointer leading-none text-[11px]"
+                    className="h-full px-1 flex items-center justify-center text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#F23645] cursor-pointer leading-none text-[10px]"
                   >
                     ×
                   </button>
@@ -3489,651 +3551,3 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
     );
   }
 );
-
-interface SecondarySplitChartProps {
-  defaultSymbol: SmcSymbol;
-  defaultTimeframe: SmcTimeframe;
-  showSupportResistance: boolean;
-  showPatterns: boolean;
-  showSwingLabels: boolean;
-  showBosChoch: boolean;
-  showEma20: boolean;
-  showEma50: boolean;
-  showBollinger: boolean;
-  showVolumeProfile: boolean;
-  themeMode: ThemeMode;
-  demoPositions?: DemoPosition[];
-  onLivePriceTick?: (symbol: SmcSymbol, price: number) => void;
-}
-
-const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
-  defaultSymbol,
-  defaultTimeframe,
-  showSupportResistance,
-  showPatterns,
-  showSwingLabels,
-  showBosChoch,
-  showEma20,
-  showEma50,
-  showBollinger,
-  showVolumeProfile,
-  themeMode,
-  demoPositions = [],
-  onLivePriceTick,
-}) => {
-  const [subSymbol, setSubSymbol] = useState<SmcSymbol>(defaultSymbol);
-  const [subTf, setSubTf] = useState<SmcTimeframe>(defaultTimeframe);
-  const [subPrice, setSubPrice] = useState<number | null>(null);
-  const [subBull, setSubBull] = useState(true);
-  const [subLatestTime, setSubLatestTime] = useState<number | undefined>(undefined);
-  const [subStructure, setSubStructure] = useState<ChartStructureOverlayData | null>(null);
-
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
-  const ema20Ref = useRef<ISeriesApi<'Line', Time> | null>(null);
-  const ema50Ref = useRef<ISeriesApi<'Line', Time> | null>(null);
-  const bbUpRef = useRef<ISeriesApi<'Line', Time> | null>(null);
-  const bbLowRef = useRef<ISeriesApi<'Line', Time> | null>(null);
-  const bbUpPtsRef = useRef<Array<{ time: UTCTimestamp; value: number }>>([]);
-  const bbLowPtsRef = useRef<Array<{ time: UTCTimestamp; value: number }>>([]);
-  const candlesRef = useRef<TerminalCandle[]>([]);
-  const subHistoricalLoadedRef = useRef<boolean>(false);
-  const subOverlayRedrawRef = useRef<(() => void) | null>(null);
-  const subCountdownSyncRef = useRef<(() => void) | null>(null);
-  const subScheduleRafRef = useRef<(() => void) | null>(null);
-  const subPosLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
-
-  const subLastBullRef = useRef<boolean | null>(null);
-  const subMeta = SYMBOL_OPTIONS.find((s) => s.value === subSymbol) ?? SYMBOL_OPTIONS[2];
-  const subTfLabel = TIMEFRAME_OPTIONS.find((t) => t.value === subTf)?.label ?? subTf;
-
-  useEffect(() => {
-    if (subPrice !== null && Number.isFinite(subPrice)) {
-      onLivePriceTick?.(subSymbol, subPrice);
-    }
-  }, [subSymbol, subPrice, onLivePriceTick]);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-
-    const initialSubTheme = getChartThemeOptions(themeMode);
-
-    const chart = createChart(el, {
-      autoSize: true,
-      layout: {
-        ...initialSubTheme.layout,
-        fontSize: 10.5,
-        attributionLogo: false,
-      },
-      grid: initialSubTheme.grid,
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        ...initialSubTheme.crosshair,
-      },
-      handleScroll: {
-        horzTouchDrag: true,
-        vertTouchDrag: true,
-        mouseWheel: true,
-        pressedMouseMove: true,
-      },
-      handleScale: {
-        mouseWheel: true,
-        pinch: true,
-        axisPressedMouseMove: { time: true, price: true },
-        axisDoubleClickReset: { time: true, price: true },
-      },
-      kineticScroll: { touch: true, mouse: true },
-      timeScale: {
-        ...initialSubTheme.timeScale,
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 6,
-        barSpacing: 7.5,
-        minBarSpacing: 1.5,
-        maxBarSpacing: 20,
-        fixLeftEdge: false,
-        fixRightEdge: false,
-        lockVisibleTimeRangeOnResize: true,
-        shiftVisibleRangeOnNewBar: true,
-      },
-      rightPriceScale: {
-        visible: true,
-        autoScale: true,
-        ...initialSubTheme.rightPriceScale,
-        ticksVisible: true,
-        entireTextOnly: true,
-        alignLabels: true,
-        minimumWidth: 62,
-        scaleMargins: { top: 0.16, bottom: 0.16 },
-      },
-    });
-
-    const candles = chart.addSeries(CandlestickSeries, {
-      ...getCandleStyleOptions(themeMode),
-      priceLineVisible: true,
-      priceLineWidth: 1,
-      priceLineStyle: LineStyle.Dashed,
-      lastValueVisible: true,
-    });
-    ema20Ref.current = chart.addSeries(LineSeries, {
-      color: '#F59E0B',
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      visible: false,
-    });
-    ema50Ref.current = chart.addSeries(LineSeries, {
-      color: '#38BDF8',
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      visible: false,
-    });
-    bbUpRef.current = chart.addSeries(LineSeries, {
-      color: 'rgba(96, 165, 250, 0.75)',
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      visible: false,
-    });
-    bbLowRef.current = chart.addSeries(LineSeries, {
-      color: 'rgba(96, 165, 250, 0.75)',
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      visible: false,
-    });
-
-    chartRef.current = chart;
-    candleRef.current = candles;
-
-    let rafId: number | null = null;
-    const scheduleSubRaf = () => {
-      if (rafId !== null) return;
-      rafId = window.requestAnimationFrame(() => {
-        rafId = null;
-        subOverlayRedrawRef.current?.();
-        subCountdownSyncRef.current?.();
-      });
-    };
-    subScheduleRafRef.current = scheduleSubRaf;
-
-    const onPassiveTouch = () => scheduleSubRaf();
-    el.addEventListener('touchstart', onPassiveTouch, { passive: true });
-    el.addEventListener('touchmove', onPassiveTouch, { passive: true });
-    el.addEventListener('touchend', onPassiveTouch, { passive: true });
-    el.addEventListener('wheel', onPassiveTouch, { passive: true });
-
-    chart.timeScale().subscribeVisibleLogicalRangeChange(() => scheduleSubRaf());
-    chart.subscribeCrosshairMove(() => scheduleSubRaf());
-
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && rect.width > 0 && rect.height > 0) {
-        chart.resize(Math.floor(rect.width), Math.floor(rect.height));
-        scheduleSubRaf();
-      }
-    });
-    ro.observe(el);
-
-    return () => {
-      if (rafId !== null) window.cancelAnimationFrame(rafId);
-      subScheduleRafRef.current = null;
-      el.removeEventListener('touchstart', onPassiveTouch);
-      el.removeEventListener('touchmove', onPassiveTouch);
-      el.removeEventListener('touchend', onPassiveTouch);
-      el.removeEventListener('wheel', onPassiveTouch);
-      ro.disconnect();
-      chart.remove();
-      chartRef.current = null;
-      candleRef.current = null;
-    };
-  }, []);
-
-  const syncSubIndicators = useCallback(
-    (bars: TerminalCandle[]) => {
-      if (bars.length === 0) return;
-      ema20Ref.current?.applyOptions({ visible: showEma20 });
-      ema20Ref.current?.setData(showEma20 ? calcEmaSeries(bars, 20) : []);
-      ema50Ref.current?.applyOptions({ visible: showEma50 });
-      ema50Ref.current?.setData(showEma50 ? calcEmaSeries(bars, 50) : []);
-      bbUpRef.current?.applyOptions({ visible: showBollinger });
-      bbLowRef.current?.applyOptions({ visible: showBollinger });
-      if (showBollinger) {
-        const bb = calcBollingerSeries(bars, 20, 2);
-        bbUpRef.current?.setData(bb.upper);
-        bbLowRef.current?.setData(bb.lower);
-        bbUpPtsRef.current = bb.upper;
-        bbLowPtsRef.current = bb.lower;
-      } else {
-        bbUpRef.current?.setData([]);
-        bbLowRef.current?.setData([]);
-        bbUpPtsRef.current = [];
-        bbLowPtsRef.current = [];
-      }
-      subScheduleRafRef.current?.();
-    },
-    [showEma20, showEma50, showBollinger]
-  );
-
-  const syncSubIndicatorsRef = useRef(syncSubIndicators);
-  useEffect(() => {
-    syncSubIndicatorsRef.current = syncSubIndicators;
-    syncSubIndicators(candlesRef.current);
-  }, [syncSubIndicators]);
-
-  useEffect(() => {
-    subScheduleRafRef.current?.();
-  }, [showSupportResistance, showPatterns, showSwingLabels, showBosChoch, showVolumeProfile, subSymbol, subTf]);
-
-  useEffect(() => {
-    chartRef.current?.applyOptions(getChartThemeOptions(themeMode));
-    candleRef.current?.applyOptions(getCandleStyleOptions(themeMode));
-    subScheduleRafRef.current?.();
-  }, [themeMode]);
-
-  useEffect(() => {
-    candleRef.current?.applyOptions({
-      priceFormat: { type: 'price', precision: subMeta.precision, minMove: subMeta.minMove },
-    });
-  }, [subMeta.precision, subMeta.minMove]);
-
-  // Live Demo Position P&L lines for Chart 2 symbol
-  useEffect(() => {
-    const series = candleRef.current;
-    if (!series) return;
-
-    for (const line of subPosLinesRef.current) {
-      try {
-        series.removePriceLine(line);
-      } catch {
-        // ignore
-      }
-    }
-    subPosLinesRef.current = [];
-
-    const matching = demoPositions.filter((p) => p.symbol === subSymbol);
-    if (matching.length === 0) return;
-
-    const mark = subPrice ?? matching[0].entryPrice;
-    for (const pos of matching.slice(0, 6)) {
-      const pnl = calcPositionPnl(pos, mark);
-      const color = pnl >= 0 ? '#059669' : '#DC2626';
-      try {
-        const line = series.createPriceLine({
-          price: pos.entryPrice,
-          color,
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `${pos.side} ${pos.lots.toFixed(2)} · ${formatUsd(pnl, true)}`,
-        });
-        subPosLinesRef.current.push(line);
-      } catch {
-        // ignore
-      }
-    }
-  }, [demoPositions, subSymbol, subPrice]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let disposed = false;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: number | null = null;
-
-    const subTfSec = TIMEFRAME_SECONDS[subTf] ?? 900;
-    let lastSubMsgAt = Date.now();
-    let lastSubRealPrice: number | null = null;
-    let subSmoothTimer: number | null = null;
-
-    subHistoricalLoadedRef.current = false;
-    candlesRef.current = [];
-    setSubStructure(null);
-    candleRef.current?.setData([]);
-    ema20Ref.current?.setData([]);
-    ema50Ref.current?.setData([]);
-    bbUpRef.current?.setData([]);
-    bbLowRef.current?.setData([]);
-
-    const applyBar = (rawBar: TerminalCandle, isSim = false) => {
-      if (disposed || !candleRef.current || !subHistoricalLoadedRef.current) return;
-      if (!Number.isFinite(rawBar.time) || !Number.isFinite(rawBar.close) || rawBar.close <= 0) return;
-      if (!isSim) lastSubRealPrice = rawBar.close;
-
-      const alignedTime = (Math.floor(Number(rawBar.time) / subTfSec) * subTfSec) as UTCTimestamp;
-      const arr = candlesRef.current;
-      if (arr.length > 0 && alignedTime < arr[arr.length - 1].time) return;
-
-      let bar: TerminalCandle;
-      let isNewBar = false;
-      if (arr.length > 0 && arr[arr.length - 1].time === alignedTime) {
-        const prevSame = arr[arr.length - 1];
-        bar = {
-          ...rawBar,
-          time: alignedTime,
-          open: prevSame.open,
-          high: Math.max(prevSame.high, rawBar.high, prevSame.open, rawBar.close),
-          low: Math.min(prevSame.low, rawBar.low, prevSame.open, rawBar.close),
-        };
-      } else if (arr.length > 0) {
-        isNewBar = true;
-        const connectedOpen = arr[arr.length - 1].close;
-        bar = {
-          ...rawBar,
-          time: alignedTime,
-          open: connectedOpen,
-          high: Math.max(connectedOpen, rawBar.high, rawBar.close),
-          low: Math.min(connectedOpen, rawBar.low, rawBar.close),
-        };
-      } else {
-        bar = { ...rawBar, time: alignedTime };
-      }
-
-      const bull = bar.close >= bar.open;
-      candleRef.current.update(toPureCandle(bar));
-      if (subLastBullRef.current !== bull) {
-        subLastBullRef.current = bull;
-        candleRef.current.applyOptions({ priceLineColor: bull ? '#059669' : '#DC2626' });
-      }
-      if (arr.length > 0 && arr[arr.length - 1].time === bar.time) {
-        arr[arr.length - 1] = bar;
-      } else {
-        arr.push(bar);
-      }
-      setSubPrice(bar.close);
-      setSubBull(bull);
-      setSubLatestTime(bar.time);
-      if (isNewBar && arr.length >= 14) {
-        const nextStruct = analyzeChartStructure(arr);
-        if (nextStruct) setSubStructure(nextStruct);
-      }
-      subScheduleRafRef.current?.();
-    };
-
-    subSmoothTimer = window.setInterval(() => {
-      if (disposed || !subHistoricalLoadedRef.current || candlesRef.current.length === 0) return;
-      const nowMs = Date.now();
-      const last = candlesRef.current[candlesRef.current.length - 1];
-      const bucketTime = (Math.floor(Math.floor(nowMs / 1000) / subTfSec) * subTfSec) as UTCTimestamp;
-      if (nowMs - lastSubMsgAt < 1800 && bucketTime <= last.time) return;
-
-      const anchor = lastSubRealPrice ?? last.close;
-      const stepScale = Math.max(subMeta.minMove, anchor * 0.000045);
-      const meanPull = (anchor - last.close) * 0.25;
-      const jitter = (Math.random() - 0.5) * 2 * stepScale;
-      const maxBand = Math.max(subMeta.minMove * 6, anchor * 0.00035);
-      const nextClose = Number(
-        Math.max(anchor - maxBand, Math.min(anchor + maxBand, last.close + meanPull + jitter)).toFixed(
-          subMeta.precision
-        )
-      );
-
-      applyBar(
-        {
-          time: bucketTime,
-          open: bucketTime > last.time ? last.close : last.open,
-          high: Math.max(bucketTime > last.time ? last.close : last.high, nextClose),
-          low: Math.min(bucketTime > last.time ? last.close : last.low, nextClose),
-          close: nextClose,
-        },
-        true
-      );
-    }, 1000);
-
-    const connectWs = () => {
-      if (disposed) return;
-      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = subMeta.isCrypto
-        ? `wss://stream.binance.com:9443/ws/${subSymbol.toLowerCase()}@kline_${subTf}`
-        : `${wsProto}//${window.location.host}/ws/market?symbol=${encodeURIComponent(
-            subSymbol
-          )}&interval=${encodeURIComponent(subTf)}`;
-      try {
-        ws = new WebSocket(url);
-        ws.onmessage = (ev) => {
-          if (disposed) return;
-          lastSubMsgAt = Date.now();
-          try {
-            const data = JSON.parse(ev.data as string) as {
-              k?: { t: number; o: string; h: string; l: string; c: string };
-              type?: string;
-              candle?: { time: number; open: number; high: number; low: number; close: number };
-            };
-            if (data.k) {
-              applyBar({
-                time: Math.floor(data.k.t / 1000) as UTCTimestamp,
-                open: parseFloat(data.k.o),
-                high: parseFloat(data.k.h),
-                low: parseFloat(data.k.l),
-                close: parseFloat(data.k.c),
-              });
-            } else if (data.type === 'kline' && data.candle) {
-              applyBar({
-                time: data.candle.time as UTCTimestamp,
-                open: data.candle.open,
-                high: data.candle.high,
-                low: data.candle.low,
-                close: data.candle.close,
-              });
-            }
-          } catch {
-            // ignore
-          }
-        };
-        ws.onclose = () => {
-          if (!disposed) reconnectTimer = window.setTimeout(connectWs, 3000);
-        };
-      } catch {
-        // ignore
-      }
-    };
-
-    fetchCandles(subSymbol, subTf, controller.signal)
-      .then((res) => {
-        const bars = res.candles;
-        if (disposed || bars.length === 0) return;
-        candlesRef.current = [...bars];
-        candleRef.current?.setData(bars.map(toPureCandle));
-        subHistoricalLoadedRef.current = true;
-        const last = bars[bars.length - 1];
-        lastSubRealPrice = last.close;
-        const bull = last.close >= last.open;
-        subLastBullRef.current = bull;
-        setSubPrice(last.close);
-        setSubBull(bull);
-        setSubLatestTime(last.time);
-        candleRef.current?.applyOptions({
-          priceLineColor: bull ? '#059669' : '#DC2626',
-        });
-
-        if (bars.length >= 14) {
-          const struct = analyzeChartStructure(bars);
-          if (struct) setSubStructure(struct);
-        }
-
-        const applySubRange = () => {
-          const chart = chartRef.current;
-          if (!chart || disposed) return;
-          chart.priceScale('right').applyOptions({ autoScale: true });
-          const chartWidth = wrapRef.current?.clientWidth || 320;
-          const visibleBars = Math.max(36, Math.min(bars.length, 102, Math.round(Math.max(180, chartWidth - 60) / 8)));
-          if (bars.length > visibleBars) {
-            chart.timeScale().setVisibleLogicalRange({
-              from: Math.max(0, bars.length - visibleBars),
-              to: bars.length - 1 + 5.5,
-            });
-          } else {
-            chart.timeScale().fitContent();
-          }
-          subScheduleRafRef.current?.();
-        };
-
-        applySubRange();
-        window.requestAnimationFrame(applySubRange);
-        syncSubIndicatorsRef.current(bars);
-        connectWs();
-      })
-      .catch(() => {
-        // ignore abort
-      });
-
-    return () => {
-      disposed = true;
-      controller.abort();
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
-      if (subSmoothTimer !== null) window.clearInterval(subSmoothTimer);
-      ws?.close();
-    };
-  }, [subSymbol, subTf, subMeta.isCrypto, subMeta.precision, subMeta.minMove]);
-
-  const zoomSecondary = (factor: number) => {
-    const ts = chartRef.current?.timeScale();
-    const range = ts?.getVisibleLogicalRange();
-    if (!ts || !range) return;
-    const span = range.to - range.from;
-    const maxSpan = Math.max(180, candlesRef.current.length + 20);
-    const nextSpan = Math.max(16, Math.min(maxSpan, span * factor));
-    ts.setVisibleLogicalRange({ from: range.to - nextSpan, to: range.to });
-  };
-
-  return (
-    <div className="flex flex-col rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] shadow-sm overflow-hidden min-w-0">
-      {/* Dedicated Non-Overlapping Chart 2 Header */}
-      <div className="shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 py-1.5 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="h-2 w-2 rounded-full bg-[#059669] animate-pulse shrink-0" />
-            <select
-              aria-label="Chart 2 symbol"
-              value={subSymbol}
-              onChange={(e) => setSubSymbol(e.target.value as SmcSymbol)}
-              className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] px-2 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate max-w-[140px]"
-            >
-              {SYMBOL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span
-              className="font-mono-tabular text-xs sm:text-[13px] font-bold"
-              style={{ color: subBull ? '#059669' : '#DC2626' }}
-            >
-              ${formatTerminalPrice(subPrice, subMeta.precision)}
-            </span>
-            <HeaderCountdownChip
-              timeframe={subTf}
-              latestBarTime={subLatestTime}
-              currentTfLabel={subTfLabel}
-              isBullTick={subBull}
-            />
-          </div>
-        </div>
-
-        {/* Clean Non-Overlapping 1m–4H Buttons */}
-        <div
-          role="group"
-          aria-label="Chart 2 timeframe selector"
-          className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar"
-        >
-          <div className="flex items-center gap-1">
-            {COMPACT_TIMEFRAMES.map((tf) => {
-              const active = subTf === tf.value;
-              return (
-                <button
-                  key={`c2-tf-${tf.value}`}
-                  type="button"
-                  onClick={() => setSubTf(tf.value)}
-                  aria-pressed={active}
-                  className={`rounded-md px-2 py-0.5 text-[10.5px] font-mono-tabular font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                    active
-                      ? 'bg-[#0F172A] text-[#FFFFFF] shadow-sm'
-                      : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
-                  }`}
-                >
-                  {tf.label}
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-[10px] font-mono-tabular font-semibold text-[#64748B] whitespace-nowrap shrink-0">
-            SMC Auto
-          </span>
-        </div>
-      </div>
-
-      {/* Chart 2 Canvas Container */}
-      <div className="relative h-[245px] sm:h-[300px] lg:h-[350px] min-h-0 overflow-hidden bg-[#FFFFFF]">
-        <div ref={wrapRef} className="smc-chart-host absolute inset-0 touch-none" />
-
-        <ChartCanvasOverlay
-          redrawRef={subOverlayRedrawRef}
-          chart={chartRef.current}
-          candleSeries={candleRef.current}
-          candles={candlesRef.current}
-          symbol={subSymbol}
-          timeframe={subTf}
-          structure={subStructure}
-          bbUpper={bbUpPtsRef.current}
-          bbLower={bbLowPtsRef.current}
-          showBollinger={showBollinger}
-          showVolumeProfile={showVolumeProfile}
-          showSupportResistance={showSupportResistance}
-          showPatterns={showPatterns}
-          showSwingLabels={showSwingLabels}
-          showBosChoch={showBosChoch}
-          precision={subMeta.precision}
-          themeMode="light"
-          livePrice={subPrice}
-          isBullTick={subBull}
-        />
-
-        <PriceAxisCountdownTag
-          syncRef={subCountdownSyncRef}
-          chart={chartRef.current}
-          candleSeries={candleRef.current}
-          livePrice={subPrice}
-          isBullTick={subBull}
-          timeframe={subTf}
-          latestBarTime={subLatestTime}
-        />
-
-        <div className="absolute bottom-7 left-2 z-[25] flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/95 p-0.5 shadow-sm">
-          <button
-            type="button"
-            onClick={() => zoomSecondary(0.72)}
-            aria-label="Chart 2 Zoom In"
-            className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomSecondary(1.38)}
-            aria-label="Chart 2 Zoom Out"
-            className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
-          >
-            -
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-              chartRef.current?.timeScale().fitContent();
-              subScheduleRafRef.current?.();
-            }}
-            aria-label="Chart 2 Reset"
-            className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#B45309] hover:bg-[#E2E8F0] cursor-pointer"
-          >
-            All
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-});

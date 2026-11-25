@@ -18,10 +18,12 @@ interface ForexMarketViewProps {
   demoPositions?: DemoPosition[];
   demoMetrics?: DemoAccountMetrics;
   demoDefaultLot?: number;
+  marginCallActive?: boolean;
   onExecuteDemoOrder?: (symbol: SmcSymbol, side: 'BUY' | 'SELL', lots: number) => string | null;
   onCloseDemoPosition?: (positionId: string) => void;
   onUpdateDemoPositionTpSl?: (positionId: string, tp: number | undefined, sl: number | undefined) => void;
   onChangeDemoDefaultLot?: (lots: number) => void;
+  onResetDemoAccount?: () => void;
   onOpenDemoDrawer?: () => void;
   onLivePriceTick?: (symbol: SmcSymbol, price: number) => void;
 }
@@ -34,10 +36,12 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   demoPositions,
   demoMetrics,
   demoDefaultLot,
+  marginCallActive,
   onExecuteDemoOrder,
   onCloseDemoPosition,
   onUpdateDemoPositionTpSl,
   onChangeDemoDefaultLot,
+  onResetDemoAccount,
   onOpenDemoDrawer,
   onLivePriceTick,
 }) => {
@@ -60,7 +64,7 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
   );
 
   return (
-    <div className="mx-auto max-w-[1440px] w-full overflow-x-hidden">
+    <div className="mx-auto max-w-[1440px] w-full h-full min-h-0 flex flex-col overflow-hidden">
       <ProSmcTerminal
         externalTvSymbol={tvWidgetSymbol}
         onSelectTvSymbol={handleChooseSymbol}
@@ -69,10 +73,12 @@ export const ForexMarketView: React.FC<ForexMarketViewProps> = ({
         demoPositions={demoPositions}
         demoMetrics={demoMetrics}
         demoDefaultLot={demoDefaultLot}
+        marginCallActive={marginCallActive}
         onExecuteDemoOrder={onExecuteDemoOrder}
         onCloseDemoPosition={onCloseDemoPosition}
         onUpdateDemoPositionTpSl={onUpdateDemoPositionTpSl}
         onChangeDemoDefaultLot={onChangeDemoDefaultLot}
+        onResetDemoAccount={onResetDemoAccount}
         onOpenDemoDrawer={onOpenDemoDrawer}
         onLivePriceTick={onLivePriceTick}
       />

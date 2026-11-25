@@ -4,6 +4,8 @@ import {
   Clock,
   ExternalLink,
   Flame,
+  Maximize2,
+  Minimize2,
   Minus,
   RefreshCw,
   Search,
@@ -80,6 +82,9 @@ const TOPICS: { id: TickerTopic; label: string }[] = [
 
 const CURRENCY_BADGES: Record<string, string> = {
   USD: '🇺🇸 USD',
+  XAU: '🥇 XAU',
+  BTC: '₿ BTC',
+  CRYPTO: '₿ CRYPTO',
   EUR: '🇪🇺 EUR',
   GBP: '🇬🇧 GBP',
   JPY: '🇯🇵 JPY',
@@ -429,6 +434,21 @@ export const NewsTerminalView: React.FC = () => {
   const [topic, setTopic] = useState<TickerTopic>('ALL');
   const [query, setQuery] = useState('');
   const [calendarFilter, setCalendarFilter] = useState<CalendarFilter>('UPCOMING_RECENT');
+  const [isCalendarFullScreen, setIsCalendarFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.toggle('chart-fullscreen-active', isCalendarFullScreen);
+    if (!isCalendarFullScreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsCalendarFullScreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.classList.remove('chart-fullscreen-active');
+    };
+  }, [isCalendarFullScreen]);
 
   const [miniMarkets, setMiniMarkets] = useState<Record<MiniTickerAsset['id'], MiniTickerAsset>>({
     XAUUSD: {
@@ -882,16 +902,22 @@ export const NewsTerminalView: React.FC = () => {
       </div>
 
       {/* Live Economic Calendar + Auto-Sync Status Header */}
-      <section className="vp-glass-card rounded-2xl p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-0.5 font-bold tracking-wide text-[var(--vp-bull)]">
+      <section
+        className={
+          isCalendarFullScreen
+            ? 'vp-fullscreen-root bg-[#FFFFFF] p-3 sm:p-5 flex flex-col gap-3'
+            : 'vp-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 bg-[#FFFFFF]'
+        }
+      >
+        <div className="shrink-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2.5 py-0.5 font-bold tracking-wide text-[#089981]">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
                 <span>LIVE AUTO-SYNC</span>
               </span>
               <span className="text-[var(--vp-muted)]">
-                Last Updated:{' '}
+                Updated:{' '}
                 <strong className="text-[var(--vp-text)]">{formatIstTimestamp(lastUpdatedMs)}</strong>
               </span>
               <span className="text-[var(--vp-muted)] hidden sm:inline">
@@ -899,11 +925,30 @@ export const NewsTerminalView: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <CalendarClock className="h-5 w-5 text-[var(--vp-accent-text)] shrink-0" />
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-[var(--vp-text)]">
-                Live Economic Calendar &amp; Macro Release Tracker
-              </h1>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <CalendarClock className="h-4 w-4 sm:h-5 sm:w-5 text-[var(--vp-accent-text)] shrink-0" />
+                <h1 className="text-sm sm:text-lg font-bold tracking-tight text-[var(--vp-text)] truncate">
+                  Live Economic Calendar
+                </h1>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCalendarFullScreen((prev) => !prev)}
+                aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
+                title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-[11px] font-bold text-[#131722] cursor-pointer shrink-0 lg:hidden"
+              >
+                {isCalendarFullScreen ? (
+                  <>
+                    <Minimize2 className="h-3.5 w-3.5" />
+                    <span>Exit</span>
+                  </>
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
           </div>
 
@@ -922,203 +967,225 @@ export const NewsTerminalView: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setCalendarFilter(tab.id)}
-                  className={`vp-pill-btn min-h-[34px] px-3.5 text-xs font-semibold cursor-pointer ${
-                    active ? 'shadow-[0_0_14px_rgba(245,158,11,0.3)]' : 'hover:text-[var(--vp-text)]'
+                  className={`vp-pill-btn min-h-[32px] px-3 text-[11px] sm:text-xs font-semibold cursor-pointer ${
+                    active ? 'shadow-[0_0_14px_rgba(245,158,11,0.25)]' : 'hover:text-[var(--vp-text)]'
                   }`}
                   style={{
-                    backgroundColor: active ? '#F59E0B' : 'var(--vp-elevated)',
-                    color: active ? '#0B0E14' : 'var(--vp-muted)',
+                    backgroundColor: active ? '#F59E0B' : '#F3F4F6',
+                    color: active ? '#131722' : '#475569',
                   }}
                 >
                   {tab.label}
                 </button>
               );
             })}
+
+            <button
+              type="button"
+              onClick={() => setIsCalendarFullScreen((prev) => !prev)}
+              aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
+              title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
+              className="hidden lg:inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-xs font-bold text-[#131722] cursor-pointer shrink-0"
+            >
+              {isCalendarFullScreen ? (
+                <>
+                  <Minimize2 className="h-3.5 w-3.5" />
+                  <span>Exit</span>
+                </>
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
           </div>
         </div>
 
         {/* Real-Time 1-Second Countdown Banner to Next High-Impact Event */}
         {nextHighImpactEvent ? (
-          <div className="rounded-xl border border-[#F0B90B]/35 bg-[var(--vp-elevated)] px-3.5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-colors">
+          <div className="shrink-0 rounded-xl border border-[#F0B90B]/40 bg-[#FFFBEB]/60 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
             <div className="space-y-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
-                <span className="inline-flex items-center gap-1 rounded bg-[#F6465D]/15 px-1.5 py-0.5 font-bold text-[var(--vp-bear)]">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono-tabular">
+                <span className="inline-flex items-center gap-1 rounded bg-[#F23645]/12 px-1.5 py-0.5 font-bold text-[#F23645]">
                   <Flame className="h-3 w-3" />
                   NEXT HIGH-IMPACT
                 </span>
-                <span className="font-bold text-[var(--vp-text)]">
+                <span className="font-bold text-[#131722]">
                   {CURRENCY_BADGES[nextHighImpactEvent.currency] ?? nextHighImpactEvent.currency}
                 </span>
-                <span className="text-[var(--vp-muted)]">
-                  {formatEventIstDateTime(nextHighImpactEvent.timestampMs)} IST
+                <span className="text-[#475569]">
+                  {formatEventIstDateTime(nextHighImpactEvent.timestampMs)}
                 </span>
               </div>
-              <p className="text-sm font-bold text-[var(--vp-text)] truncate">
+              <p className="text-xs sm:text-sm font-bold text-[#131722] truncate">
                 {nextHighImpactEvent.title}
               </p>
-              <div className="flex items-center gap-3 text-xs font-mono-tabular text-[var(--vp-muted)]">
+              <div className="flex items-center gap-3 text-[11px] font-mono-tabular text-[#64748B]">
                 <span>
                   Forecast:{' '}
-                  <strong className="text-[var(--vp-text)]">
+                  <strong className="text-[#131722]">
                     {nextHighImpactEvent.forecast || '—'}
                   </strong>
                 </span>
                 <span>
                   Previous:{' '}
-                  <strong className="text-[var(--vp-text)]">
+                  <strong className="text-[#131722]">
                     {nextHighImpactEvent.previous || '—'}
                   </strong>
                 </span>
               </div>
             </div>
 
-            <div className="shrink-0 flex items-center gap-2.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-3.5 py-2 self-start sm:self-center transition-colors">
-              <Clock className="h-4 w-4 text-[var(--vp-accent-text)]" />
+            <div className="shrink-0 flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-3 py-1.5 self-start sm:self-center">
+              <Clock className="h-4 w-4 text-[#B45309]" />
               <div>
-                <div className="text-[10px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
+                <div className="text-[9px] font-mono-tabular uppercase tracking-wider text-[#64748B]">
                   Countdown
                 </div>
-                <div className="text-base sm:text-lg font-extrabold font-mono-tabular text-[var(--vp-accent-text)] tracking-tight">
+                <div className="text-sm sm:text-base font-extrabold font-mono-tabular text-[#B45309] tracking-tight">
                   {formatCountdown(nextHighImpactEvent.timestampMs - nowMs)}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3.5 py-2.5 text-xs text-[var(--vp-muted)] flex items-center justify-between">
+          <div className="shrink-0 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-xs text-[#64748B] flex items-center justify-between">
             <span>All scheduled high-impact releases for this week have completed.</span>
-            <span className="font-mono-tabular text-[var(--vp-bull)]">Auto-monitoring next feed</span>
+            <span className="font-mono-tabular text-[#089981]">Auto-monitoring next feed</span>
           </div>
         )}
 
-        {/* Economic Calendar Events Table */}
+        {/* Mobile-Responsive Internally Scrollable Vertical Event Cards */}
         {calendarError && calendarEvents.length === 0 ? (
-          <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-4 text-xs text-[var(--vp-muted)] flex items-center justify-between gap-3">
+          <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-xs text-[#64748B] flex items-center justify-between gap-3">
             <span>{calendarError}</span>
             <button
               type="button"
               onClick={() => loadAllFeeds(true, false)}
-              className="rounded-lg bg-[#F0B90B] px-3 py-1.5 text-xs font-bold text-[#0B0E11] cursor-pointer"
+              className="rounded-lg bg-[#F59E0B] px-3 py-1.5 text-xs font-bold text-[#131722] cursor-pointer"
             >
               Retry
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] transition-colors">
-            <table className="w-full text-left border-collapse min-w-[620px]">
-              <thead>
-                <tr className="border-b border-[var(--vp-border)] text-[11px] font-mono-tabular uppercase tracking-wider text-[var(--vp-muted)]">
-                  <th className="py-2.5 px-3">Time (IST)</th>
-                  <th className="py-2.5 px-2">CCY</th>
-                  <th className="py-2.5 px-2">Impact</th>
-                  <th className="py-2.5 px-3">Economic Event</th>
-                  <th className="py-2.5 px-3 text-right">Actual</th>
-                  <th className="py-2.5 px-3 text-right">Forecast</th>
-                  <th className="py-2.5 px-3 text-right">Previous</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--vp-border)] text-xs">
-                {visibleCalendarEvents.map((ev) => {
-                  const status = evaluateActualStatus(ev, nowMs);
-                  const diffMs = ev.timestampMs - nowMs;
-                  const isSoon = diffMs > 0 && diffMs <= 60 * 60 * 1000;
-                  const justReleased = ev.timestampMs <= nowMs && nowMs - ev.timestampMs < 15 * 60 * 1000;
-                  const assetImpacts = getCalendarAssetImpacts(ev, status);
+          <div
+            className={
+              isCalendarFullScreen
+                ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 space-y-2'
+                : 'max-h-[380px] overflow-y-auto overscroll-contain rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 space-y-2'
+            }
+          >
+            {visibleCalendarEvents.map((ev) => {
+              const status = evaluateActualStatus(ev, nowMs);
+              const diffMs = ev.timestampMs - nowMs;
+              const isSoon = diffMs > 0 && diffMs <= 60 * 60 * 1000;
+              const justReleased = ev.timestampMs <= nowMs && nowMs - ev.timestampMs < 15 * 60 * 1000;
+              const assetImpacts = getCalendarAssetImpacts(ev, status);
 
-                  return (
-                    <tr
-                      key={ev.id}
-                      className={`transition-colors ${
-                        justReleased ? 'bg-[#F0B90B]/[0.06]' : 'hover:bg-[var(--vp-elevated)]/60'
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 font-mono-tabular whitespace-nowrap text-[var(--vp-muted)] align-middle">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span>{formatEventIstDateTime(ev.timestampMs)}</span>
-                          {isSoon && (
-                            <span className="text-[10px] font-bold text-[var(--vp-accent-text)]">
-                              ({formatCountdown(diffMs)})
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-2 font-mono-tabular font-bold text-[var(--vp-text)] whitespace-nowrap align-top">
-                        {CURRENCY_BADGES[ev.currency] ?? ev.currency}
-                      </td>
-                      <td className="py-2.5 px-2 whitespace-nowrap align-top">
-                        <span
-                          className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold font-mono-tabular"
-                          style={{
-                            backgroundColor:
-                              ev.impact === 'High'
-                                ? 'rgba(246, 70, 93, 0.16)'
-                                : ev.impact === 'Medium'
-                                  ? 'rgba(240, 185, 11, 0.16)'
-                                  : 'rgba(132, 142, 156, 0.14)',
-                            color:
-                              ev.impact === 'High'
-                                ? 'var(--vp-bear)'
-                                : ev.impact === 'Medium'
-                                  ? 'var(--vp-accent-text)'
-                                  : 'var(--vp-muted)',
-                          }}
-                        >
-                          {ev.impact}
+              return (
+                <article
+                  key={ev.id}
+                  className={`w-full rounded-xl border p-2.5 space-y-2 transition-colors ${
+                    justReleased
+                      ? 'border-[#F59E0B]/50 bg-[#FFFBEB]/60'
+                      : 'border-[#E5E7EB] bg-[#FFFFFF] hover:bg-[#F8FAFC]'
+                  }`}
+                >
+                  {/* Row 1: IST Time + Countdown + Currency + Impact */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10.5px] font-mono-tabular">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[#475569] min-w-0">
+                      <span>{formatEventIstDateTime(ev.timestampMs)}</span>
+                      {isSoon && (
+                        <span className="font-bold text-[#B45309]">
+                          ({formatCountdown(diffMs)})
                         </span>
-                      </td>
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="font-semibold text-[var(--vp-text)]">{ev.title}</div>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {assetImpacts.map((badge) => (
-                            <span
-                              key={badge.key}
-                              className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold font-mono-tabular whitespace-nowrap"
-                              style={getBadgeStyle(badge.tone)}
-                            >
-                              {badge.label}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono-tabular whitespace-nowrap align-top">
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="font-bold text-[#131722]">
+                        {CURRENCY_BADGES[ev.currency] ?? ev.currency}
+                      </span>
+                      <span
+                        className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold"
+                        style={{
+                          backgroundColor:
+                            ev.impact === 'High'
+                              ? 'rgba(242, 54, 69, 0.14)'
+                              : ev.impact === 'Medium'
+                                ? 'rgba(245, 158, 11, 0.16)'
+                                : 'rgba(100, 116, 139, 0.14)',
+                          color:
+                            ev.impact === 'High'
+                              ? '#F23645'
+                              : ev.impact === 'Medium'
+                                ? '#B45309'
+                                : '#64748B',
+                        }}
+                      >
+                        {ev.impact}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Event Title */}
+                  <h3 className="text-xs sm:text-[13px] font-bold text-[#131722] leading-snug break-words">
+                    {ev.title}
+                  </h3>
+
+                  {/* Row 3: Actual | Forecast | Previous */}
+                  <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5 py-1.5 text-[11px] font-mono-tabular">
+                    <div className="min-w-0">
+                      <div className="text-[9px] uppercase text-[#64748B]">Actual</div>
+                      <div className="mt-0.5 truncate">
                         {status === 'beat' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#00C087]/40 bg-[#00C087]/15 px-2 py-0.5 font-extrabold text-[var(--vp-bull)]">
-                            ▲ {ev.actual}
-                          </span>
+                          <span className="font-extrabold text-[#089981]">▲ {ev.actual}</span>
                         ) : status === 'miss' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F6465D]/40 bg-[#F6465D]/15 px-2 py-0.5 font-extrabold text-[var(--vp-bear)]">
-                            ▼ {ev.actual}
-                          </span>
+                          <span className="font-extrabold text-[#F23645]">▼ {ev.actual}</span>
                         ) : status === 'inline' ? (
-                          <span className="inline-flex items-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2 py-0.5 font-bold text-[var(--vp-text)]">
-                            {ev.actual}
-                          </span>
+                          <span className="font-bold text-[#131722]">{ev.actual}</span>
                         ) : status === 'released-pending' ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-[#F0B90B]/35 bg-[#F0B90B]/10 px-2 py-0.5 text-[11px] font-semibold text-[var(--vp-accent-text)]">
-                            <span className="animate-pulse">●</span> Fetching Actual...
-                          </span>
+                          <span className="text-[10px] font-semibold text-[#B45309]">Syncing...</span>
                         ) : (
-                          <span className="text-[var(--vp-muted)]">—</span>
+                          <span className="text-[#94A3B8]">—</span>
                         )}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[var(--vp-text)] opacity-85 align-top">
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 text-center">
+                      <div className="text-[9px] uppercase text-[#64748B]">Forecast</div>
+                      <div className="mt-0.5 font-semibold text-[#131722] truncate">
                         {ev.forecast || '—'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono-tabular text-[var(--vp-muted)] align-top">
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 text-right">
+                      <div className="text-[9px] uppercase text-[#64748B]">Previous</div>
+                      <div className="mt-0.5 text-[#475569] truncate">
                         {ev.previous || '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {visibleCalendarEvents.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="py-6 text-center text-xs text-[var(--vp-muted)]">
-                      Loading live economic events...
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 4: Asset Impact Pills */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {assetImpacts.map((badge) => (
+                      <span
+                        key={badge.key}
+                        className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold font-mono-tabular whitespace-nowrap"
+                        style={getBadgeStyle(badge.tone)}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+
+            {visibleCalendarEvents.length === 0 && (
+              <div className="py-6 text-center text-xs text-[#64748B]">
+                Loading live economic events...
+              </div>
+            )}
           </div>
         )}
       </section>
