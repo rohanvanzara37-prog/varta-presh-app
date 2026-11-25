@@ -10,6 +10,14 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import {
+  buildFallbackCalendarEvents,
+  buildFallbackNewsWire,
+  loadCachedCalendarEvents,
+  loadCachedNewsWire,
+  saveCachedCalendarEvents,
+  saveCachedNewsWire,
+} from '../utils/newsCalendarFallback';
 import type { TickerTopic } from './MarketNewsTicker';
 
 interface NewsWireItem {
@@ -407,9 +415,11 @@ function getNewsAssetImpacts(item: NewsWireItem): AssetImpactBadge[] {
 }
 
 export const NewsTerminalView: React.FC = () => {
-  const [data, setData] = useState<NewsWireResponse | null>(null);
-  const [calendarEvents, setCalendarEvents] = useState<EconomicCalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<NewsWireResponse | null>(() => loadCachedNewsWire());
+  const [calendarEvents, setCalendarEvents] = useState<EconomicCalendarEvent[]>(() =>
+    loadCachedCalendarEvents()
+  );
+  const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -468,18 +478,24 @@ export const NewsTerminalView: React.FC = () => {
 
   const loadCalendarOnly = useCallback(async (force = false) => {
     try {
-      const res = await fetch(force ? '/api/economic-calendar?refresh=1' : '/api/economic-calendar');
-      const json = (await res.json()) as EconomicCalendarResponse;
-      if (res.ok && !json.error && Array.isArray(json.events)) {
+      const res = await fetch(
+        force ? '/api/economic-calendar?refresh=1' : '/api/economic-calendar',
+        { cache: 'no-store' }
+      );
+      const text = await res.text();
+      const json = JSON.parse(text) as EconomicCalendarResponse;
+      if (res.ok && !json.error && Array.isArray(json.events) && json.events.length > 0) {
         setCalendarEvents(json.events);
+        saveCachedCalendarEvents(json.events);
         setCalendarError(null);
         setLastUpdatedMs(Date.now());
-      } else if (!res.ok) {
-        setCalendarError(json.error ?? 'Unable to sync live economic calendar.');
+        return;
       }
     } catch {
-      setCalendarError('Network error syncing economic calendar.');
+      // Fall through cleanly to cached/built-in schedule
     }
+    setCalendarEvents((prev) => (prev.length > 0 ? prev : buildFallbackCalendarEvents()));
+    setCalendarError(null);
   }, []);
 
   const loadAllFeeds = useCallback(async (force = false, silent = false) => {
@@ -493,49 +509,74 @@ export const NewsTerminalView: React.FC = () => {
       const newsUrl = force ? '/api/news-ticker?refresh=1' : '/api/news-ticker';
       const calUrl = force ? '/api/economic-calendar?refresh=1' : '/api/economic-calendar';
 
-      const [newsSettled, calSettled] = await Promise.allSettled([fetch(newsUrl), fetch(calUrl)]);
+      const [newsSettled, calSettled] = await Promise.allSettled([
+        fetch(newsUrl, { cache: 'no-store' }),
+        fetch(calUrl, { cache: 'no-store' }),
+      ]);
 
-      let anySucceeded = false;
-
+      let newsLoaded = false;
       if (newsSettled.status === 'fulfilled') {
         try {
-          const json = (await newsSettled.value.json()) as NewsWireResponse;
-          if (newsSettled.value.ok && !json.error) {
+          const newsText = await newsSettled.value.text();
+          const json = JSON.parse(newsText) as NewsWireResponse;
+          if (
+            newsSettled.value.ok &&
+            !json.error &&
+            Array.isArray(json.items) &&
+            json.items.length > 0
+          ) {
             setData(json);
+            saveCachedNewsWire(json);
             setErrorMsg(null);
-            anySucceeded = true;
-          } else if (!silent) {
-            setErrorMsg(json.error ?? 'Unable to load live market headlines.');
+            newsLoaded = true;
           }
         } catch {
-          if (!silent) setErrorMsg('Invalid news feed response.');
+          // Use fallback below
         }
-      } else if (!silent) {
-        setErrorMsg('Network error loading live market wire.');
+      }
+      if (!newsLoaded) {
+        setData((prev) => {
+          if (prev && prev.items.length > 0) return prev;
+          const fb = buildFallbackNewsWire();
+          saveCachedNewsWire(fb);
+          return fb;
+        });
+        setErrorMsg(null);
       }
 
+      let calLoaded = false;
       if (calSettled.status === 'fulfilled') {
         try {
-          const calJson = (await calSettled.value.json()) as EconomicCalendarResponse;
-          if (calSettled.value.ok && !calJson.error && Array.isArray(calJson.events)) {
+          const calText = await calSettled.value.text();
+          const calJson = JSON.parse(calText) as EconomicCalendarResponse;
+          if (
+            calSettled.value.ok &&
+            !calJson.error &&
+            Array.isArray(calJson.events) &&
+            calJson.events.length > 0
+          ) {
             setCalendarEvents(calJson.events);
+            saveCachedCalendarEvents(calJson.events);
             setCalendarError(null);
-            anySucceeded = true;
-          } else if (!silent) {
-            setCalendarError(calJson.error ?? 'Unable to load economic calendar.');
+            calLoaded = true;
           }
         } catch {
-          if (!silent) setCalendarError('Invalid calendar feed response.');
+          // Use fallback below
         }
-      } else if (!silent) {
-        setCalendarError('Network error loading economic calendar.');
+      }
+      if (!calLoaded) {
+        setCalendarEvents((prev) => {
+          if (prev.length > 0) return prev;
+          const fb = buildFallbackCalendarEvents();
+          saveCachedCalendarEvents(fb);
+          return fb;
+        });
+        setCalendarError(null);
       }
 
-      if (anySucceeded) {
-        const syncedAt = Date.now();
-        lastPollAtRef.current = syncedAt;
-        setLastUpdatedMs(syncedAt);
-      }
+      const syncedAt = Date.now();
+      lastPollAtRef.current = syncedAt;
+      setLastUpdatedMs(syncedAt);
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -1089,7 +1130,7 @@ export const NewsTerminalView: React.FC = () => {
             <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--vp-muted)]">
               <span className="font-bold text-[var(--vp-accent-text)]">LIVE MACRO WIRE</span>
               <span aria-hidden="true">·</span>
-              <span>{data?.globalSentiment.label ?? 'Scanning Wire'}</span>
+              <span>{data?.globalSentiment.label ?? 'Live Macro'}</span>
             </div>
             <h2 className="text-lg sm:text-xl font-bold tracking-tight text-[var(--vp-text)]">
               {data?.globalSentiment.summary ?? 'Global Gold, Macro & Crypto Headlines'}
@@ -1164,7 +1205,7 @@ export const NewsTerminalView: React.FC = () => {
           <button
             type="button"
             onClick={() => loadAllFeeds(true, false)}
-            className="vp-pill-btn min-h-[42px] bg-[#F59E0B] px-5 text-xs font-bold text-[#0B0E14] cursor-pointer"
+            className="vp-pill-btn min-h-[42px] bg-[#F59E0B] px-5 text-xs font-bold text-[#0F172A] cursor-pointer"
           >
             Retry News Wire
           </button>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
   collection,
@@ -14,11 +14,13 @@ import {
 } from 'firebase/firestore';
 import { AcademyView } from './components/AcademyView';
 import { BottomNavBar } from './components/BottomNavBar';
+import { DemoAccountDrawer } from './components/DemoAccountDrawer';
 import { ForexMarketView } from './components/ForexMarketView';
 import { HeaderNav } from './components/HeaderNav';
 import { MarketDetails } from './components/MarketDetails';
 import { NewsTerminalView } from './components/NewsTerminalView';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import type { SmcSymbol } from './components/ProSmcTerminal';
 import {
   DEFAULT_TYPOGRAPHY,
   LIGHT_TERMINAL_PALETTE,
@@ -41,6 +43,18 @@ import type {
   TypographySettings,
 } from './types/news';
 import { getContrastText } from './utils/colorContrast';
+import {
+  DEMO_SYMBOL_SPECS,
+  calcPositionPnl,
+  calcRequiredMargin,
+  computeDemoAccountMetrics,
+  createInitialDemoAccount,
+  loadDemoAccount,
+  saveDemoAccount,
+  type DemoAccountState,
+  type DemoLeverage,
+  type DemoPosition,
+} from './utils/demoAccount';
 import { fetchAllLiveMarkets } from './utils/marketFeeds';
 import {
   getPushPermission,
@@ -185,6 +199,11 @@ export default function App() {
     loadJson<boolean>(STORAGE_KEYS.pushEnabled, true)
   );
   const [alertBanner, setAlertBanner] = useState<{ title: string; body: string } | null>(null);
+
+  // $1,000 Exness-Style Paper Demo Account State
+  const [demoAccount, setDemoAccount] = useState<DemoAccountState>(() => loadDemoAccount());
+  const [demoDrawerOpen, setDemoDrawerOpen] = useState(false);
+  const [chartTickPrices, setChartTickPrices] = useState<Partial<Record<SmcSymbol, number>>>({});
 
   const triggeredIdsRef = useRef<Set<string>>(new Set());
 
@@ -560,25 +579,270 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Persist Demo Account & compute merged live mark prices
+  useEffect(() => {
+    saveDemoAccount(demoAccount);
+  }, [demoAccount]);
+
+  const handleLivePriceTick = useCallback((sym: SmcSymbol, price: number) => {
+    if (!Number.isFinite(price) || price <= 0) return;
+    setChartTickPrices((prev) => {
+      if (prev[sym] === price) return prev;
+      return { ...prev, [sym]: price };
+    });
+  }, []);
+
+  const liveSymbolPrices = useMemo<Partial<Record<SmcSymbol, number>>>(() => {
+    const merged: Partial<Record<SmcSymbol, number>> = {
+      XAUUSD: DEMO_SYMBOL_SPECS.XAUUSD.defaultPrice,
+      XAGUSD: DEMO_SYMBOL_SPECS.XAGUSD.defaultPrice,
+      BTCUSDT: DEMO_SYMBOL_SPECS.BTCUSDT.defaultPrice,
+      ETHUSDT: DEMO_SYMBOL_SPECS.ETHUSDT.defaultPrice,
+      SOLUSDT: DEMO_SYMBOL_SPECS.SOLUSDT.defaultPrice,
+      BNBUSDT: DEMO_SYMBOL_SPECS.BNBUSDT.defaultPrice,
+      XRPUSDT: DEMO_SYMBOL_SPECS.XRPUSDT.defaultPrice,
+      US500: DEMO_SYMBOL_SPECS.US500.defaultPrice,
+      USOIL: DEMO_SYMBOL_SPECS.USOIL.defaultPrice,
+    };
+    for (const asset of marketAssets) {
+      if (asset.tvSymbol.includes('XAU')) merged.XAUUSD = asset.livePrice;
+      else if (asset.tvSymbol.includes('XAG')) merged.XAGUSD = asset.livePrice;
+      else if (asset.tvSymbol.includes('BTC')) merged.BTCUSDT = asset.livePrice;
+      else if (asset.tvSymbol.includes('ETH')) merged.ETHUSDT = asset.livePrice;
+      else if (asset.tvSymbol.includes('SOL')) merged.SOLUSDT = asset.livePrice;
+      else if (asset.tvSymbol.includes('BNB')) merged.BNBUSDT = asset.livePrice;
+      else if (asset.tvSymbol.includes('XRP')) merged.XRPUSDT = asset.livePrice;
+      else if (asset.tvSymbol.includes('SPX') || asset.tvSymbol.includes('US500')) merged.US500 = asset.livePrice;
+      else if (asset.tvSymbol.includes('USOIL')) merged.USOIL = asset.livePrice;
+    }
+    return { ...merged, ...chartTickPrices };
+  }, [marketAssets, chartTickPrices]);
+
+  const demoMetrics = useMemo(
+    () => computeDemoAccountMetrics(demoAccount, liveSymbolPrices),
+    [demoAccount, liveSymbolPrices]
+  );
+
+  const activeDemoSymbol = useMemo<SmcSymbol>(() => {
+    if (selectedMarketSymbol.includes('BTC')) return 'BTCUSDT';
+    if (selectedMarketSymbol.includes('ETH')) return 'ETHUSDT';
+    if (selectedMarketSymbol.includes('SOL')) return 'SOLUSDT';
+    if (selectedMarketSymbol.includes('BNB')) return 'BNBUSDT';
+    if (selectedMarketSymbol.includes('XRP')) return 'XRPUSDT';
+    if (selectedMarketSymbol.includes('XAG')) return 'XAGUSD';
+    if (selectedMarketSymbol.includes('SPX') || selectedMarketSymbol.includes('US500')) return 'US500';
+    if (selectedMarketSymbol.includes('USOIL')) return 'USOIL';
+    return 'XAUUSD';
+  }, [selectedMarketSymbol]);
+
+  const handleExecuteDemoOrder = useCallback(
+    (sym: SmcSymbol, side: 'BUY' | 'SELL', lots: number): string | null => {
+      const cleanLots = Math.max(0.01, Math.min(10, Number(lots.toFixed(2))));
+      const spec = DEMO_SYMBOL_SPECS[sym] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+      const entryPrice = liveSymbolPrices[sym] ?? spec.defaultPrice;
+      const reqMargin = calcRequiredMargin(sym, cleanLots, entryPrice, demoAccount.leverage);
+      if (reqMargin > demoMetrics.freeMargin) {
+        return `Insufficient free margin (need $${reqMargin.toFixed(2)})`;
+      }
+      const newPos: DemoPosition = {
+        id: `demo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        symbol: sym,
+        side,
+        lots: cleanLots,
+        entryPrice,
+        openedAt: Date.now(),
+      };
+      setDemoAccount((prev) => ({
+        ...prev,
+        defaultLot: cleanLots,
+        positions: [newPos, ...prev.positions].slice(0, 30),
+      }));
+      return null;
+    },
+    [demoAccount.leverage, demoMetrics.freeMargin, liveSymbolPrices]
+  );
+
+  const handleCloseDemoPosition = useCallback(
+    (positionId: string) => {
+      setDemoAccount((prev) => {
+        const target = prev.positions.find((p) => p.id === positionId);
+        if (!target) return prev;
+        const spec = DEMO_SYMBOL_SPECS[target.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+        const closePrice = liveSymbolPrices[target.symbol] ?? target.entryPrice ?? spec.defaultPrice;
+        const pnl = calcPositionPnl(target, closePrice);
+        return {
+          ...prev,
+          balance: Math.max(0, Number((prev.balance + pnl).toFixed(2))),
+          positions: prev.positions.filter((p) => p.id !== positionId),
+          history: [
+            {
+              id: target.id,
+              symbol: target.symbol,
+              side: target.side,
+              lots: target.lots,
+              entryPrice: target.entryPrice,
+              closePrice,
+              pnl,
+              closedAt: Date.now(),
+            },
+            ...prev.history,
+          ].slice(0, 20),
+        };
+      });
+    },
+    [liveSymbolPrices]
+  );
+
+  const handleCloseAllDemoPositions = useCallback(() => {
+    setDemoAccount((prev) => {
+      if (prev.positions.length === 0) return prev;
+      let totalPnl = 0;
+      const now = Date.now();
+      const closedRows = prev.positions.map((pos) => {
+        const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+        const closePrice = liveSymbolPrices[pos.symbol] ?? pos.entryPrice ?? spec.defaultPrice;
+        const pnl = calcPositionPnl(pos, closePrice);
+        totalPnl += pnl;
+        return {
+          id: pos.id,
+          symbol: pos.symbol,
+          side: pos.side,
+          lots: pos.lots,
+          entryPrice: pos.entryPrice,
+          closePrice,
+          pnl,
+          closedAt: now,
+        };
+      });
+      return {
+        ...prev,
+        balance: Math.max(0, Number((prev.balance + totalPnl).toFixed(2))),
+        positions: [],
+        history: [...closedRows, ...prev.history].slice(0, 20),
+      };
+    });
+  }, [liveSymbolPrices]);
+
+  const handleChangeDemoLeverage = useCallback((leverage: DemoLeverage) => {
+    setDemoAccount((prev) => ({ ...prev, leverage }));
+  }, []);
+
+  const handleChangeDemoDefaultLot = useCallback((defaultLot: number) => {
+    const clean = Math.max(0.01, Math.min(10, Number(defaultLot.toFixed(2))));
+    setDemoAccount((prev) => ({ ...prev, defaultLot: clean }));
+  }, []);
+
+  const handleResetDemoAccount = useCallback(() => {
+    setDemoAccount(createInitialDemoAccount());
+  }, []);
+
+  const handleUpdateDemoPositionTpSl = useCallback(
+    (positionId: string, tp: number | undefined, sl: number | undefined) => {
+      setDemoAccount((prev) => ({
+        ...prev,
+        positions: prev.positions.map((pos) => {
+          if (pos.id !== positionId) return pos;
+          const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+          const cleanTp =
+            typeof tp === 'number' && Number.isFinite(tp) && tp > 0
+              ? Number(tp.toFixed(spec.precision))
+              : undefined;
+          const cleanSl =
+            typeof sl === 'number' && Number.isFinite(sl) && sl > 0
+              ? Number(sl.toFixed(spec.precision))
+              : undefined;
+          return { ...pos, tp: cleanTp, sl: cleanSl };
+        }),
+      }));
+    },
+    []
+  );
+
+  // Auto-trigger TP / SL execution when live price crosses target
+  useEffect(() => {
+    if (demoAccount.positions.length === 0) return;
+    const triggeredIds = new Set<string>();
+    for (const pos of demoAccount.positions) {
+      const mark = liveSymbolPrices[pos.symbol];
+      if (!mark || !Number.isFinite(mark)) continue;
+      if (pos.side === 'BUY') {
+        if ((pos.tp !== undefined && mark >= pos.tp) || (pos.sl !== undefined && mark <= pos.sl)) {
+          triggeredIds.add(pos.id);
+        }
+      } else {
+        if ((pos.tp !== undefined && mark <= pos.tp) || (pos.sl !== undefined && mark >= pos.sl)) {
+          triggeredIds.add(pos.id);
+        }
+      }
+    }
+    if (triggeredIds.size === 0) return;
+
+    setDemoAccount((prev) => {
+      let realized = 0;
+      const closedRows: DemoAccountState['history'] = [];
+      const remaining: DemoPosition[] = [];
+      const now = Date.now();
+      for (const pos of prev.positions) {
+        if (!triggeredIds.has(pos.id)) {
+          remaining.push(pos);
+          continue;
+        }
+        const spec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+        const closePrice = liveSymbolPrices[pos.symbol] ?? pos.entryPrice ?? spec.defaultPrice;
+        const pnl = calcPositionPnl(pos, closePrice);
+        realized += pnl;
+        closedRows.push({
+          id: pos.id,
+          symbol: pos.symbol,
+          side: pos.side,
+          lots: pos.lots,
+          entryPrice: pos.entryPrice,
+          closePrice,
+          pnl,
+          closedAt: now,
+        });
+      }
+      if (closedRows.length === 0) return prev;
+      return {
+        ...prev,
+        balance: Math.max(0, Number((prev.balance + realized).toFixed(2))),
+        positions: remaining,
+        history: [...closedRows, ...prev.history].slice(0, 20),
+      };
+    });
+  }, [liveSymbolPrices, demoAccount.positions]);
+
   if (activeTab === 'academy') {
     return (
-      <div className="vp-tab-stage">
+      <div className="vp-tab-stage min-h-screen bg-[#FFFFFF] text-[#0F172A]">
         <AcademyView
           onOpenPairInTerminal={handleOpenPairInTerminal}
           onNavigateTab={handleSelectTab}
           themeMode={themeMode}
         />
+        <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} alwaysVisible />
+        <DemoAccountDrawer
+          isOpen={demoDrawerOpen}
+          onClose={() => setDemoDrawerOpen(false)}
+          account={demoAccount}
+          metrics={demoMetrics}
+          activeSymbol={activeDemoSymbol}
+          livePrices={liveSymbolPrices}
+          onExecuteOrder={handleExecuteDemoOrder}
+          onClosePosition={handleCloseDemoPosition}
+          onCloseAllPositions={handleCloseAllDemoPositions}
+          onChangeLeverage={handleChangeDemoLeverage}
+          onChangeDefaultLot={handleChangeDemoDefaultLot}
+          onResetAccount={handleResetDemoAccount}
+        />
+        <OfflineIndicator />
       </div>
     );
   }
 
   return (
     <div
-      className="min-h-screen transition-colors"
-      style={{
-        backgroundColor: 'var(--vp-canvas)',
-        color: 'var(--vp-text)',
-      }}
+      className="min-h-screen bg-[#FFFFFF] text-[#0F172A] transition-colors overflow-x-hidden"
     >
       <HeaderNav
         activeTab={activeTab}
@@ -591,6 +855,9 @@ export default function App() {
         isSigningIn={isSigningIn}
         onSignIn={handleGoogleSignIn}
         onSignOut={() => signOut(auth)}
+        demoEquity={demoMetrics.equity}
+        demoFloatingPnl={demoMetrics.floatingPnl}
+        onOpenDemoDrawer={() => setDemoDrawerOpen(true)}
       />
 
       {/* Triggered Price Alert In-App Banner */}
@@ -623,7 +890,7 @@ export default function App() {
       )}
 
       {/* Main Workspace */}
-      <main key={activeTab} className="vp-tab-stage mx-auto max-w-7xl px-3 sm:px-6 pt-3 pb-24 md:pb-8">
+      <main key={activeTab} className="vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6">
         {activeTab === 'terminal' ? (
           activeMarketAsset ? (
             <MarketDetails
@@ -663,12 +930,36 @@ export default function App() {
               onRefreshMarkets={loadLiveMarkets}
               isRefreshingMarkets={isRefreshingMarkets}
               onNavigateTab={handleSelectTab}
+              demoPositions={demoAccount.positions}
+              demoMetrics={demoMetrics}
+              demoDefaultLot={demoAccount.defaultLot}
+              onExecuteDemoOrder={handleExecuteDemoOrder}
+              onCloseDemoPosition={handleCloseDemoPosition}
+              onUpdateDemoPositionTpSl={handleUpdateDemoPositionTpSl}
+              onChangeDemoDefaultLot={handleChangeDemoDefaultLot}
+              onOpenDemoDrawer={() => setDemoDrawerOpen(true)}
+              onLivePriceTick={handleLivePriceTick}
             />
           )
         ) : (
           <NewsTerminalView />
         )}
       </main>
+
+      <DemoAccountDrawer
+        isOpen={demoDrawerOpen}
+        onClose={() => setDemoDrawerOpen(false)}
+        account={demoAccount}
+        metrics={demoMetrics}
+        activeSymbol={activeDemoSymbol}
+        livePrices={liveSymbolPrices}
+        onExecuteOrder={handleExecuteDemoOrder}
+        onClosePosition={handleCloseDemoPosition}
+        onCloseAllPositions={handleCloseAllDemoPositions}
+        onChangeLeverage={handleChangeDemoLeverage}
+        onChangeDefaultLot={handleChangeDemoDefaultLot}
+        onResetAccount={handleResetDemoAccount}
+      />
 
       <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
       <OfflineIndicator />

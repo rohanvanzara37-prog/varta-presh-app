@@ -122,7 +122,7 @@ export interface VolumeProfileBucket {
   isPoc: boolean;
 }
 
-export function sanitizeCandles(raw: TerminalCandle[]): TerminalCandle[] {
+export function sanitizeCandles(raw: TerminalCandle[], intervalSec?: number): TerminalCandle[] {
   const byTime = new Map<number, TerminalCandle>();
   for (const c of raw) {
     if (
@@ -139,20 +139,45 @@ export function sanitizeCandles(raw: TerminalCandle[]): TerminalCandle[] {
     ) {
       continue;
     }
+    const rawT = Number(c.time);
+    const alignedT =
+      intervalSec && intervalSec > 0 ? Math.floor(rawT / intervalSec) * intervalSec : rawT;
     const clampedHigh = Math.max(c.high, c.open, c.close);
     const clampedLow = Math.min(c.low, c.open, c.close);
-    byTime.set(Number(c.time), {
-      time: Number(c.time) as UTCTimestamp,
-      open: c.open,
-      high: clampedHigh,
-      low: clampedLow,
-      close: c.close,
-      ...(typeof c.volume === 'number' && Number.isFinite(c.volume) && c.volume >= 0
-        ? { volume: c.volume }
-        : {}),
-    });
+    const existing = byTime.get(alignedT);
+
+    if (!existing) {
+      byTime.set(alignedT, {
+        time: alignedT as UTCTimestamp,
+        open: c.open,
+        high: clampedHigh,
+        low: clampedLow,
+        close: c.close,
+        ...(typeof c.volume === 'number' && Number.isFinite(c.volume) && c.volume >= 0
+          ? { volume: c.volume }
+          : {}),
+      });
+    } else {
+      existing.high = Math.max(existing.high, clampedHigh);
+      existing.low = Math.min(existing.low, clampedLow);
+      existing.close = c.close;
+      if (typeof c.volume === 'number' && Number.isFinite(c.volume) && c.volume >= 0) {
+        existing.volume = (existing.volume ?? 0) + c.volume;
+      }
+    }
   }
-  return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+
+  const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (curr.open !== prev.close) {
+      curr.open = prev.close;
+      curr.high = Math.max(curr.high, curr.open, curr.close);
+      curr.low = Math.min(curr.low, curr.open, curr.close);
+    }
+  }
+  return sorted;
 }
 
 /**
@@ -664,7 +689,16 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     color: '#089981',
   });
 
-  const s2 = supportClusters.find((c) => Math.abs(c.price - s1.price) > tol * 1.3);
+  const s2 =
+    supportClusters.find((c) => Math.abs(c.price - s1.price) > tol * 1.15) ??
+    (Math.abs(minLowBar.low - s1.price) > tol * 1.15
+      ? {
+          price: minLowBar.low,
+          startTime: minLowBar.time,
+          touches: 1,
+          latestIdx: Math.max(0, latestIdx - 25),
+        }
+      : undefined);
   if (s2) {
     srLevels.push({
       label: 'S2',
@@ -673,7 +707,7 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
       startTime: s2.startTime,
       endTime: latestBar.time,
       touches: s2.touches,
-      color: 'rgba(8, 153, 129, 0.72)',
+      color: 'rgba(5, 150, 105, 0.78)',
     });
   }
 

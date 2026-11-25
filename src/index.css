@@ -224,7 +224,8 @@
 .smc-chart-host {
   touch-action: none !important;
   overscroll-behavior: none;
-  contain: layout style size;
+  contain: layout style;
+  background-color: #FFFFFF !important;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -233,14 +234,36 @@
   touch-action: none !important;
 }
 
-/* Hide app headers and bottom navigation in Full-Screen chart mode */
-body.chart-fullscreen-active {
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
+/* CSS Fixed Full-Screen Overlay (replaces native browser fullscreen black backdrop) */
+.vp-fullscreen-root {
   position: fixed !important;
   inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 9999 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  color: #131722 !important;
+}
+
+/* Hide app headers and bottom navigation in Full-Screen chart mode */
+body.chart-fullscreen-active {
+  background-color: #FFFFFF !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+body.chart-fullscreen-active .vp-tab-stage {
+  animation: none !important;
+  opacity: 1 !important;
 }
 
 body.chart-fullscreen-active header,

@@ -22,6 +22,11 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script
+      src="https://unpkg.com/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"
+      crossorigin="anonymous"
+      defer
+    ></script>
     <style>
       /* 1. पक्का जीरो साइड-स्क्रॉल (Strict No Side-Scroll) */
       html, body {
@@ -64,6 +69,17 @@
       /* 3. इंडिकेटर बटनों को स्क्रीन के अंदर मोड़ना (Wrap) */
       canvas, svg {
         max-width: 100% !important;
+      }
+      /* 4. Full-Screen mode strict pure white background */
+      :fullscreen,
+      :-webkit-full-screen,
+      :-moz-full-screen,
+      :fullscreen::backdrop,
+      ::backdrop,
+      ::-webkit-backdrop {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
       }
     </style>
   </head>

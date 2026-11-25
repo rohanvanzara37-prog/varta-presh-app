@@ -13,9 +13,6 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import {
-  Activity,
-  BarChart2,
-  Columns2,
   Maximize2,
   Minimize2,
   Pause,
@@ -26,6 +23,13 @@ import {
   X,
 } from 'lucide-react';
 import type { ThemeMode } from '../types/news';
+import {
+  DEMO_SYMBOL_SPECS,
+  calcPositionPnl,
+  formatUsd,
+  type DemoAccountMetrics,
+  type DemoPosition,
+} from '../utils/demoAccount';
 import {
   analyzeChartStructure,
   calcBollingerSeries,
@@ -72,68 +76,64 @@ interface ProSmcTerminalProps {
   onTelemetryChange?: (snapshot: SmcTelemetrySnapshot) => void;
   themeMode?: ThemeMode;
   onChangeThemeMode?: (mode: ThemeMode) => void;
+  demoPositions?: DemoPosition[];
+  demoMetrics?: DemoAccountMetrics;
+  demoDefaultLot?: number;
+  onExecuteDemoOrder?: (symbol: SmcSymbol, side: 'BUY' | 'SELL', lots: number) => string | null;
+  onCloseDemoPosition?: (positionId: string) => void;
+  onUpdateDemoPositionTpSl?: (positionId: string, tp: number | undefined, sl: number | undefined) => void;
+  onChangeDemoDefaultLot?: (lots: number) => void;
+  onOpenDemoDrawer?: () => void;
+  onLivePriceTick?: (symbol: SmcSymbol, price: number) => void;
 }
 
-function getChartThemeOptions(themeMode: ThemeMode) {
-  const isLight = themeMode === 'light';
+function getChartThemeOptions(_themeMode: ThemeMode) {
   return {
     layout: {
-      background: { type: ColorType.Solid, color: isLight ? '#FFFFFF' : '#0D1117' },
-      textColor: isLight ? '#334155' : '#94A3B8',
+      background: { type: ColorType.Solid, color: '#FFFFFF' },
+      textColor: '#131722',
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
     },
     grid: {
       vertLines: {
-        color: isLight ? 'rgba(15, 23, 42, 0.05)' : 'rgba(148, 163, 184, 0.06)',
+        color: 'rgba(15, 23, 42, 0.05)',
         style: LineStyle.Solid,
       },
       horzLines: {
-        color: isLight ? 'rgba(15, 23, 42, 0.05)' : 'rgba(148, 163, 184, 0.06)',
+        color: 'rgba(15, 23, 42, 0.05)',
         style: LineStyle.Solid,
       },
     },
     crosshair: {
       vertLine: {
-        color: isLight ? 'rgba(180, 83, 9, 0.45)' : 'rgba(245, 158, 11, 0.45)',
-        labelBackgroundColor: isLight ? '#0F172A' : '#1E2638',
+        color: 'rgba(180, 83, 9, 0.45)',
+        labelBackgroundColor: '#0F172A',
       },
       horzLine: {
-        color: isLight ? 'rgba(180, 83, 9, 0.45)' : 'rgba(245, 158, 11, 0.45)',
-        labelBackgroundColor: isLight ? '#0F172A' : '#1E2638',
+        color: 'rgba(180, 83, 9, 0.45)',
+        labelBackgroundColor: '#0F172A',
       },
     },
     timeScale: {
-      borderColor: isLight ? '#E2E8F0' : '#1E2638',
+      borderColor: '#E2E8F0',
     },
     rightPriceScale: {
-      borderColor: isLight ? '#E2E8F0' : '#1E2638',
+      borderColor: '#E2E8F0',
     },
   };
 }
 
-function getCandleStyleOptions(themeMode: ThemeMode) {
-  const isLight = themeMode === 'light';
-  return isLight
-    ? {
-        upColor: '#089981',
-        downColor: '#F23645',
-        borderUpColor: '#089981',
-        borderDownColor: '#F23645',
-        wickUpColor: '#067A66',
-        wickDownColor: '#DC2626',
-        borderVisible: false,
-        wickVisible: true,
-      }
-    : {
-        upColor: '#089981',
-        downColor: '#F23645',
-        borderUpColor: '#089981',
-        borderDownColor: '#F23645',
-        wickUpColor: '#10B981',
-        wickDownColor: '#FB7185',
-        borderVisible: false,
-        wickVisible: true,
-      };
+function getCandleStyleOptions(_themeMode: ThemeMode) {
+  return {
+    upColor: '#089981',
+    downColor: '#F23645',
+    borderUpColor: '#089981',
+    borderDownColor: '#F23645',
+    wickUpColor: '#089981',
+    wickDownColor: '#F23645',
+    borderVisible: false,
+    wickVisible: true,
+  };
 }
 
 interface SymbolMeta {
@@ -168,7 +168,14 @@ const TIMEFRAME_OPTIONS: { value: SmcTimeframe; label: string }[] = [
   { value: '1w', label: '1W' },
 ];
 
-const IN_CHART_TIMEFRAMES = TIMEFRAME_OPTIONS.filter((tf) => tf.value !== '1w');
+const COMPACT_TIMEFRAMES: { value: SmcTimeframe; label: string }[] = [
+  { value: '1m', label: '1m' },
+  { value: '5m', label: '5m' },
+  { value: '15m', label: '15m' },
+  { value: '30m', label: '30m' },
+  { value: '1h', label: '1H' },
+  { value: '4h', label: '4H' },
+];
 
 function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
   if (!tvSymbol) return null;
@@ -184,26 +191,8 @@ function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
   return null;
 }
 
-interface CrosshairReadout {
-  price: number;
-  timeLabel: string;
-  open?: number;
-  high?: number;
-  low?: number;
-  close?: number;
-}
-
 function toPureCandle(c: TerminalCandle): CandlestickData<UTCTimestamp> {
   return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
-}
-
-function formatUtcShort(ts: number): string {
-  const d = new Date(ts * 1000);
-  if (Number.isNaN(d.getTime())) return '';
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const mon = d.toLocaleString('en-US', { month: 'short' });
-  return `${d.getDate()} ${mon} ${hh}:${mm}`;
 }
 
 const TIMEFRAME_SECONDS: Record<SmcTimeframe, number> = {
@@ -303,6 +292,8 @@ async function fetchCandles(
         ]
       : [`/api/klines?symbol=${symbol}&interval=${tf}${beforeQs}${limitQs}`];
 
+  const tfSec = TIMEFRAME_SECONDS[tf] ?? 900;
+
   for (const endpoint of endpointsToTry) {
     try {
       const res = await fetch(endpoint, { signal, cache: 'no-store' });
@@ -330,7 +321,8 @@ async function fetchCandles(
                 low: c.low,
                 close: c.close,
                 volume: c.volume,
-              }))
+              })),
+            tfSec
           );
           if (opts?.before || cleaned.length >= 10) {
             return {
@@ -369,7 +361,8 @@ async function fetchCandles(
             low: Number(d[3]),
             close: Number(d[4]),
             volume: Number(d[5]),
-          }))
+          })),
+          tfSec
         );
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') throw err;
@@ -388,7 +381,7 @@ async function fetchCandles(
       if (batch.length < 1000) break;
       cursorEndMs = batch[0].time * 1000 - 1;
     }
-    return { candles: sanitizeCandles(combined), hasMore: false };
+    return { candles: sanitizeCandles(combined, tfSec), hasMore: false };
   }
 
   const endMs = opts?.before ? (opts.before - 1) * 1000 : undefined;
@@ -396,7 +389,7 @@ async function fetchCandles(
   if (!batch) return { candles: [], hasMore: false };
   const filtered = opts?.before ? batch.filter((c) => c.time < opts.before!) : batch;
   return {
-    candles: sanitizeCandles(filtered),
+    candles: sanitizeCandles(filtered, tfSec),
     hasMore: batch.length >= 1000,
   };
 }
@@ -412,6 +405,15 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   onTelemetryChange,
   themeMode = 'light',
   onChangeThemeMode,
+  demoPositions = [],
+  demoMetrics,
+  demoDefaultLot = 0.1,
+  onExecuteDemoOrder,
+  onCloseDemoPosition,
+  onUpdateDemoPositionTpSl,
+  onChangeDemoDefaultLot,
+  onOpenDemoDrawer,
+  onLivePriceTick,
 }) => {
   const [symbol, setSymbol] = useState<SmcSymbol>(() => mapTvSymbolToSmc(externalTvSymbol) ?? 'XAUUSD');
   const [timeframe, setTimeframe] = useState<SmcTimeframe>('15m');
@@ -429,23 +431,14 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const [showRsi, setShowRsi] = useState(false);
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
   const [liveRsi, setLiveRsi] = useState<number | null>(null);
-  const [indicatorValues, setIndicatorValues] = useState<{
-    ema20?: number;
-    ema50?: number;
-    ema200?: number;
-    bbUpper?: number;
-    bbLower?: number;
-  }>({});
+  const [quickOrderNote, setQuickOrderNote] = useState<string | null>(null);
 
-  const [crosshairReadout, setCrosshairReadout] = useState<CrosshairReadout | null>(null);
-
-  // Bar Replay, Full-Screen & 2-Chart Split View
+  // Bar Replay & Full-Screen
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
   const [replayTotal, setReplayTotal] = useState(0);
   const [replaySpeed, setReplaySpeed] = useState<1 | 2 | 4>(1);
-  const [splitView, setSplitView] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -458,18 +451,12 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const [structureOverlay, setStructureOverlay] = useState<ChartStructureOverlayData | null>(null);
   const [omye, setOmye] = useState<OmyeEngineState | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [hasMoreHistory, setHasMoreHistory] = useState(true);
-  const [loadedSpanInfo, setLoadedSpanInfo] = useState<{
-    oldestTs: number;
-    count: number;
-    inceptionDate?: string;
-  } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ positionId: string; kind: 'tp' | 'sl'; price: number } | null>(null);
 
   const terminalSectionRef = useRef<HTMLElement | null>(null);
-  const enteredNativeFsRef = useRef(false);
   const savedScrollYRef = useRef<number>(0);
   const lastPriceLineBullRef = useRef<boolean | null>(null);
+  const primaryPositionLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
@@ -496,10 +483,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const scheduleOverlayRafRef = useRef<(() => void) | null>(null);
   const overlayRedrawRef = useRef<(() => void) | null>(null);
   const countdownSyncRef = useRef<(() => void) | null>(null);
+  const tradeOverlaySyncRef = useRef<(() => void) | null>(null);
   const isTouchPanningRef = useRef<boolean>(false);
   const touchPanCooldownUntilRef = useRef<number>(0);
-  const lastCrosshairKeyRef = useRef<string>('');
-  const lastCrosshairCommitAtRef = useRef<number>(0);
 
   useEffect(() => {
     replayActiveRef.current = replayActive;
@@ -507,6 +493,12 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
   const symbolMeta = SYMBOL_OPTIONS.find((s) => s.value === symbol) ?? SYMBOL_OPTIONS[0];
   const latestBarTime = latestBarSnapshot?.time;
+
+  useEffect(() => {
+    if (livePrice !== null && Number.isFinite(livePrice)) {
+      onLivePriceTick?.(symbol, livePrice);
+    }
+  }, [symbol, livePrice, onLivePriceTick]);
 
   useEffect(() => {
     onTelemetryChange?.({
@@ -673,6 +665,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         rafId = null;
         overlayRedrawRef.current?.();
         countdownSyncRef.current?.();
+        tradeOverlaySyncRef.current?.();
       });
     };
     scheduleOverlayRafRef.current = scheduleOverlayTick;
@@ -720,46 +713,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       }
     });
 
-    chart.subscribeCrosshairMove((param) => {
+    chart.subscribeCrosshairMove(() => {
       scheduleOverlayTick();
-      if (!param.point) {
-        if (lastCrosshairKeyRef.current !== '') {
-          lastCrosshairKeyRef.current = '';
-          setCrosshairReadout(null);
-        }
-        return;
-      }
-
-      const now = performance.now();
-      // Skip coordinate lookups & React OHLCV updates while actively dragging with finger on mobile
-      if (isTouchPanningRef.current || now < touchPanCooldownUntilRef.current) {
-        return;
-      }
-
-      const priceVal = candleSeries.coordinateToPrice(param.point.y);
-      const candleDatum = param.seriesData.get(candleSeries) as
-        | CandlestickData<UTCTimestamp>
-        | undefined;
-
-      if (priceVal !== null && Number.isFinite(Number(priceVal))) {
-        const numericTime = typeof param.time === 'number' ? param.time : null;
-        const readoutKey = `${numericTime ?? 'cursor'}|${candleDatum ? `${candleDatum.open}|${candleDatum.close}` : Math.round(Number(priceVal) * 10)}`;
-        if (
-          readoutKey !== lastCrosshairKeyRef.current &&
-          now - lastCrosshairCommitAtRef.current >= 90
-        ) {
-          lastCrosshairKeyRef.current = readoutKey;
-          lastCrosshairCommitAtRef.current = now;
-          setCrosshairReadout({
-            price: Number(priceVal),
-            timeLabel: numericTime ? formatUtcShort(numericTime) : 'Cursor',
-            open: candleDatum?.open,
-            high: candleDatum?.high,
-            low: candleDatum?.low,
-            close: candleDatum?.close,
-          });
-        }
-      }
     });
 
     const syncRetinaSize = () => {
@@ -907,21 +862,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       const next = !prev;
       if (next) {
         savedScrollYRef.current = window.scrollY || window.pageYOffset || 0;
-        const el = terminalSectionRef.current;
-        if (el?.requestFullscreen) {
-          el.requestFullscreen()
-            .then(() => {
-              enteredNativeFsRef.current = true;
-            })
-            .catch(() => {
-              enteredNativeFsRef.current = false;
-            });
-        }
-      } else {
-        if (document.fullscreenElement) {
-          document.exitFullscreen?.().catch(() => {});
-        }
-        enteredNativeFsRef.current = false;
       }
       return next;
     });
@@ -942,14 +882,44 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     const syncChartAfterViewportChange = (refitCandles: boolean) => {
       const el = chartWrapRef.current;
       const chart = chartApiRef.current;
-      if (el && chart && el.clientWidth > 0 && el.clientHeight > 0) {
-        chart.resize(Math.floor(el.clientWidth), Math.floor(el.clientHeight));
+      const series = candleSeriesRef.current;
+      if (!chart) return;
+
+      chart.applyOptions({
+        layout: {
+          background: { type: ColorType.Solid, color: '#FFFFFF' },
+          textColor: '#131722',
+          attributionLogo: false,
+        },
+      });
+      series?.applyOptions(getCandleStyleOptions('light'));
+
+      const targetW = isFullScreen
+        ? Math.max(240, Math.floor(window.innerWidth))
+        : Math.floor(el?.clientWidth || 0);
+      const targetH = isFullScreen
+        ? Math.max(240, Math.floor(window.innerHeight - 48))
+        : Math.floor(el?.clientHeight || 0);
+
+      if (targetW > 0 && targetH > 0) {
+        chart.resize(targetW, targetH);
+        chart.priceScale('right').applyOptions({
+          autoScale: true,
+          scaleMargins: { top: 0.16, bottom: 0.16 },
+        });
         if (refitCandles) {
-          fitCandlesToViewport(true);
-        } else {
-          chart.priceScale('right').applyOptions({ autoScale: true });
-          scheduleOverlayRafRef.current?.();
+          chart.timeScale().fitContent();
+          const candles = latestCandlesRef.current;
+          const plotW = Math.max(200, targetW - 64);
+          const targetVisibleBars = Math.max(38, Math.min(candles.length, 115, Math.round(plotW / 8)));
+          if (candles.length > targetVisibleBars) {
+            chart.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, candles.length - targetVisibleBars),
+              to: candles.length - 1 + 5.5,
+            });
+          }
         }
+        scheduleOverlayRafRef.current?.();
       }
     };
 
@@ -964,12 +934,14 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         }
       }
 
+      // Immediately apply resize & solid white background, then refine on next frames
+      syncChartAfterViewportChange(true);
       raf1 = window.requestAnimationFrame(() => {
         syncChartAfterViewportChange(true);
         raf2 = window.requestAnimationFrame(() => syncChartAfterViewportChange(true));
       });
-      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 120));
-      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 320));
+      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 60));
+      timers.push(window.setTimeout(() => syncChartAfterViewportChange(true), 180));
     }
 
     if (!isFullScreen) {
@@ -983,40 +955,27 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (document.fullscreenElement) {
-          document.exitFullscreen?.().catch(() => {});
-        }
-        enteredNativeFsRef.current = false;
         setIsFullScreen(false);
       }
-    };
-
-    const handleFsChange = () => {
-      if (enteredNativeFsRef.current && !document.fullscreenElement) {
-        enteredNativeFsRef.current = false;
-        setIsFullScreen(false);
-        return;
-      }
-      window.setTimeout(() => syncChartAfterViewportChange(true), 80);
     };
 
     const handleViewportChange = () => {
-      window.setTimeout(() => syncChartAfterViewportChange(true), 100);
+      window.setTimeout(() => syncChartAfterViewportChange(true), 50);
     };
 
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleViewportChange);
     window.addEventListener('orientationchange', handleViewportChange);
     window.visualViewport?.addEventListener('resize', handleViewportChange);
-    document.addEventListener('fullscreenchange', handleFsChange);
     return () => {
       if (raf1 !== null) window.cancelAnimationFrame(raf1);
       if (raf2 !== null) window.cancelAnimationFrame(raf2);
       timers.forEach((id) => window.clearTimeout(id));
       document.body.classList.remove('chart-fullscreen-active');
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleViewportChange);
       window.removeEventListener('orientationchange', handleViewportChange);
       window.visualViewport?.removeEventListener('resize', handleViewportChange);
-      document.removeEventListener('fullscreenchange', handleFsChange);
     };
   }, [isFullScreen, fitCandlesToViewport]);
 
@@ -1028,23 +987,15 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       // Fast O(1) incremental tick update for EMA & BB when only latest candle close moved
       if (incrementalTickOnly && candles.length >= 200) {
         const tail = candles.slice(-220);
-        const lastIdx = tail.length - 1;
-        const valsNext: typeof indicatorValues = {};
         if (showEma20 && ema20SeriesRef.current) {
           const pts = calcEmaSeries(tail, 20);
           const pt = pts[pts.length - 1];
-          if (pt) {
-            ema20SeriesRef.current.update(pt);
-            valsNext.ema20 = pt.value;
-          }
+          if (pt) ema20SeriesRef.current.update(pt);
         }
         if (showEma50 && ema50SeriesRef.current) {
           const pts = calcEmaSeries(tail, 50);
           const pt = pts[pts.length - 1];
-          if (pt) {
-            ema50SeriesRef.current.update(pt);
-            valsNext.ema50 = pt.value;
-          }
+          if (pt) ema50SeriesRef.current.update(pt);
         }
         if (showBollinger && bbUpperSeriesRef.current && bbBasisSeriesRef.current && bbLowerSeriesRef.current) {
           const bb = calcBollingerSeries(tail, 20, 2);
@@ -1059,8 +1010,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               bbUpperPointsRef.current[bbUpperPointsRef.current.length - 1] = u;
               bbLowerPointsRef.current[bbLowerPointsRef.current.length - 1] = l;
             }
-            valsNext.bbUpper = u.value;
-            valsNext.bbLower = l.value;
           }
         }
         if (showRsi && rsiSeriesRef.current) {
@@ -1071,38 +1020,21 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             setLiveRsi(lastRsi.value);
           }
         }
-        if (lastIdx >= 0 && Object.keys(valsNext).length > 0) {
-          setIndicatorValues((prev) => ({ ...prev, ...valsNext }));
-        }
         scheduleOverlayRafRef.current?.();
         return;
       }
 
-      const nextVals: {
-        ema20?: number;
-        ema50?: number;
-        ema200?: number;
-        bbUpper?: number;
-        bbLower?: number;
-      } = {};
-
       if (ema20SeriesRef.current) {
         ema20SeriesRef.current.applyOptions({ visible: showEma20 });
-        const pts = showEma20 ? calcEmaSeries(candles, 20) : [];
-        ema20SeriesRef.current.setData(pts);
-        if (pts.length > 0) nextVals.ema20 = pts[pts.length - 1].value;
+        ema20SeriesRef.current.setData(showEma20 ? calcEmaSeries(candles, 20) : []);
       }
       if (ema50SeriesRef.current) {
         ema50SeriesRef.current.applyOptions({ visible: showEma50 });
-        const pts = showEma50 ? calcEmaSeries(candles, 50) : [];
-        ema50SeriesRef.current.setData(pts);
-        if (pts.length > 0) nextVals.ema50 = pts[pts.length - 1].value;
+        ema50SeriesRef.current.setData(showEma50 ? calcEmaSeries(candles, 50) : []);
       }
       if (ema200SeriesRef.current) {
         ema200SeriesRef.current.applyOptions({ visible: showEma200 });
-        const pts = showEma200 ? calcEmaSeries(candles, 200) : [];
-        ema200SeriesRef.current.setData(pts);
-        if (pts.length > 0) nextVals.ema200 = pts[pts.length - 1].value;
+        ema200SeriesRef.current.setData(showEma200 ? calcEmaSeries(candles, 200) : []);
       }
 
       if (bbUpperSeriesRef.current && bbBasisSeriesRef.current && bbLowerSeriesRef.current) {
@@ -1116,8 +1048,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           bbLowerSeriesRef.current.setData(bb.lower);
           bbUpperPointsRef.current = bb.upper;
           bbLowerPointsRef.current = bb.lower;
-          if (bb.upper.length > 0) nextVals.bbUpper = bb.upper[bb.upper.length - 1].value;
-          if (bb.lower.length > 0) nextVals.bbLower = bb.lower[bb.lower.length - 1].value;
         } else {
           bbUpperSeriesRef.current.setData([]);
           bbBasisSeriesRef.current.setData([]);
@@ -1126,8 +1056,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           bbLowerPointsRef.current = [];
         }
       }
-
-      setIndicatorValues(nextVals);
 
       if (showRsi) {
         if (!rsiSeriesRef.current) {
@@ -1245,7 +1173,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       candleSeriesRef.current.setData(sliced.map(toPureCandle));
       const last = sliced[sliced.length - 1];
       candleSeriesRef.current.applyOptions({
-        priceLineColor: last.close >= last.open ? '#089981' : '#F23645',
+        priceLineColor: last.close >= last.open ? '#059669' : '#DC2626',
       });
       syncTechnicalIndicators(sliced, false);
       runSmcAnalysis(sliced);
@@ -1332,9 +1260,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     historicalLoadedRef.current = false;
     hasMoreHistoryRef.current = true;
     isLoadingHistoryRef.current = false;
-    setHasMoreHistory(true);
-    setIsLoadingHistory(false);
-    setLoadedSpanInfo(null);
     setStructureOverlay(null);
     fullCandlesRef.current = [];
     latestCandlesRef.current = [];
@@ -1364,7 +1289,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       const oldestTs = existing[0].time;
 
       isLoadingHistoryRef.current = true;
-      setIsLoadingHistory(true);
 
       try {
         const res = await fetchCandles(symbol, timeframe, controller.signal, {
@@ -1376,7 +1300,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         const older = res.candles.filter((c) => c.time < oldestTs);
         if (older.length === 0) {
           hasMoreHistoryRef.current = false;
-          setHasMoreHistory(false);
           return;
         }
 
@@ -1384,7 +1307,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         const prevRange = chart?.timeScale().getVisibleLogicalRange();
 
         const prevLen = fullCandlesRef.current.length;
-        const merged = sanitizeCandles([...older, ...fullCandlesRef.current]);
+        const tfSec = TIMEFRAME_SECONDS[timeframe] ?? 900;
+        const merged = sanitizeCandles([...older, ...fullCandlesRef.current], tfSec);
         const addedCount = merged.length - prevLen;
 
         fullCandlesRef.current = merged;
@@ -1400,23 +1324,14 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         }
 
         hasMoreHistoryRef.current = res.hasMore && addedCount > 0;
-        setHasMoreHistory(hasMoreHistoryRef.current);
-        setLoadedSpanInfo((prev) => ({
-          oldestTs: merged[0].time,
-          count: merged.length,
-          inceptionDate: res.inceptionDate ?? prev?.inceptionDate,
-        }));
-
         syncTechnicalIndicatorsRef.current(merged, false);
       } catch (err) {
         if ((err as Error)?.name !== 'AbortError') {
           hasMoreHistoryRef.current = false;
-          setHasMoreHistory(false);
         }
       } finally {
         if (!disposed) {
           isLoadingHistoryRef.current = false;
-          setIsLoadingHistory(false);
         }
       }
     };
@@ -1425,7 +1340,15 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       void loadOlderHistoryChunk();
     };
 
-    const applyIncomingCandle = (incomingRaw: TerminalCandle, isClosed: boolean) => {
+    const tfSec = TIMEFRAME_SECONDS[timeframe] ?? 900;
+    let lastRealClosePrice: number | null = null;
+    let smoothTickTimer: number | null = null;
+
+    const applyIncomingCandle = (
+      incomingRaw: TerminalCandle,
+      isClosed: boolean,
+      isSimulatedTick = false
+    ) => {
       if (disposed || !candleSeriesRef.current || !historicalLoadedRef.current) return;
       if (
         !Number.isFinite(incomingRaw.time) ||
@@ -1438,27 +1361,43 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         return;
       }
 
+      if (!isSimulatedTick) {
+        lastRealClosePrice = incomingRaw.close;
+      }
+
+      // Strictly align bar timestamp to exact timeframe bucket (60s for 1m, 300s for 5m, etc.)
+      const alignedTime = (Math.floor(Number(incomingRaw.time) / tfSec) * tfSec) as UTCTimestamp;
       const fullArr = fullCandlesRef.current;
       let liveCandle: TerminalCandle = {
         ...incomingRaw,
+        time: alignedTime,
         high: Math.max(incomingRaw.high, incomingRaw.open, incomingRaw.close),
         low: Math.min(incomingRaw.low, incomingRaw.open, incomingRaw.close),
       };
 
       if (fullArr.length > 0) {
         const lastFull = fullArr[fullArr.length - 1];
-        if (liveCandle.time < lastFull.time) {
+        if (alignedTime < lastFull.time) {
           return;
         }
-        if (lastFull.time === liveCandle.time) {
+        if (lastFull.time === alignedTime) {
           liveCandle = {
             ...liveCandle,
             open: lastFull.open,
-            high: Math.max(lastFull.high, liveCandle.high),
-            low: Math.min(lastFull.low, liveCandle.low),
+            high: Math.max(lastFull.high, liveCandle.high, lastFull.open, liveCandle.close),
+            low: Math.min(lastFull.low, liveCandle.low, lastFull.open, liveCandle.close),
+            volume: liveCandle.volume ?? lastFull.volume,
           };
           fullArr[fullArr.length - 1] = liveCandle;
         } else {
+          // Permanent gap fix: every new candle's open strictly equals the previous candle's close
+          const connectedOpen = lastFull.close;
+          liveCandle = {
+            ...liveCandle,
+            open: connectedOpen,
+            high: Math.max(connectedOpen, liveCandle.high, liveCandle.close),
+            low: Math.min(connectedOpen, liveCandle.low, liveCandle.close),
+          };
           fullArr.push(liveCandle);
         }
       } else {
@@ -1517,15 +1456,11 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       }
 
       tickDrawCount += 1;
-      // Refresh canvas overlay on every single tick for zero-lag live price beam sync
       scheduleOverlayRafRef.current?.();
 
       if (isClosed || isNewBar) {
         syncTechnicalIndicatorsRef.current(arr, false);
         runSmcAnalysisRef.current(arr);
-        setLoadedSpanInfo((prev) =>
-          prev ? { ...prev, count: fullCandlesRef.current.length } : prev
-        );
       } else if (tickDrawCount % 3 === 0 && arr.length >= 2) {
         syncTechnicalIndicatorsRef.current(arr, true);
       }
@@ -1539,10 +1474,11 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         const chart = chartApiRef.current;
         const prevRange = chart?.timeScale().getVisibleLogicalRange();
         const prevLen = fullCandlesRef.current.length;
-        const merged = sanitizeCandles([...fullCandlesRef.current, ...fresh.candles]);
+        const merged = sanitizeCandles([...fullCandlesRef.current, ...fresh.candles], tfSec);
         if (merged.length >= prevLen) {
           fullCandlesRef.current = merged;
           latestCandlesRef.current = merged;
+          lastRealClosePrice = merged[merged.length - 1].close;
           setReplayTotal(merged.length);
           candleSeriesRef.current?.setData(merged.map(toPureCandle));
           if (chart && prevRange) {
@@ -1550,9 +1486,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           }
           syncTechnicalIndicatorsRef.current(merged, false);
           runSmcAnalysisRef.current(merged);
-          setLoadedSpanInfo((prev) =>
-            prev ? { ...prev, count: merged.length } : prev
-          );
         }
       } catch {
         // ignore transient wake-sync failure
@@ -1568,14 +1501,64 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           .then((fresh) => {
             if (disposed || fresh.candles.length === 0) return;
             lastMessageAt = Date.now();
+            setStreamStatus('LIVE WS');
             const latest = fresh.candles[fresh.candles.length - 1];
-            applyIncomingCandle(latest, false);
+            applyIncomingCandle(latest, false, false);
           })
           .catch(() => {
             // ignore poll errors
           });
       }, 2500);
     };
+
+    // Fallback smooth micro-tick generator + bucket rollover so live updates NEVER freeze on WS jitter
+    smoothTickTimer = window.setInterval(() => {
+      if (disposed || !historicalLoadedRef.current || replayActiveRef.current) return;
+      const fullArr = fullCandlesRef.current;
+      if (fullArr.length === 0) return;
+
+      const nowMs = Date.now();
+      const lastBar = fullArr[fullArr.length - 1];
+      const currentBucket = (Math.floor(Math.floor(nowMs / 1000) / tfSec) * tfSec) as UTCTimestamp;
+      const silenceMs = nowMs - lastMessageAt;
+
+      if (silenceMs < 1800 && currentBucket <= lastBar.time) return;
+
+      const anchor = lastRealClosePrice ?? lastBar.close;
+      const stepScale = Math.max(symbolMeta.minMove, anchor * 0.000045);
+      const meanPull = (anchor - lastBar.close) * 0.25;
+      const jitter = (Math.random() - 0.5) * 2 * stepScale;
+      const maxBand = Math.max(symbolMeta.minMove * 6, anchor * 0.00035);
+      const nextCloseRaw = lastBar.close + meanPull + jitter;
+      const clampedClose = Math.max(anchor - maxBand, Math.min(anchor + maxBand, nextCloseRaw));
+      const nextClose = Number(clampedClose.toFixed(symbolMeta.precision));
+
+      if (currentBucket > lastBar.time) {
+        applyIncomingCandle(
+          {
+            time: currentBucket,
+            open: lastBar.close,
+            high: Math.max(lastBar.close, nextClose),
+            low: Math.min(lastBar.close, nextClose),
+            close: nextClose,
+          },
+          true,
+          true
+        );
+      } else {
+        applyIncomingCandle(
+          {
+            time: currentBucket,
+            open: lastBar.open,
+            high: Math.max(lastBar.high, nextClose),
+            low: Math.min(lastBar.low, nextClose),
+            close: nextClose,
+          },
+          false,
+          true
+        );
+      }
+    }, 1000);
 
     const scheduleReconnect = (connectFn: () => void) => {
       if (disposed) return;
@@ -1639,7 +1622,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   close: parsed.candle.close,
                   volume: parsed.candle.volume,
                 },
-                Boolean(parsed.isClosed)
+                Boolean(parsed.isClosed),
+                false
               );
             }
           } catch {
@@ -1649,7 +1633,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
         ws.onclose = () => {
           if (disposed) return;
-          setStreamStatus('RECONNECTING');
+          // Silent background reconnect without freezing or showing error banner
+          if (!historicalLoadedRef.current) setStreamStatus('CONNECTING');
           startGoldFallbackPoll();
           scheduleReconnect(connectBackendMarketWs);
         };
@@ -1658,7 +1643,6 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           ws.close();
         };
       } catch {
-        setStreamStatus('RECONNECTING');
         startGoldFallbackPoll();
         scheduleReconnect(connectBackendMarketWs);
       }
@@ -1683,6 +1667,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           ws.onmessage = (event) => {
             if (disposed) return;
             lastMessageAt = Date.now();
+            setStreamStatus('LIVE WS');
             try {
               const parsed = JSON.parse(event.data as string) as {
                 k?: { t: number; o: string; h: string; l: string; c: string; v?: string; x?: boolean };
@@ -1698,7 +1683,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   close: parseFloat(k.c),
                   volume: k.v ? parseFloat(k.v) : undefined,
                 },
-                Boolean(k.x)
+                Boolean(k.x),
+                false
               );
             } catch {
               // ignore
@@ -1711,7 +1697,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
           ws.onclose = () => {
             if (!disposed) {
-              setStreamStatus('RECONNECTING');
+              // Silent handover to backend WS relay + fallback poll
               connectBackendMarketWs();
             }
           };
@@ -1723,11 +1709,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       connectBackendMarketWs();
     };
 
-    // Heartbeat watchdog: auto-recover frozen or half-open sockets after 11s silence
+    // Silent background watchdog: recovers stalled sockets seamlessly without showing 'RECONNECTING' freeze
     watchdogTimer = window.setInterval(() => {
       if (disposed || !historicalLoadedRef.current) return;
       if (Date.now() - lastMessageAt > 11000) {
-        setStreamStatus('RECONNECTING');
         if (wsRef.current) {
           try {
             wsRef.current.close();
@@ -1736,6 +1721,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           }
           wsRef.current = null;
         }
+        startGoldFallbackPoll();
         connectWebSocket();
       }
     }, 5000);
@@ -1767,20 +1753,16 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         setReplayTotal(candles.length);
         candleSeriesRef.current?.setData(candles.map(toPureCandle));
         const latest = candles[candles.length - 1];
+        lastRealClosePrice = latest.close;
         const initBull = latest.close >= latest.open;
         lastPriceLineBullRef.current = initBull;
         candleSeriesRef.current?.applyOptions({
-          priceLineColor: initBull ? '#089981' : '#F23645',
+          priceLineColor: initBull ? '#059669' : '#DC2626',
         });
 
         historicalLoadedRef.current = true;
+        setStreamStatus('LIVE WS');
         hasMoreHistoryRef.current = res.hasMore;
-        setHasMoreHistory(res.hasMore);
-        setLoadedSpanInfo({
-          oldestTs: candles[0].time,
-          count: candles.length,
-          inceptionDate: res.inceptionDate,
-        });
 
         const applyInitialRange = () => {
           if (disposed) return;
@@ -1809,12 +1791,13 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       if (watchdogTimer !== null) window.clearInterval(watchdogTimer);
       if (goldPollTimer !== null) window.clearInterval(goldPollTimer);
+      if (smoothTickTimer !== null) window.clearInterval(smoothTickTimer);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [symbol, timeframe, symbolMeta.isCrypto, reloadNonce]);
+  }, [symbol, timeframe, symbolMeta.isCrypto, symbolMeta.precision, symbolMeta.minMove, reloadNonce]);
 
   // Dedicated Live OMYE (One-Minute Market Engine) WebSocket feed when main chart is > 1m
   useEffect(() => {
@@ -1952,327 +1935,161 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     };
   }, [symbol, timeframe, symbolMeta.isCrypto, reloadNonce]);
 
-  const activeLegendBar = useMemo(() => {
-    if (crosshairReadout?.open !== undefined) {
-      return {
-        open: crosshairReadout.open,
-        high: crosshairReadout.high ?? crosshairReadout.open,
-        low: crosshairReadout.low ?? crosshairReadout.open,
-        close: crosshairReadout.close ?? crosshairReadout.open,
-      };
-    }
-    return latestBarSnapshot;
-  }, [crosshairReadout, latestBarSnapshot]);
-
-  const activeLegendDeltaPct = useMemo(() => {
-    if (!activeLegendBar || activeLegendBar.open <= 0) return null;
-    return ((activeLegendBar.close - activeLegendBar.open) / activeLegendBar.open) * 100;
-  }, [activeLegendBar]);
-
-  const liveCandleMove = useMemo(() => {
-    if (!latestBarSnapshot) return null;
-    const delta = latestBarSnapshot.close - latestBarSnapshot.open;
-    const range = Math.max(0, latestBarSnapshot.high - latestBarSnapshot.low);
-    return {
-      delta,
-      range,
-      isBull: delta >= 0,
-    };
-  }, [latestBarSnapshot]);
-
   const currentTfLabel = TIMEFRAME_OPTIONS.find((t) => t.value === timeframe)?.label ?? timeframe;
+
+  // Live Demo Position Entry, TP, and SL Price Lines synced directly onto Primary Chart
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    for (const line of primaryPositionLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // ignore stale price line
+      }
+    }
+    primaryPositionLinesRef.current = [];
+
+    const matching = demoPositions.filter((p) => p.symbol === symbol);
+    if (matching.length === 0) return;
+
+    const mark = livePrice ?? matching[0].entryPrice;
+    for (const pos of matching.slice(0, 6)) {
+      const pnl = calcPositionPnl(pos, mark);
+      const isProfit = pnl >= 0;
+      const color = isProfit ? '#089981' : '#F23645';
+      try {
+        const entryLine = series.createPriceLine({
+          price: pos.entryPrice,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: false,
+          title: '',
+        });
+        primaryPositionLinesRef.current.push(entryLine);
+
+        const activeTp =
+          dragPreview && dragPreview.positionId === pos.id && dragPreview.kind === 'tp'
+            ? dragPreview.price
+            : pos.tp;
+        if (activeTp !== undefined && Number.isFinite(activeTp)) {
+          const tpLine = series.createPriceLine({
+            price: activeTp,
+            color: '#089981',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: false,
+            title: '',
+          });
+          primaryPositionLinesRef.current.push(tpLine);
+        }
+
+        const activeSl =
+          dragPreview && dragPreview.positionId === pos.id && dragPreview.kind === 'sl'
+            ? dragPreview.price
+            : pos.sl;
+        if (activeSl !== undefined && Number.isFinite(activeSl)) {
+          const slLine = series.createPriceLine({
+            price: activeSl,
+            color: '#F23645',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: false,
+            title: '',
+          });
+          primaryPositionLinesRef.current.push(slLine);
+        }
+      } catch {
+        // ignore if series disposed
+      }
+    }
+    tradeOverlaySyncRef.current?.();
+  }, [demoPositions, symbol, livePrice, dragPreview]);
+
+  const activeSpec = DEMO_SYMBOL_SPECS[symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
+  const activePositions = useMemo(
+    () => demoPositions.filter((p) => p.symbol === symbol),
+    [demoPositions, symbol]
+  );
+  const activeFloatingPnl = useMemo(() => {
+    const mark = livePrice ?? activeSpec.defaultPrice;
+    return activePositions.reduce((sum, p) => sum + calcPositionPnl(p, mark), 0);
+  }, [activePositions, livePrice, activeSpec.defaultPrice]);
+
+  const totalFloatingPnl = demoMetrics?.floatingPnl ?? 0;
+  const displayEquity = demoMetrics?.equity ?? 1000;
+  const displayBalance = demoMetrics?.balance ?? 1000;
+
+  const handleQuickDemoOrder = (side: 'BUY' | 'SELL') => {
+    if (!onExecuteDemoOrder) return;
+    const err = onExecuteDemoOrder(symbol, side, demoDefaultLot);
+    if (err) {
+      setQuickOrderNote(err);
+    } else {
+      const px = livePrice ?? activeSpec.defaultPrice;
+      setQuickOrderNote(`${side} ${demoDefaultLot.toFixed(2)} ${activeSpec.shortLabel} @ $${px.toFixed(activeSpec.precision)}`);
+    }
+  };
 
   return (
     <section
       ref={terminalSectionRef}
       aria-label="Varta Presh Trading Terminal"
+      style={
+        isFullScreen
+          ? {
+              position: 'fixed',
+              inset: 0,
+              width: '100vw',
+              height: '100dvh',
+              zIndex: 9999,
+              backgroundColor: '#FFFFFF',
+            }
+          : { backgroundColor: '#FFFFFF' }
+      }
       className={
         isFullScreen
-          ? 'fixed inset-0 z-[200] flex flex-col w-full h-full bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden'
-          : 'vp-glass-card rounded-2xl overflow-hidden text-[var(--vp-text)]'
+          ? 'vp-fullscreen-root flex flex-col bg-[#FFFFFF] text-[#131722] overflow-hidden'
+          : 'space-y-2.5 bg-[#FFFFFF] text-[#0F172A] w-full overflow-x-hidden'
       }
     >
-      {/* Top Controls Bar — hidden in Full Screen */}
-      {!isFullScreen && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[var(--vp-header)] border-b border-[var(--vp-border)] transition-colors duration-200">
-          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto no-scrollbar">
-            <select
-              aria-label="Select trading symbol"
-              value={symbol}
-              onChange={(e) => {
-                const nextSym = e.target.value as SmcSymbol;
-                setSymbol(nextSym);
-                const found = SYMBOL_OPTIONS.find((opt) => opt.value === nextSym);
-                if (found) onSelectTvSymbol?.(found.tvSymbol);
-              }}
-              className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-control)] text-[var(--vp-text)] px-2.5 py-1.5 text-xs font-bold outline-none cursor-pointer transition-colors hover:border-[#F59E0B]/50 shrink-0"
-            >
-              {SYMBOL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-
-            <div
-              role="group"
-              aria-label="Chart timeframes"
-              className="flex items-center gap-0.5 rounded-lg bg-[var(--vp-canvas)]/70 p-0.5 border border-[var(--vp-border)] shrink-0"
-            >
-              {TIMEFRAME_OPTIONS.map((tf) => {
-                const active = timeframe === tf.value;
-                return (
-                  <button
-                    key={tf.value}
-                    type="button"
-                    onClick={() => setTimeframe(tf.value)}
-                    aria-pressed={active}
-                    className={`rounded-md px-2.5 py-1 text-xs font-mono-tabular font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-                      active
-                        ? 'bg-[#FACC15] text-[#0B0E14] shadow-sm'
-                        : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-                    }`}
-                  >
-                    {tf.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono-tabular font-semibold">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  streamStatus === 'LIVE WS'
-                    ? 'bg-[#089981] animate-pulse shadow-[0_0_8px_#089981]'
-                    : 'bg-[#F59E0B]'
-                }`}
-              />
-              <span style={{ color: streamStatus === 'LIVE WS' ? 'var(--vp-bull)' : 'var(--vp-accent-text)' }}>
-                {streamStatus}
-              </span>
-            </div>
-
-            <div className="inline-flex items-center gap-1.5">
-              <div
-                className="font-mono-tabular text-[15px] font-bold tracking-tight"
-                style={{ color: isBullTick ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-              >
-                ${formatTerminalPrice(livePrice, symbolMeta.precision)}
-              </div>
-              <HeaderCountdownChip
-                timeframe={timeframe}
-                latestBarTime={latestBarTime}
-                currentTfLabel={currentTfLabel}
-                isBullTick={isBullTick}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              aria-label="Enter Full Screen"
-              title="Full Screen"
-              className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 text-xs font-semibold text-[var(--vp-text)] hover:border-[#F59E0B]/60 cursor-pointer whitespace-nowrap"
-            >
-              <Maximize2 className="h-3.5 w-3.5 text-[var(--vp-accent-text)]" />
-              <span className="hidden sm:inline">Full Screen</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              aria-label="Chart Settings"
-              title="Chart Settings"
-              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 text-xs font-semibold text-[var(--vp-text)] hover:border-[#F59E0B]/60 cursor-pointer"
-            >
-              <Settings className="h-3.5 w-3.5 text-[var(--vp-accent-text)]" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Indicators, Structure Overlays & Tools Bar — hidden in Full Screen */}
-      {!isFullScreen && (
-        <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-1.5 bg-[var(--vp-surface)] border-b border-[var(--vp-border)] overflow-x-auto no-scrollbar transition-colors duration-200">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowSupportResistance((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showSupportResistance
-                  ? 'bg-[#089981]/15 border-[#089981]/55 text-[var(--vp-bull)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)]'
-              }`}
-            >
-              S/R
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPatterns((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showPatterns
-                  ? 'bg-[#F59E0B]/15 border-[#F59E0B]/55 text-[var(--vp-accent-text)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)]'
-              }`}
-            >
-              Patterns
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSwingLabels((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showSwingLabels
-                  ? 'bg-[#089981]/15 border-[#089981]/55 text-[var(--vp-bull)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)]'
-              }`}
-            >
-              HH/HL/LH/LL
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowBosChoch((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showBosChoch
-                  ? 'bg-[#F59E0B]/15 border-[#F59E0B]/55 text-[var(--vp-accent-text)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)]'
-              }`}
-            >
-              BOS/CHoCH
-            </button>
-
-            <span className="h-4 w-[1px] bg-[var(--vp-border)] mx-0.5" aria-hidden="true" />
-
-            <button
-              type="button"
-              onClick={() => setShowEma20((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showEma20
-                  ? 'bg-[#F59E0B]/15 border-[#F59E0B]/60 text-[var(--vp-accent-text)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              EMA 20
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowEma50((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showEma50
-                  ? 'bg-[#38BDF8]/15 border-[#38BDF8]/60 text-[#0284C7] dark:text-[#38BDF8]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              EMA 50
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowEma200((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showEma200
-                  ? 'bg-[#C084FC]/15 border-[#C084FC]/60 text-[#9333EA] dark:text-[#C084FC]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              EMA 200
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowBollinger((v) => !v)}
-              className={`rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showBollinger
-                  ? 'bg-[#60A5FA]/15 border-[#60A5FA]/60 text-[#2563EB] dark:text-[#60A5FA]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              BB (20,2)
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRsi((v) => !v)}
-              className={`rounded-md inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showRsi
-                  ? 'bg-[#A78BFA]/15 border-[#A78BFA]/60 text-[#7C3AED] dark:text-[#A78BFA]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              <Activity className="h-3 w-3" />
-              <span className="font-mono-tabular">
-                RSI{showRsi && liveRsi !== null ? ` ${liveRsi.toFixed(1)}` : ''}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowVolumeProfile((v) => !v)}
-              className={`rounded-md inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                showVolumeProfile
-                  ? 'bg-[#089981]/15 border-[#089981]/60 text-[var(--vp-bull)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-              }`}
-            >
-              <BarChart2 className="h-3 w-3" />
-              Vol Profile
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={toggleReplayMode}
-              className={`rounded-md inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                replayActive
-                  ? 'bg-[#F59E0B] border-[#F59E0B] text-[#0B0E14]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]/60'
-              }`}
-            >
-              <Play className="h-3 w-3" />
-              Replay
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitView((v) => !v)}
-              className={`rounded-md inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer border transition-colors ${
-                splitView
-                  ? 'bg-[#089981]/15 border-[#089981]/60 text-[var(--vp-bull)]'
-                  : 'bg-[var(--vp-elevated)] border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#089981]/60'
-              }`}
-            >
-              <Columns2 className="h-3 w-3" />
-              Split
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Main Workspace: Chart(s) + Compact Live OMYE & SMC Sidebar */}
-      <div className={isFullScreen ? 'flex-1 min-h-0 flex w-full h-full' : 'flex flex-col lg:flex-row lg:h-[580px]'}>
+      {/* 1. Top Row: Primary Live Chart */}
+      <div
+        className={
+          isFullScreen
+            ? 'flex-1 min-h-0 flex flex-col w-full h-full bg-[#FFFFFF]'
+            : 'w-full'
+        }
+      >
+        {/* Chart 1 (Primary) */}
         <div
-          className={`flex-1 min-w-0 min-h-0 ${
+          className={
             isFullScreen
-              ? 'flex h-full w-full'
-              : `grid gap-0 border-b lg:border-b-0 lg:border-r border-[var(--vp-border)] ${
-                  splitView ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'
-                }`
-          }`}
+              ? 'relative flex-1 flex flex-col min-w-0 min-h-0 h-full w-full overflow-hidden bg-[#FFFFFF]'
+              : 'flex flex-col rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] shadow-sm overflow-hidden min-w-0'
+          }
         >
-          {/* Primary Chart Pane */}
-          <div
-            className={`relative min-w-0 min-h-0 overflow-hidden ${
-              isFullScreen ? 'flex-1 h-full w-full' : 'h-[400px] sm:h-[460px] lg:h-full'
-            } ${splitView && !isFullScreen ? 'border-b md:border-b-0 md:border-r border-[var(--vp-border)]' : ''}`}
-          >
-            <div ref={chartWrapRef} className="smc-chart-host absolute inset-0 touch-none" />
-
-            {/* Full Screen Top Bar inside Chart: Permanent 1m–1D Timeframe Selector + Exit Full Screen */}
-            {isFullScreen && (
-              <div className="pointer-events-none absolute top-2 left-2 right-[66px] z-[60] flex items-center justify-between gap-1.5">
+          {/* Dedicated 48px Full-Screen Header Bar */}
+          {isFullScreen && (
+            <div className="h-[48px] shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-bold text-xs text-[#131722] whitespace-nowrap">
+                  {symbolMeta.shortLabel}
+                </span>
+                <span
+                  className="font-mono-tabular text-xs font-bold whitespace-nowrap"
+                  style={{ color: isBullTick ? '#089981' : '#F23645' }}
+                >
+                  ${formatTerminalPrice(livePrice, symbolMeta.precision)}
+                </span>
                 <div
                   role="group"
-                  aria-label="In-chart timeframe selector"
-                  className="pointer-events-auto inline-flex min-w-0 flex-1 max-w-fit items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-0.5 sm:p-1 shadow-xl touch-pan-x"
+                  aria-label="Full screen timeframe selector"
+                  className="inline-flex min-w-0 items-center gap-1 overflow-x-auto no-scrollbar touch-pan-x"
                 >
-                  {IN_CHART_TIMEFRAMES.map((tf) => {
+                  {COMPACT_TIMEFRAMES.map((tf) => {
                     const active = timeframe === tf.value;
                     return (
                       <button
@@ -2280,10 +2097,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         type="button"
                         onClick={() => setTimeframe(tf.value)}
                         aria-pressed={active}
-                        className={`rounded-md px-2 sm:px-2.5 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        className={`rounded-md px-2 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                           active
-                            ? 'bg-[#FACC15] text-[#0B0E14] shadow-[0_0_12px_rgba(250,204,21,0.45)]'
-                            : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)] hover:bg-[var(--vp-control)]/70'
+                            ? 'bg-[#0F172A] text-[#FFFFFF]'
+                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
                         }`}
                       >
                         {tf.label}
@@ -2291,21 +2108,132 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     );
                   })}
                 </div>
-
-                <button
-                  type="button"
-                  onClick={toggleFullScreen}
-                  aria-label="Exit Full Screen"
-                  className="pointer-events-auto inline-flex min-h-[34px] sm:min-h-[38px] items-center gap-1.5 rounded-full border border-[#F59E0B]/70 bg-[var(--vp-header)]/95 px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold text-[var(--vp-text)] shadow-2xl hover:opacity-90 active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
-                >
-                  <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[var(--vp-accent-text)]" />
-                  <span className="sm:hidden">Exit</span>
-                  <span className="hidden sm:inline">Exit Full Screen</span>
-                </button>
               </div>
-            )}
 
-            {/* 4K Retina High-DPI Collision-Free Canvas Layer (Indicators, VPVR, S/R, SMC, Patterns, Live Beam) */}
+              <button
+                type="button"
+                onClick={toggleFullScreen}
+                aria-label="Exit Full Screen"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-[#FFFFFF] px-2.5 text-xs font-bold text-[#131722] shadow-sm cursor-pointer shrink-0 whitespace-nowrap hover:bg-[#F8FAFC]"
+              >
+                <Minimize2 className="h-3.5 w-3.5 text-[#131722]" />
+                <span>Exit</span>
+              </button>
+            </div>
+          )}
+
+          {/* Dedicated Non-Overlapping Chart 1 Header (Symbol + Live Price + 1m-4H Timeframe Buttons) */}
+          {!isFullScreen && (
+            <div className="shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 py-1.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className={`h-2 w-2 rounded-full shrink-0 ${
+                      streamStatus === 'LIVE WS'
+                        ? 'bg-[#059669] animate-pulse'
+                        : 'bg-[#F59E0B]'
+                    }`}
+                  />
+                  <select
+                    aria-label="Chart 1 symbol"
+                    value={symbol}
+                    onChange={(e) => {
+                      const nextSym = e.target.value as SmcSymbol;
+                      setSymbol(nextSym);
+                      const found = SYMBOL_OPTIONS.find((opt) => opt.value === nextSym);
+                      if (found) onSelectTvSymbol?.(found.tvSymbol);
+                    }}
+                    className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] px-2 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate max-w-[140px]"
+                  >
+                    {SYMBOL_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className="font-mono-tabular text-xs sm:text-[13px] font-bold"
+                    style={{ color: isBullTick ? '#059669' : '#DC2626' }}
+                  >
+                    ${formatTerminalPrice(livePrice, symbolMeta.precision)}
+                  </span>
+                  <HeaderCountdownChip
+                    timeframe={timeframe}
+                    latestBarTime={latestBarTime}
+                    currentTfLabel={currentTfLabel}
+                    isBullTick={isBullTick}
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleFullScreen}
+                    aria-label="Enter Full Screen"
+                    title="Full Screen"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen(true)}
+                    aria-label="Chart Settings"
+                    title="Chart Settings"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#475569] cursor-pointer"
+                  >
+                    <Settings className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Clean Non-Overlapping 1m–4H Buttons */}
+              <div
+                role="group"
+                aria-label="Chart 1 timeframe selector"
+                className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar"
+              >
+                <div className="flex items-center gap-1">
+                  {COMPACT_TIMEFRAMES.map((tf) => {
+                    const active = timeframe === tf.value;
+                    return (
+                      <button
+                        key={`c1-tf-${tf.value}`}
+                        type="button"
+                        onClick={() => setTimeframe(tf.value)}
+                        aria-pressed={active}
+                        className={`rounded-md px-2 py-0.5 text-[10.5px] font-mono-tabular font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-[#0F172A] text-[#FFFFFF] shadow-sm'
+                            : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="text-[10px] font-mono-tabular font-semibold text-[#64748B] whitespace-nowrap shrink-0">
+                  SMC Auto
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Chart 1 Canvas Container */}
+          <div
+            style={
+              isFullScreen
+                ? { height: 'calc(100dvh - 48px)', backgroundColor: '#FFFFFF' }
+                : { backgroundColor: '#FFFFFF' }
+            }
+            className={`relative min-w-0 min-h-0 overflow-hidden bg-[#FFFFFF] ${
+              isFullScreen ? 'flex-1 w-full' : 'h-[265px] sm:h-[320px] lg:h-[370px]'
+            }`}
+          >
+            <div ref={chartWrapRef} className="smc-chart-host absolute inset-0 z-[1] bg-[#FFFFFF] touch-none" />
+
+            {/* High-DPI Canvas SMC Overlay (CHoCH, OB+, S1, S2, Patterns, Live Pulse) */}
             <ChartCanvasOverlay
               redrawRef={overlayRedrawRef}
               chart={chartApiRef.current}
@@ -2323,12 +2251,12 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               showSwingLabels={showSwingLabels}
               showBosChoch={showBosChoch}
               precision={symbolMeta.precision}
-              themeMode={themeMode}
+              themeMode="light"
               livePrice={livePrice}
               isBullTick={isBullTick}
             />
 
-            {/* TradingView-Style Candle Closing Countdown Stacked Directly Under Right-Axis Live Price */}
+            {/* Right-Axis Candle Countdown Stacked Under Live Price */}
             <PriceAxisCountdownTag
               syncRef={countdownSyncRef}
               chart={chartApiRef.current}
@@ -2339,131 +2267,28 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               latestBarTime={latestBarTime}
             />
 
-            {/* Top-Left Inside-Chart Stack: 1m–1D Timeframe Selector + OHLCV Legend + Active Indicators + Live Candle Points — hidden in Full Screen */}
-            {!isFullScreen && (
-              <div className="pointer-events-none absolute top-2 left-2 right-16 z-[25] flex flex-col items-start gap-1.5">
-                {/* Floating In-Chart Timeframe Selector (1m..1D) at Top Side of Chart */}
-                <div
-                  role="group"
-                  aria-label="In-chart timeframe selector"
-                  className="pointer-events-auto inline-flex max-w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-lg touch-pan-x"
-                >
-                  {IN_CHART_TIMEFRAMES.map((tf) => {
-                    const active = timeframe === tf.value;
-                    return (
-                      <button
-                        key={`in-chart-${tf.value}`}
-                        type="button"
-                        onClick={() => setTimeframe(tf.value)}
-                        aria-pressed={active}
-                        className={`rounded-md px-2.5 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                          active
-                            ? 'bg-[#FACC15] text-[#0B0E14] shadow-[0_0_12px_rgba(250,204,21,0.45)]'
-                            : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)] hover:bg-[var(--vp-control)]/70'
-                        }`}
-                      >
-                        {tf.label}
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* Collision-Free Right-Edge Trade Price Badges + TradingView-Style Draggable Entry/TP/SL Handles */}
+            <TradeLinesOverlay
+              syncRef={tradeOverlaySyncRef}
+              chart={chartApiRef.current}
+              candleSeries={candleSeriesRef.current}
+              positions={activePositions}
+              livePrice={livePrice}
+              precision={symbolMeta.precision}
+              minMove={symbolMeta.minMove}
+              dragPreview={dragPreview}
+              onDragPreviewChange={setDragPreview}
+              onUpdateTpSl={onUpdateDemoPositionTpSl}
+              onClosePosition={onCloseDemoPosition}
+            />
 
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] font-mono-tabular">
-                    <span className="font-sans font-bold text-[var(--vp-text)]">
-                      {symbolMeta.shortLabel} · {currentTfLabel}
-                    </span>
-                    {activeLegendBar && (
-                      <div className="flex flex-wrap items-center gap-x-2 text-[10.5px]">
-                        <span className="text-[var(--vp-muted)]">
-                          O<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.open.toFixed(symbolMeta.precision)}</span>
-                        </span>
-                        <span className="text-[var(--vp-muted)]">
-                          H<span className="text-[var(--vp-bull)] ml-0.5">{activeLegendBar.high.toFixed(symbolMeta.precision)}</span>
-                        </span>
-                        <span className="text-[var(--vp-muted)]">
-                          L<span className="text-[var(--vp-bear)] ml-0.5">{activeLegendBar.low.toFixed(symbolMeta.precision)}</span>
-                        </span>
-                        <span className="text-[var(--vp-muted)]">
-                          C<span className="text-[var(--vp-text)] ml-0.5">{activeLegendBar.close.toFixed(symbolMeta.precision)}</span>
-                        </span>
-                        {activeLegendDeltaPct !== null && (
-                          <span
-                            className="font-semibold"
-                            style={{ color: activeLegendDeltaPct >= 0 ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-                          >
-                            {activeLegendDeltaPct >= 0 ? '+' : ''}
-                            {activeLegendDeltaPct.toFixed(2)}%
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {(showEma20 || showEma50 || showEma200 || showBollinger || showRsi) && (
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] font-mono-tabular">
-                      {showEma20 && indicatorValues.ema20 !== undefined && (
-                        <span className="text-[#F59E0B]">
-                          EMA20 {indicatorValues.ema20.toFixed(symbolMeta.precision)}
-                        </span>
-                      )}
-                      {showEma50 && indicatorValues.ema50 !== undefined && (
-                        <span className="text-[#38BDF8]">
-                          EMA50 {indicatorValues.ema50.toFixed(symbolMeta.precision)}
-                        </span>
-                      )}
-                      {showEma200 && indicatorValues.ema200 !== undefined && (
-                        <span className="text-[#C084FC]">
-                          EMA200 {indicatorValues.ema200.toFixed(symbolMeta.precision)}
-                        </span>
-                      )}
-                      {showBollinger && indicatorValues.bbUpper !== undefined && indicatorValues.bbLower !== undefined && (
-                        <span className="text-[#60A5FA]">
-                          BB {indicatorValues.bbUpper.toFixed(symbolMeta.precision)} / {indicatorValues.bbLower.toFixed(symbolMeta.precision)}
-                        </span>
-                      )}
-                      {showRsi && liveRsi !== null && (
-                        <span className="text-[#A78BFA]">RSI(14) {liveRsi.toFixed(1)}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Compact Live Forming Candle Points Badge */}
-                {liveCandleMove && (
-                  <div
-                    aria-label="Live candle points moved"
-                    className="pointer-events-none inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] leading-tight font-mono-tabular font-bold shadow-sm"
-                    style={{
-                      borderColor: liveCandleMove.isBull
-                        ? 'rgba(8, 153, 129, 0.45)'
-                        : 'rgba(242, 54, 69, 0.45)',
-                      backgroundColor: 'var(--vp-header)',
-                      color: liveCandleMove.isBull ? 'var(--vp-bull)' : 'var(--vp-bear)',
-                    }}
-                  >
-                    <span
-                      className="h-1 w-1 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: liveCandleMove.isBull ? '#089981' : '#F23645',
-                      }}
-                    />
-                    <span>
-                      {liveCandleMove.delta >= 0 ? '+' : '-'}
-                      {Math.abs(liveCandleMove.delta).toFixed(symbolMeta.precision)} pts
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Floating Bar Replay Simulator Controls — hidden in Full Screen */}
+            {/* Replay Controls when active */}
             {!isFullScreen && replayActive && (
-              <div className="absolute top-24 sm:top-20 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center gap-1.5 rounded-full border border-[#F59E0B]/50 bg-[var(--vp-header)]/95 px-3 py-1.5 shadow-xl">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center gap-1.5 rounded-full border border-[#F59E0B]/50 bg-[#FFFFFF]/95 px-3 py-1 shadow-md">
                 <button
                   type="button"
                   onClick={() => setReplayPlaying((p) => !p)}
-                  className="vp-pill-btn inline-flex h-6 items-center gap-1 bg-[#F59E0B] px-2.5 text-[11px] font-bold text-[#0B0E14] cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-1 bg-[#F59E0B] px-2 text-[10px] font-bold text-[#0F172A] cursor-pointer"
                 >
                   {replayPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                   {replayPlaying ? 'Pause' : 'Play'}
@@ -2472,7 +2297,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={() => applyReplaySlice(replayIndex + 1)}
                   disabled={replayIndex >= replayTotal}
-                  className="vp-pill-btn inline-flex h-6 items-center gap-0.5 bg-[var(--vp-control)] px-2 text-[11px] font-semibold text-[var(--vp-text)] hover:opacity-85 disabled:opacity-40 cursor-pointer"
+                  className="vp-pill-btn inline-flex h-6 items-center gap-0.5 bg-[#F1F5F9] px-2 text-[10px] font-semibold text-[#0F172A] cursor-pointer"
                 >
                   <SkipForward className="h-3 w-3" />
                   +1
@@ -2480,30 +2305,15 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 <button
                   type="button"
                   onClick={() => setReplaySpeed((s) => (s === 1 ? 2 : s === 2 ? 4 : 1))}
-                  className="vp-pill-btn h-6 bg-[var(--vp-control)] px-2 text-[10px] font-mono-tabular font-bold text-[#0284C7] dark:text-[#38BDF8] cursor-pointer"
+                  className="vp-pill-btn h-6 bg-[#F1F5F9] px-2 text-[10px] font-mono-tabular font-bold text-[#0284C7] cursor-pointer"
                 >
                   {replaySpeed}x
                 </button>
-                <input
-                  type="range"
-                  aria-label="Replay bar position"
-                  min={20}
-                  max={Math.max(20, replayTotal)}
-                  value={replayIndex}
-                  onChange={(e) => {
-                    setReplayPlaying(false);
-                    applyReplaySlice(Number(e.target.value));
-                  }}
-                  className="w-20 sm:w-28 accent-[#F59E0B] cursor-pointer"
-                />
-                <span className="font-mono-tabular text-[10px] text-[var(--vp-muted)]">
-                  {replayIndex}/{replayTotal}
-                </span>
                 <button
                   type="button"
                   onClick={() => applyReplaySlice(Math.max(24, Math.floor(replayTotal * 0.55)))}
                   title="Restart Replay"
-                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#F1F5F9] text-[#0F172A] cursor-pointer"
                 >
                   <RotateCcw className="h-3 w-3" />
                 </button>
@@ -2511,304 +2321,331 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={toggleReplayMode}
                   title="Exit Replay"
-                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[var(--vp-control)] text-[var(--vp-bear)] hover:bg-[#F23645]/20 cursor-pointer"
+                  className="vp-pill-btn flex h-6 w-6 items-center justify-center bg-[#FEF2F2] text-[#DC2626] cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
               </div>
             )}
 
-            {/* Bottom In-Chart Controls: Zoom & History Span (Normal Mode) */}
+            {/* Compact Bottom-Left Zoom Controls */}
             {!isFullScreen && (
-              <div className="absolute bottom-8 left-2.5 right-16 z-[25] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-                <div
-                  role="group"
-                  aria-label="Chart zoom and history controls"
-                  className="pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-md"
+              <div
+                role="group"
+                aria-label="Chart 1 zoom controls"
+                className="absolute bottom-7 left-2 z-[25] flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/95 p-0.5 shadow-sm"
+              >
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  aria-label="Zoom In"
+                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
                 >
-                  <button
-                    type="button"
-                    onClick={handleZoomIn}
-                    title="Zoom In"
-                    aria-label="Zoom In"
-                    className="flex h-6 w-6 items-center justify-center rounded bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleZoomOut}
-                    title="Zoom Out"
-                    aria-label="Zoom Out"
-                    className="flex h-6 w-6 items-center justify-center rounded bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
-                  >
-                    -
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleZoomReset}
-                    title="Fit All Loaded History"
-                    aria-label="Fit All Loaded History"
-                    className="flex h-6 items-center justify-center rounded bg-[var(--vp-control)] px-2 text-[10px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleJumpLive}
-                    title="Snap to Live Candles"
-                    aria-label="Snap to Live Candles"
-                    className="flex h-6 items-center justify-center rounded bg-[var(--vp-control)] px-2 text-[10px] font-semibold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
-                  >
-                    Live
-                  </button>
-                </div>
-
-                {(isLoadingHistory || loadedSpanInfo) && (
-                  <div className="pointer-events-auto inline-flex items-center gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 px-2.5 py-1 text-[10px] font-mono-tabular text-[var(--vp-muted)] shadow-md">
-                    {isLoadingHistory ? (
-                      <span className="text-[var(--vp-accent-text)] font-semibold">
-                        Loading older history...
-                      </span>
-                    ) : loadedSpanInfo ? (
-                      <>
-                        <span>
-                          Since{' '}
-                          <strong className="text-[var(--vp-text)]">
-                            {new Date(loadedSpanInfo.oldestTs * 1000).toLocaleDateString('en-US', {
-                              month: 'short',
-                              year: 'numeric',
-                              timeZone: 'UTC',
-                            })}
-                          </strong>{' '}
-                          · {loadedSpanInfo.count.toLocaleString()} bars
-                        </span>
-                        {!hasMoreHistory && timeframe !== '1d' && timeframe !== '1w' && (
-                          <button
-                            type="button"
-                            onClick={() => setTimeframe('1d')}
-                            className="rounded bg-[#F59E0B]/15 border border-[#F59E0B]/45 px-1.5 py-0.5 text-[10px] font-bold text-[var(--vp-accent-text)] cursor-pointer hover:bg-[#F59E0B]/25"
-                          >
-                            1D Inception ({loadedSpanInfo.inceptionDate ?? 'Full'})
-                          </button>
-                        )}
-                      </>
-                    ) : null}
-                  </div>
-                )}
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  aria-label="Zoom Out"
+                  className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomReset}
+                  aria-label="Fit All"
+                  className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#B45309] hover:bg-[#E2E8F0] cursor-pointer"
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={handleJumpLive}
+                  aria-label="Snap Live"
+                  className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
+                >
+                  Live
+                </button>
               </div>
             )}
 
             {/* Initial Loading Overlay */}
             {isLoadingInitial && !loadError && (
-              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[var(--vp-canvas)]/55">
-                <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-header)]/95 px-4 py-2 text-xs font-semibold text-[var(--vp-text)] shadow-lg">
-                  Loading live {symbolMeta.shortLabel} ({currentTfLabel})...
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[#FFFFFF]/70">
+                <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3.5 py-1.5 text-xs font-semibold text-[#0F172A] shadow-sm">
+                  Loading {symbolMeta.shortLabel} ({currentTfLabel})...
                 </div>
               </div>
             )}
 
             {loadError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[var(--vp-canvas)]/90 p-4 text-center text-xs text-[var(--vp-muted)] z-30">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#FFFFFF]/95 p-4 text-center text-xs text-[#475569] z-30">
                 <span>{loadError}</span>
                 <button
                   type="button"
                   onClick={() => setReloadNonce((n) => n + 1)}
-                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#0B0E14] cursor-pointer"
+                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#0F172A] cursor-pointer"
                 >
                   Retry Chart
                 </button>
               </div>
             )}
           </div>
-
-          {/* Secondary Chart Pane (2-Chart Split View) */}
-          {!isFullScreen && splitView && (
-            <SecondarySplitChart
-              defaultSymbol={symbol === 'BTCUSDT' ? 'XAUUSD' : 'BTCUSDT'}
-              defaultTimeframe={timeframe === '1h' ? '15m' : '1h'}
-              showEma20={showEma20}
-              showEma50={showEma50}
-              showBollinger={showBollinger}
-              themeMode={themeMode}
-            />
-          )}
         </div>
 
-        {/* Compact Live Sidebar: OMYE + Smart Money Concepts + Auto Entry/TP/SL — hidden in Full Screen */}
-        {!isFullScreen && (
-          <aside
-            aria-label="Live OMYE and Smart Money Concepts Sidebar"
-            className="w-full lg:w-[310px] shrink-0 bg-[var(--vp-surface)] p-2.5 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2.5 lg:overflow-y-auto transition-colors duration-200"
-          >
-            {/* 1. Live Auto-Updating Entry / Target / Stop-Loss */}
-            <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between transition-colors">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
-                  Live Setup (1:2 R:R)
-                </span>
-                <span
-                  className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                    !smc
-                      ? 'bg-[var(--vp-control)] text-[var(--vp-text)]'
-                      : smc.trend === 1
-                        ? 'bg-[#089981]/15 text-[var(--vp-bull)]'
-                        : 'bg-[#F23645]/15 text-[var(--vp-bear)]'
-                  }`}
-                >
-                  {!smc ? 'SCANNING' : smc.trend === 1 ? 'BUY SETUP' : 'SELL SETUP'}
-                </span>
-              </div>
-
-              <div className="space-y-1 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">Entry (Live)</span>
-                  <span className="font-mono-tabular font-bold text-[var(--vp-accent-text)]">
-                    ${formatTerminalPrice(smc?.entry ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">Target (TP)</span>
-                  <span className="font-mono-tabular font-bold text-[var(--vp-bull)]">
-                    ${formatTerminalPrice(smc?.tp ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">Stop Loss (SL)</span>
-                  <span className="font-mono-tabular font-bold text-[var(--vp-bear)]">
-                    ${formatTerminalPrice(smc?.sl ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. OMYE (One-Minute Market Engine) */}
-            <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between transition-colors">
-              <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse shrink-0" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-text)] truncate">
-                    OMYE · 1m Engine
-                  </span>
-                </div>
-                <span
-                  className={`rounded-md px-2 py-0.5 text-[10px] font-bold shrink-0 ${
-                    !omye || omye.signal === 'NEUTRAL'
-                      ? 'bg-[var(--vp-control)] text-[var(--vp-accent-text)]'
-                      : omye.signal.includes('BUY')
-                        ? 'bg-[#089981]/15 text-[var(--vp-bull)]'
-                        : 'bg-[#F23645]/15 text-[var(--vp-bear)]'
-                  }`}
-                >
-                  {omye?.signal ?? 'SYNCING'}
-                </span>
-              </div>
-
-              <div className="space-y-1.5 text-[11px]">
-                <div>
-                  <div className="flex items-center justify-between text-[10px] text-[var(--vp-muted)] mb-0.5 font-mono-tabular">
-                    <span>Bull {omye?.bullPressurePct ?? 50}%</span>
-                    <span>RSI(1m): {omye ? omye.rsi1m.toFixed(1) : '--'}</span>
-                    <span>Bear {100 - (omye?.bullPressurePct ?? 50)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-[#F23645]/60 overflow-hidden">
-                    <div
-                      className="h-full bg-[#089981] transition-all duration-300"
-                      style={{ width: `${omye?.bullPressurePct ?? 50}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1 pt-0.5 text-[10px] font-mono-tabular">
-                  <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
-                    <span className="block text-[var(--vp-muted)]">1m Entry</span>
-                    <span className="font-bold text-[var(--vp-accent-text)]">
-                      {formatTerminalPrice(omye?.entry ?? null, symbolMeta.precision)}
-                    </span>
-                  </div>
-                  <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
-                    <span className="block text-[var(--vp-muted)]">1m TP</span>
-                    <span className="font-bold text-[var(--vp-bull)]">
-                      {formatTerminalPrice(omye?.tp ?? null, symbolMeta.precision)}
-                    </span>
-                  </div>
-                  <div className="rounded bg-[var(--vp-surface)] px-1.5 py-1">
-                    <span className="block text-[var(--vp-muted)]">1m SL</span>
-                    <span className="font-bold text-[var(--vp-bear)]">
-                      {formatTerminalPrice(omye?.sl ?? null, symbolMeta.precision)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Smart Money Concepts */}
-            <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2.5 flex flex-col justify-between transition-colors">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
-                  Smart Money (SMC)
-                </span>
-                <span className="text-[10px] font-bold text-[var(--vp-accent-text)] truncate">
-                  {smc?.pattern ? smc.pattern.name : 'Structure'}
-                </span>
-              </div>
-
-              <div className="space-y-1 text-[11px]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">Order Block</span>
-                  {smc?.orderBlock ? (
-                    <span
-                      className="font-mono-tabular font-semibold"
-                      style={{ color: smc.orderBlock.type === 'Bullish' ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-                    >
-                      {smc.orderBlock.type === 'Bullish' ? 'OB+' : 'OB-'}{' '}
-                      {formatTerminalPrice(smc.orderBlock.low, symbolMeta.precision)}–
-                      {formatTerminalPrice(smc.orderBlock.high, symbolMeta.precision)}
-                    </span>
-                  ) : (
-                    <span className="font-mono-tabular text-[var(--vp-muted)]">Forming</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">FVG Zone</span>
-                  {smc?.fvg ? (
-                    <span
-                      className="font-mono-tabular font-semibold"
-                      style={{ color: smc.fvg.type === 'Bullish' ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
-                    >
-                      {smc.fvg.type === 'Bullish' ? '+FVG' : '-FVG'}{' '}
-                      {formatTerminalPrice(smc.fvg.low, symbolMeta.precision)}–
-                      {formatTerminalPrice(smc.fvg.high, symbolMeta.precision)}
-                    </span>
-                  ) : (
-                    <span className="font-mono-tabular text-[var(--vp-muted)]">Balanced</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--vp-muted)]">BOS / CHoCH</span>
-                  <span
-                    className="font-mono-tabular font-bold"
-                    style={{ color: smc?.trend === -1 ? 'var(--vp-bear)' : 'var(--vp-bull)' }}
-                  >
-                    {smc?.lastEvent ?? 'BOS'} ({smc ? `${smc.bosCount}/${smc.chochCount}` : '0/0'})
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-[var(--vp-border)]">
-                  <span className="font-mono-tabular text-[var(--vp-bull)]">
-                    S1: {formatTerminalPrice(smc?.supportPrice ?? null, symbolMeta.precision)}
-                  </span>
-                  <span className="font-mono-tabular text-[var(--vp-bear)]">
-                    R1: {formatTerminalPrice(smc?.resistancePrice ?? null, symbolMeta.precision)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
       </div>
+
+      {/* 2. Bottom Row: ONLY a 2x2 Grid of 4 Compact Info / Signal & Demo Execution Boxes */}
+      {!isFullScreen && (
+        <div
+          aria-label="Live Signal and Demo Execution 2x2 Grid"
+          className="grid grid-cols-2 gap-2.5 w-full"
+        >
+          {/* Box 1: Live Setup (1:2 R:R) */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
+            <div className="flex items-center justify-between gap-1.5 mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] truncate">
+                {symbolMeta.shortLabel} · Setup (1:2)
+              </span>
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[9.5px] font-bold shrink-0 ${
+                  !smc
+                    ? 'bg-[#F1F5F9] text-[#475569]'
+                    : smc.trend === 1
+                      ? 'bg-[#ECFDF5] text-[#059669]'
+                      : 'bg-[#FEF2F2] text-[#DC2626]'
+                }`}
+              >
+                {!smc ? 'SCANNING' : smc.trend === 1 ? 'BUY' : 'SELL'}
+              </span>
+            </div>
+
+            <div className="space-y-1 text-[11px] sm:text-xs">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[#64748B] truncate">Entry</span>
+                <span className="font-mono-tabular font-bold text-[#B45309]">
+                  ${formatTerminalPrice(smc?.entry ?? null, symbolMeta.precision)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[#64748B] truncate">Target (TP)</span>
+                <span className="font-mono-tabular font-bold text-[#059669]">
+                  ${formatTerminalPrice(smc?.tp ?? null, symbolMeta.precision)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[#64748B] truncate">Stop (SL)</span>
+                <span className="font-mono-tabular font-bold text-[#DC2626]">
+                  ${formatTerminalPrice(smc?.sl ?? null, symbolMeta.precision)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Box 2: OMYE · 1m Engine */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
+            <div className="flex items-center justify-between gap-1.5 mb-1.5">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#059669] animate-pulse shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F172A] truncate">
+                  OMYE · 1m
+                </span>
+              </div>
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[9.5px] font-bold shrink-0 ${
+                  !omye || omye.signal === 'NEUTRAL'
+                    ? 'bg-[#F1F5F9] text-[#B45309]'
+                    : omye.signal.includes('BUY')
+                      ? 'bg-[#ECFDF5] text-[#059669]'
+                      : 'bg-[#FEF2F2] text-[#DC2626]'
+                }`}
+              >
+                {omye?.signal ?? 'SYNC'}
+              </span>
+            </div>
+
+            <div className="space-y-1.5 text-[10.5px]">
+              <div>
+                <div className="flex items-center justify-between text-[9.5px] text-[#64748B] mb-0.5 font-mono-tabular">
+                  <span>Bull {omye?.bullPressurePct ?? 50}%</span>
+                  <span>RSI {omye ? omye.rsi1m.toFixed(1) : '--'}</span>
+                  <span>Bear {100 - (omye?.bullPressurePct ?? 50)}%</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-[#DC2626]/45 overflow-hidden">
+                  <div
+                    className="h-full bg-[#059669] transition-all duration-300"
+                    style={{ width: `${omye?.bullPressurePct ?? 50}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1 text-[9.5px] sm:text-[10px] font-mono-tabular">
+                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
+                  <span className="block text-[#64748B] text-[9px]">Entry</span>
+                  <span className="font-bold text-[#B45309]">
+                    {formatTerminalPrice(omye?.entry ?? null, symbolMeta.precision)}
+                  </span>
+                </div>
+                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
+                  <span className="block text-[#64748B] text-[9px]">TP</span>
+                  <span className="font-bold text-[#059669]">
+                    {formatTerminalPrice(omye?.tp ?? null, symbolMeta.precision)}
+                  </span>
+                </div>
+                <div className="rounded bg-[#F8FAFC] border border-[#F1F5F9] px-1 py-0.5 truncate">
+                  <span className="block text-[#64748B] text-[9px]">SL</span>
+                  <span className="font-bold text-[#DC2626]">
+                    {formatTerminalPrice(omye?.sl ?? null, symbolMeta.precision)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Box 3: Smart Money (SMC) Levels & Zones */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
+            <div className="flex items-center justify-between gap-1.5 mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] truncate">
+                Smart Money (SMC)
+              </span>
+              <span className="text-[10px] font-bold text-[#B45309] truncate">
+                {smc?.pattern ? smc.pattern.name : 'Structure'}
+              </span>
+            </div>
+
+            <div className="space-y-1 text-[10.5px] sm:text-[11px]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[#64748B] shrink-0">OB</span>
+                {smc?.orderBlock ? (
+                  <span
+                    className="font-mono-tabular font-semibold truncate"
+                    style={{ color: smc.orderBlock.type === 'Bullish' ? '#059669' : '#DC2626' }}
+                  >
+                    {smc.orderBlock.type === 'Bullish' ? 'OB+' : 'OB-'}{' '}
+                    {formatTerminalPrice(smc.orderBlock.low, symbolMeta.precision)}
+                  </span>
+                ) : (
+                  <span className="font-mono-tabular text-[#64748B]">Forming</span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[#64748B] shrink-0">Event</span>
+                <span
+                  className="font-mono-tabular font-bold truncate"
+                  style={{ color: smc?.trend === -1 ? '#DC2626' : '#059669' }}
+                >
+                  {smc?.lastEvent ?? 'BOS'} ({smc ? `${smc.bosCount}/${smc.chochCount}` : '0/0'})
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-1 pt-0.5 border-t border-[#F1F5F9] font-mono-tabular text-[10px]">
+                <span className="text-[#059669] font-semibold truncate">
+                  S1 {formatTerminalPrice(smc?.supportPrice ?? null, symbolMeta.precision)}
+                </span>
+                <span className="text-[#DC2626] font-semibold truncate">
+                  R1 {formatTerminalPrice(smc?.resistancePrice ?? null, symbolMeta.precision)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Box 4: $1,000 Demo Quick Trade & Live P&L */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 shadow-sm flex flex-col justify-between min-w-0">
+            <div className="flex items-center justify-between gap-1.5 mb-1">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="rounded bg-[#ECFDF5] border border-[#059669]/30 px-1 py-0.5 text-[9px] font-extrabold text-[#059669] shrink-0">
+                  DEMO
+                </span>
+                <span className="font-mono-tabular text-[10.5px] font-bold text-[#0F172A] truncate">
+                  {formatUsd(displayEquity)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenDemoDrawer}
+                className="text-[10px] font-bold text-[#B45309] hover:underline cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Panel ({demoPositions.length})
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-[10px] font-mono-tabular mb-1.5">
+              <span className="text-[#64748B] truncate">
+                {activePositions.length > 0
+                  ? `${activePositions.length} open · Bal ${formatUsd(displayBalance)}`
+                  : `Lot ${demoDefaultLot.toFixed(2)} · Ready`}
+              </span>
+              <span
+                className="font-bold shrink-0"
+                style={{
+                  color:
+                    totalFloatingPnl > 0.005
+                      ? '#059669'
+                      : totalFloatingPnl < -0.005
+                        ? '#DC2626'
+                        : '#475569',
+                }}
+              >
+                P&L {formatUsd(activePositions.length > 0 ? activeFloatingPnl : totalFloatingPnl, true)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 mb-1.5">
+              {[0.05, 0.1, 0.25].map((lotOpt) => {
+                const active = Math.abs(demoDefaultLot - lotOpt) < 0.001;
+                return (
+                  <button
+                    key={lotOpt}
+                    type="button"
+                    onClick={() => onChangeDemoDefaultLot?.(lotOpt)}
+                    className={`flex-1 rounded border py-0.5 text-[9.5px] font-mono-tabular font-bold cursor-pointer ${
+                      active
+                        ? 'border-[#0F172A] bg-[#0F172A] text-[#FFFFFF]'
+                        : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]'
+                    }`}
+                  >
+                    {lotOpt}
+                  </button>
+                );
+              })}
+              {activePositions.length > 0 && onCloseDemoPosition && (
+                <button
+                  type="button"
+                  onClick={() => onCloseDemoPosition(activePositions[0].id)}
+                  className="rounded border border-[#DC2626]/40 bg-[#FEF2F2] px-1.5 py-0.5 text-[9.5px] font-bold text-[#DC2626] cursor-pointer whitespace-nowrap"
+                >
+                  Close
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleQuickDemoOrder('SELL')}
+                className="rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] py-1 text-[10.5px] font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98]"
+              >
+                SELL {demoDefaultLot.toFixed(2)}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickDemoOrder('BUY')}
+                className="rounded-lg bg-[#059669] hover:bg-[#047857] py-1 text-[10.5px] font-bold text-[#FFFFFF] cursor-pointer active:scale-[0.98]"
+              >
+                BUY {demoDefaultLot.toFixed(2)}
+              </button>
+            </div>
+
+            {quickOrderNote && (
+              <p className="mt-1 text-[9.5px] font-medium text-[#475569] truncate">
+                {quickOrderNote}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <ChartSettingsModal
         isOpen={settingsOpen}
@@ -2940,7 +2777,7 @@ const PriceAxisCountdownTag: React.FC<PriceAxisCountdownTagProps> = memo(
       const left = Math.floor(pane.width) + 1;
       const width = Math.max(48, Math.floor(scaleWidth) - 2);
       const nextTransform = `translate3d(${left}px, ${Math.round(top)}px, 0)`;
-      const nextBg = bull ? '#067A66' : '#C92534';
+      const nextBg = bull ? '#089981' : '#F23645';
       const nextText = formatCandleCountdown(tf, lbt);
 
       if (el.style.display !== 'flex') el.style.display = 'flex';
@@ -2978,8 +2815,677 @@ const PriceAxisCountdownTag: React.FC<PriceAxisCountdownTagProps> = memo(
       <div
         ref={elRef}
         aria-label="Candle closing countdown"
-        className="pointer-events-none absolute top-0 left-0 z-[22] hidden h-[16px] items-center justify-center rounded-[3px] font-mono-tabular text-[9.5px] font-bold leading-none text-white shadow-sm will-change-transform"
+        className="pointer-events-none absolute top-0 left-0 z-[22] hidden h-[16px] items-center justify-center rounded-[3px] font-mono-tabular text-[9.5px] font-bold leading-none text-[#FFFFFF] shadow-sm will-change-transform"
       />
+    );
+  }
+);
+
+interface TradeLinesOverlayProps {
+  syncRef: React.MutableRefObject<(() => void) | null>;
+  chart: IChartApi | null;
+  candleSeries: ISeriesApi<'Candlestick', Time> | null;
+  positions: DemoPosition[];
+  livePrice: number | null;
+  precision: number;
+  minMove: number;
+  dragPreview: { positionId: string; kind: 'tp' | 'sl'; price: number } | null;
+  onDragPreviewChange: (val: { positionId: string; kind: 'tp' | 'sl'; price: number } | null) => void;
+  onUpdateTpSl?: (positionId: string, tp: number | undefined, sl: number | undefined) => void;
+  onClosePosition?: (positionId: string) => void;
+}
+
+interface AxisPriceBadgeItem {
+  key: string;
+  positionId: string;
+  kind: 'entry' | 'tp' | 'sl';
+  price: number;
+  rawY: number;
+  y: number;
+  bg: string;
+  label: string;
+}
+
+interface PlotHandleItem {
+  key: string;
+  positionId: string;
+  kind: 'entry' | 'tp' | 'sl';
+  rawY: number;
+  y: number;
+  price: number;
+  pnl: number;
+  side: 'BUY' | 'SELL';
+  lots: number;
+}
+
+const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
+  ({
+    syncRef,
+    chart,
+    candleSeries,
+    positions,
+    livePrice,
+    precision,
+    minMove,
+    dragPreview,
+    onDragPreviewChange,
+    onUpdateTpSl,
+    onClosePosition,
+  }) => {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const [layoutState, setLayoutState] = useState<{
+      paneWidth: number;
+      paneHeight: number;
+      scaleWidth: number;
+      axisBadges: AxisPriceBadgeItem[];
+      plotHandles: PlotHandleItem[];
+    }>({
+      paneWidth: 0,
+      paneHeight: 0,
+      scaleWidth: 64,
+      axisBadges: [],
+      plotHandles: [],
+    });
+
+    const propsRef = useRef({
+      chart,
+      candleSeries,
+      positions,
+      livePrice,
+      precision,
+      dragPreview,
+    });
+    propsRef.current = {
+      chart,
+      candleSeries,
+      positions,
+      livePrice,
+      precision,
+      dragPreview,
+    };
+
+    const recomputeLayout = useCallback(() => {
+      const {
+        chart: c,
+        candleSeries: s,
+        positions: posList,
+        livePrice: lp,
+        precision: prec,
+        dragPreview: preview,
+      } = propsRef.current;
+
+      if (!c || !s || posList.length === 0) {
+        setLayoutState((prev) =>
+          prev.axisBadges.length === 0 && prev.plotHandles.length === 0
+            ? prev
+            : { paneWidth: 0, paneHeight: 0, scaleWidth: 64, axisBadges: [], plotHandles: [] }
+        );
+        return;
+      }
+
+      const pane = c.paneSize(0);
+      const scaleWidth = c.priceScale('right').width();
+      if (!pane || pane.width <= 0 || pane.height <= 0 || scaleWidth < 20) return;
+
+      const rawAxisBadges: AxisPriceBadgeItem[] = [];
+      const entryPlotHandles: PlotHandleItem[] = [];
+      const targetPlotHandles: PlotHandleItem[] = [];
+      const mark = lp ?? posList[0].entryPrice;
+
+      for (const pos of posList.slice(0, 6)) {
+        const entryYRaw = s.priceToCoordinate(pos.entryPrice);
+        const pnl = calcPositionPnl(pos, mark);
+        const isProfit = pnl >= 0;
+        if (entryYRaw !== null && Number.isFinite(Number(entryYRaw))) {
+          const rawY = Number(entryYRaw);
+          if (rawY >= -16 && rawY <= pane.height + 16) {
+            rawAxisBadges.push({
+              key: `entry-${pos.id}`,
+              positionId: pos.id,
+              kind: 'entry',
+              price: pos.entryPrice,
+              rawY,
+              y: rawY,
+              bg: isProfit ? '#089981' : '#F23645',
+              label: pos.entryPrice.toFixed(prec),
+            });
+            const clampedEntryY = Math.max(13, Math.min(pane.height - 15, rawY));
+            entryPlotHandles.push({
+              key: `pill-entry-${pos.id}`,
+              positionId: pos.id,
+              kind: 'entry',
+              rawY: clampedEntryY,
+              y: clampedEntryY,
+              price: pos.entryPrice,
+              pnl,
+              side: pos.side,
+              lots: pos.lots,
+            });
+          }
+        }
+
+        const activeTp =
+          preview && preview.positionId === pos.id && preview.kind === 'tp' ? preview.price : pos.tp;
+        if (activeTp !== undefined && Number.isFinite(activeTp)) {
+          const tpYRaw = s.priceToCoordinate(activeTp);
+          if (tpYRaw !== null && Number.isFinite(Number(tpYRaw))) {
+            const rawY = Number(tpYRaw);
+            const clampedY = Math.max(13, Math.min(pane.height - 15, rawY));
+            rawAxisBadges.push({
+              key: `tp-${pos.id}`,
+              positionId: pos.id,
+              kind: 'tp',
+              price: activeTp,
+              rawY,
+              y: clampedY,
+              bg: '#089981',
+              label: activeTp.toFixed(prec),
+            });
+            targetPlotHandles.push({
+              key: `pill-tp-${pos.id}`,
+              positionId: pos.id,
+              kind: 'tp',
+              rawY: clampedY,
+              y: clampedY,
+              price: activeTp,
+              pnl: calcPositionPnl(pos, activeTp),
+              side: pos.side,
+              lots: pos.lots,
+            });
+          }
+        }
+
+        const activeSl =
+          preview && preview.positionId === pos.id && preview.kind === 'sl' ? preview.price : pos.sl;
+        if (activeSl !== undefined && Number.isFinite(activeSl)) {
+          const slYRaw = s.priceToCoordinate(activeSl);
+          if (slYRaw !== null && Number.isFinite(Number(slYRaw))) {
+            const rawY = Number(slYRaw);
+            const clampedY = Math.max(13, Math.min(pane.height - 15, rawY));
+            rawAxisBadges.push({
+              key: `sl-${pos.id}`,
+              positionId: pos.id,
+              kind: 'sl',
+              price: activeSl,
+              rawY,
+              y: clampedY,
+              bg: '#F23645',
+              label: activeSl.toFixed(prec),
+            });
+            targetPlotHandles.push({
+              key: `pill-sl-${pos.id}`,
+              positionId: pos.id,
+              kind: 'sl',
+              rawY: clampedY,
+              y: clampedY,
+              price: activeSl,
+              pnl: calcPositionPnl(pos, activeSl),
+              side: pos.side,
+              lots: pos.lots,
+            });
+          }
+        }
+      }
+
+      // Separate close Entry bars vertically (~24px) so compact pills never stack on top of each other
+      entryPlotHandles.sort((a, b) => a.rawY - b.rawY);
+      for (let i = 1; i < entryPlotHandles.length; i++) {
+        entryPlotHandles[i].y = Math.max(entryPlotHandles[i].y, entryPlotHandles[i - 1].y + 24);
+      }
+
+      // Resolve vertical collisions on right price axis (including avoiding live price + countdown band)
+      const MIN_GAP = 19;
+      const minTop = 10;
+      const maxTop = Math.max(minTop + MIN_GAP, pane.height - 12);
+
+      let reservedMin = -9999;
+      let reservedMax = -9999;
+      if (lp !== null && Number.isFinite(lp)) {
+        const liveYRaw = s.priceToCoordinate(lp);
+        if (liveYRaw !== null && Number.isFinite(Number(liveYRaw))) {
+          const ly = Number(liveYRaw);
+          reservedMin = ly - 15;
+          reservedMax = ly + 31;
+        }
+      }
+
+      rawAxisBadges.sort((a, b) => a.rawY - b.rawY);
+      const placedYs: number[] = [];
+      for (let i = 0; i < rawAxisBadges.length; i++) {
+        let y = Math.max(minTop, Math.min(maxTop, rawAxisBadges[i].rawY));
+        if (i > 0) {
+          y = Math.max(y, placedYs[i - 1] + MIN_GAP);
+        }
+        if (y > reservedMin && y < reservedMax) {
+          const above = reservedMin - 2;
+          const below = reservedMax + 2;
+          const canGoAbove =
+            above >= minTop && (i === 0 || above >= placedYs[i - 1] + MIN_GAP);
+          y = canGoAbove ? above : below;
+        }
+        placedYs.push(y);
+      }
+
+      if (placedYs.length > 0 && placedYs[placedYs.length - 1] > maxTop) {
+        placedYs[placedYs.length - 1] = maxTop;
+        for (let i = placedYs.length - 2; i >= 0; i--) {
+          placedYs[i] = Math.min(placedYs[i], placedYs[i + 1] - MIN_GAP);
+        }
+      }
+
+      const resolvedAxisBadges = rawAxisBadges.map((b, idx) => ({
+        ...b,
+        y: Math.max(minTop, Math.min(maxTop, placedYs[idx] ?? b.y)),
+      }));
+
+      setLayoutState({
+        paneWidth: Math.floor(pane.width),
+        paneHeight: Math.floor(pane.height),
+        scaleWidth: Math.floor(scaleWidth),
+        axisBadges: resolvedAxisBadges,
+        plotHandles: [...entryPlotHandles, ...targetPlotHandles],
+      });
+    }, []);
+
+    useEffect(() => {
+      syncRef.current = recomputeLayout;
+      recomputeLayout();
+      return () => {
+        if (syncRef.current === recomputeLayout) {
+          syncRef.current = null;
+        }
+      };
+    }, [syncRef, recomputeLayout, chart, candleSeries, positions, livePrice, precision, dragPreview]);
+
+    const getDefaultLevelPrice = useCallback(
+      (pos: DemoPosition, kind: 'tp' | 'sl'): number => {
+        const step = Math.max(minMove * 25, pos.entryPrice * 0.0022);
+        if (kind === 'tp') {
+          return pos.side === 'BUY'
+            ? Number((pos.entryPrice + step * 1.5).toFixed(precision))
+            : Number(Math.max(minMove, pos.entryPrice - step * 1.5).toFixed(precision));
+        }
+        return pos.side === 'BUY'
+          ? Number(Math.max(minMove, pos.entryPrice - step).toFixed(precision))
+          : Number((pos.entryPrice + step).toFixed(precision));
+      },
+      [minMove, precision]
+    );
+
+    const isDraggingRef = useRef(false);
+    const [unlockedKeys, setUnlockedKeys] = useState<Record<string, boolean>>({});
+
+    const beginDragTpSl = useCallback(
+      (startClientY: number, pos: DemoPosition, kind: 'tp' | 'sl', pointerId?: number, targetEl?: HTMLElement) => {
+        if (isDraggingRef.current) return;
+        const series = propsRef.current.candleSeries;
+        const wrap = rootRef.current;
+        if (!series || !wrap) return;
+        isDraggingRef.current = true;
+        const levelKey = `${pos.id}:${kind}`;
+        setUnlockedKeys((prev) => (prev[levelKey] ? prev : { ...prev, [levelKey]: true }));
+
+        if (pointerId !== undefined && targetEl) {
+          try {
+            targetEl.setPointerCapture(pointerId);
+          } catch {
+            // ignore
+          }
+        }
+
+        const calcPriceFromClientY = (clientY: number): number | null => {
+          const rect = wrap.getBoundingClientRect();
+          const localY = Math.max(6, Math.min(rect.height - 6, clientY - rect.top));
+          const p = series.coordinateToPrice(localY);
+          if (p === null || !Number.isFinite(Number(p)) || Number(p) <= 0) return null;
+          return Number(Number(p).toFixed(precision));
+        };
+
+        let movedPx = 0;
+        let latestPrice: number | null =
+          (kind === 'tp' ? pos.tp : pos.sl) ?? calcPriceFromClientY(startClientY);
+
+        if (latestPrice !== null) {
+          onDragPreviewChange({ positionId: pos.id, kind, price: latestPrice });
+        }
+
+        const onPointerMove = (mv: PointerEvent) => {
+          mv.stopPropagation();
+          movedPx = Math.max(movedPx, Math.abs(mv.clientY - startClientY));
+          if (movedPx >= 3) {
+            const p = calcPriceFromClientY(mv.clientY);
+            if (p !== null) {
+              latestPrice = p;
+              onDragPreviewChange({ positionId: pos.id, kind, price: p });
+            }
+          }
+        };
+
+        const onTouchMoveWin = (tv: TouchEvent) => {
+          if (tv.touches.length === 0) return;
+          tv.stopPropagation();
+          if (tv.cancelable) tv.preventDefault();
+          const cy = tv.touches[0].clientY;
+          movedPx = Math.max(movedPx, Math.abs(cy - startClientY));
+          if (movedPx >= 3) {
+            const p = calcPriceFromClientY(cy);
+            if (p !== null) {
+              latestPrice = p;
+              onDragPreviewChange({ positionId: pos.id, kind, price: p });
+            }
+          }
+        };
+
+        const finish = () => {
+          isDraggingRef.current = false;
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+          window.removeEventListener('pointercancel', onPointerUp);
+          window.removeEventListener('touchmove', onTouchMoveWin);
+          window.removeEventListener('touchend', onTouchEndWin);
+          window.removeEventListener('touchcancel', onTouchEndWin);
+          onDragPreviewChange(null);
+
+          if (!onUpdateTpSl) return;
+
+          // If user simply tapped [TP] or [SL] without dragging and line wasn't active yet, pull out a clean default line
+          const existing = kind === 'tp' ? pos.tp : pos.sl;
+          let finalPrice = latestPrice;
+          if (movedPx < 4 && existing === undefined) {
+            finalPrice = getDefaultLevelPrice(pos, kind);
+          }
+
+          if (finalPrice !== null && Number.isFinite(finalPrice)) {
+            if (kind === 'tp') {
+              onUpdateTpSl(pos.id, finalPrice, pos.sl);
+            } else {
+              onUpdateTpSl(pos.id, pos.tp, finalPrice);
+            }
+          }
+        };
+
+        const onPointerUp = (up: PointerEvent) => {
+          up.stopPropagation();
+          finish();
+        };
+
+        const onTouchEndWin = (te: TouchEvent) => {
+          te.stopPropagation();
+          finish();
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+        window.addEventListener('touchmove', onTouchMoveWin, { passive: false });
+        window.addEventListener('touchend', onTouchEndWin);
+        window.addEventListener('touchcancel', onTouchEndWin);
+      },
+      [precision, getDefaultLevelPrice, onDragPreviewChange, onUpdateTpSl]
+    );
+
+    const handleWheelNudgeTpSl = useCallback(
+      (e: React.WheelEvent, pos: DemoPosition, kind: 'tp' | 'sl') => {
+        e.stopPropagation();
+        if (!onUpdateTpSl) return;
+        const levelKey = `${pos.id}:${kind}`;
+        setUnlockedKeys((prev) => (prev[levelKey] ? prev : { ...prev, [levelKey]: true }));
+        const base =
+          (kind === 'tp' ? pos.tp : pos.sl) ?? getDefaultLevelPrice(pos, kind);
+        const step = Math.max(minMove * 5, base * 0.00035);
+        const dir = e.deltaY < 0 ? 1 : -1; // Scroll up raises price, scroll down lowers price
+        const nextPrice = Number(Math.max(minMove, base + dir * step).toFixed(precision));
+        if (kind === 'tp') {
+          onUpdateTpSl(pos.id, nextPrice, pos.sl);
+        } else {
+          onUpdateTpSl(pos.id, pos.tp, nextPrice);
+        }
+      },
+      [minMove, precision, getDefaultLevelPrice, onUpdateTpSl]
+    );
+
+    if (positions.length === 0) return null;
+
+    const { paneWidth, paneHeight, scaleWidth, axisBadges, plotHandles } = layoutState;
+    const badgeWidth = Math.max(48, scaleWidth - 2);
+
+    return (
+      <div
+        ref={rootRef}
+        className="pointer-events-none absolute inset-0 z-[24] overflow-hidden"
+      >
+        {/* Right-Edge Price Axis Badges (Collision-Free) */}
+        {paneWidth > 0 &&
+          axisBadges.map((b) => (
+            <div
+              key={b.key}
+              style={{
+                transform: `translate3d(${paneWidth + 1}px, ${Math.round(b.y - 8.5)}px, 0)`,
+                width: `${badgeWidth}px`,
+                backgroundColor: b.bg,
+              }}
+              className="pointer-events-none absolute top-0 left-0 flex h-[17px] items-center justify-center rounded-[3px] px-1 font-mono-tabular text-[9px] font-bold leading-none text-[#FFFFFF] shadow-sm truncate"
+            >
+              {b.label}
+            </div>
+          ))}
+
+        {/* Slim TradingView-Style Entry Bar & Draggable TP/SL Line Pills */}
+        {paneWidth > 0 &&
+          plotHandles.map((h) => {
+            const pos = positions.find((p) => p.id === h.positionId);
+            if (!pos) return null;
+
+            if (h.kind === 'entry') {
+              const isProfit = h.pnl >= 0;
+              const accentColor = isProfit ? '#089981' : '#F23645';
+              const hasTp = pos.tp !== undefined || (dragPreview?.positionId === pos.id && dragPreview.kind === 'tp');
+              const hasSl = pos.sl !== undefined || (dragPreview?.positionId === pos.id && dragPreview.kind === 'sl');
+
+              return (
+                <div
+                  key={h.key}
+                  style={{
+                    transform: `translate3d(0, ${Math.round(h.y - 11)}px, 0)`,
+                    right: `${scaleWidth + 6}px`,
+                    borderColor: accentColor,
+                  }}
+                  className="pointer-events-auto absolute top-0 inline-flex h-[22px] items-center rounded-[4px] border bg-[#FFFFFF] shadow-sm overflow-hidden font-mono-tabular text-[9.5px] font-bold select-none"
+                >
+                  {/* Draggable / Scrollable [ TP ] handle */}
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      beginDragTpSl(e.clientY, pos, 'tp', e.pointerId, e.currentTarget);
+                    }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      if (e.touches.length > 0) {
+                        beginDragTpSl(e.touches[0].clientY, pos, 'tp');
+                      }
+                    }}
+                    onWheel={(e) => handleWheelNudgeTpSl(e, pos, 'tp')}
+                    title="Drag or scroll up/down to pull Take Profit line"
+                    className={`h-full px-1.5 flex items-center border-r border-[#E2E8F0] cursor-ns-resize touch-none transition-colors ${
+                      hasTp
+                        ? 'bg-[#089981] text-[#FFFFFF]'
+                        : 'bg-[#ECFDF5] text-[#089981] hover:bg-[#D1FAE5]'
+                    }`}
+                  >
+                    TP
+                  </button>
+
+                  {/* Draggable / Scrollable [ SL ] handle */}
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      beginDragTpSl(e.clientY, pos, 'sl', e.pointerId, e.currentTarget);
+                    }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      if (e.touches.length > 0) {
+                        beginDragTpSl(e.touches[0].clientY, pos, 'sl');
+                      }
+                    }}
+                    onWheel={(e) => handleWheelNudgeTpSl(e, pos, 'sl')}
+                    title="Drag or scroll up/down to pull Stop Loss line"
+                    className={`h-full px-1.5 flex items-center border-r border-[#E2E8F0] cursor-ns-resize touch-none transition-colors ${
+                      hasSl
+                        ? 'bg-[#F23645] text-[#FFFFFF]'
+                        : 'bg-[#FEF2F2] text-[#F23645] hover:bg-[#FEE2E2]'
+                    }`}
+                  >
+                    SL
+                  </button>
+
+                  {/* Compact [ 0.01 | -$2.19 | × ] segment */}
+                  <span className="px-1.5 text-[#0F172A] leading-none">
+                    {h.lots.toFixed(2)}
+                  </span>
+                  <span className="text-[#CBD5E1]">|</span>
+                  <span
+                    className="px-1.5 leading-none"
+                    style={{ color: accentColor }}
+                  >
+                    {formatUsd(h.pnl, true)}
+                  </span>
+                  <span className="text-[#CBD5E1]">|</span>
+                  <button
+                    type="button"
+                    aria-label="Close trade"
+                    title="Close trade"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClosePosition?.(pos.id);
+                    }}
+                    className="h-full px-1.5 flex items-center justify-center text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#F23645] cursor-pointer leading-none text-[11px]"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            }
+
+            const isTp = h.kind === 'tp';
+            const levelKind = h.kind as 'tp' | 'sl';
+            const levelKey = `${pos.id}:${levelKind}`;
+            const isDraggingThis =
+              dragPreview?.positionId === pos.id && dragPreview.kind === levelKind;
+            const isUnlocked = Boolean(unlockedKeys[levelKey]) || isDraggingThis;
+            const placeConfirmAbove = paneHeight > 0 && h.y > paneHeight - 36;
+
+            return (
+              <div
+                key={h.key}
+                style={{
+                  transform: `translate3d(0, ${Math.round(h.y - 10.5)}px, 0)`,
+                  right: `${scaleWidth + 6}px`,
+                }}
+                className="pointer-events-none absolute top-0 flex flex-col items-end select-none"
+              >
+                {isUnlocked && placeConfirmAbove && (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUnlockedKeys((prev) => ({ ...prev, [levelKey]: false }));
+                    }}
+                    style={{ backgroundColor: '#089981' }}
+                    className="pointer-events-auto mb-0.5 inline-flex h-[18px] items-center justify-center rounded-full px-2 text-[10px] font-bold leading-none text-[#FFFFFF] shadow-sm cursor-pointer hover:brightness-110 active:scale-95"
+                  >
+                    ✓ Confirm
+                  </button>
+                )}
+
+                <div
+                  style={{
+                    backgroundColor: isTp ? '#089981' : '#F23645',
+                  }}
+                  className={`pointer-events-auto inline-flex h-[21px] items-center rounded-[4px] font-mono-tabular text-[9.5px] font-bold text-[#FFFFFF] shadow-sm overflow-hidden select-none ${
+                    isUnlocked ? 'ring-2 ring-[#0F172A]/25' : ''
+                  }`}
+                >
+                  <div
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (!isUnlocked) return;
+                      e.preventDefault();
+                      beginDragTpSl(e.clientY, pos, levelKind, e.pointerId, e.currentTarget);
+                    }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      if (!isUnlocked) return;
+                      if (e.touches.length > 0) {
+                        beginDragTpSl(e.touches[0].clientY, pos, levelKind);
+                      }
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isUnlocked) {
+                        setUnlockedKeys((prev) => ({ ...prev, [levelKey]: true }));
+                      }
+                    }}
+                    onWheel={(e) => {
+                      if (!isUnlocked) return;
+                      handleWheelNudgeTpSl(e, pos, levelKind);
+                    }}
+                    title={
+                      isUnlocked
+                        ? `Drag or scroll vertically to move ${isTp ? 'TP' : 'SL'}`
+                        : `Tap to unlock and adjust ${isTp ? 'TP' : 'SL'}`
+                    }
+                    className={`h-full px-2 flex items-center gap-1 ${
+                      isUnlocked ? 'cursor-ns-resize touch-none' : 'cursor-pointer'
+                    }`}
+                  >
+                    <span>{isTp ? 'TP' : 'SL'}</span>
+                    <span>{h.price.toFixed(precision)}</span>
+                    <span className="opacity-95">({formatUsd(h.pnl, true)})</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${isTp ? 'TP' : 'SL'}`}
+                    title={`Remove ${isTp ? 'TP' : 'SL'}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUnlockedKeys((prev) => ({ ...prev, [levelKey]: false }));
+                      if (isTp) {
+                        onUpdateTpSl?.(pos.id, undefined, pos.sl);
+                      } else {
+                        onUpdateTpSl?.(pos.id, pos.tp, undefined);
+                      }
+                    }}
+                    className="h-full px-1.5 flex items-center justify-center border-l border-[#FFFFFF]/25 hover:bg-black/15 cursor-pointer text-[11px] leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {isUnlocked && !placeConfirmAbove && (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUnlockedKeys((prev) => ({ ...prev, [levelKey]: false }));
+                    }}
+                    style={{ backgroundColor: '#089981' }}
+                    className="pointer-events-auto mt-0.5 inline-flex h-[18px] items-center justify-center rounded-full px-2 text-[10px] font-bold leading-none text-[#FFFFFF] shadow-sm cursor-pointer hover:brightness-110 active:scale-95"
+                  >
+                    ✓ Confirm
+                  </button>
+                )}
+              </div>
+            );
+          })}
+      </div>
     );
   }
 );
@@ -2987,24 +3493,40 @@ const PriceAxisCountdownTag: React.FC<PriceAxisCountdownTagProps> = memo(
 interface SecondarySplitChartProps {
   defaultSymbol: SmcSymbol;
   defaultTimeframe: SmcTimeframe;
+  showSupportResistance: boolean;
+  showPatterns: boolean;
+  showSwingLabels: boolean;
+  showBosChoch: boolean;
   showEma20: boolean;
   showEma50: boolean;
   showBollinger: boolean;
+  showVolumeProfile: boolean;
   themeMode: ThemeMode;
+  demoPositions?: DemoPosition[];
+  onLivePriceTick?: (symbol: SmcSymbol, price: number) => void;
 }
 
 const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
   defaultSymbol,
   defaultTimeframe,
+  showSupportResistance,
+  showPatterns,
+  showSwingLabels,
+  showBosChoch,
   showEma20,
   showEma50,
   showBollinger,
+  showVolumeProfile,
   themeMode,
+  demoPositions = [],
+  onLivePriceTick,
 }) => {
   const [subSymbol, setSubSymbol] = useState<SmcSymbol>(defaultSymbol);
   const [subTf, setSubTf] = useState<SmcTimeframe>(defaultTimeframe);
   const [subPrice, setSubPrice] = useState<number | null>(null);
   const [subBull, setSubBull] = useState(true);
+  const [subLatestTime, setSubLatestTime] = useState<number | undefined>(undefined);
+  const [subStructure, setSubStructure] = useState<ChartStructureOverlayData | null>(null);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -3013,11 +3535,24 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
   const ema50Ref = useRef<ISeriesApi<'Line', Time> | null>(null);
   const bbUpRef = useRef<ISeriesApi<'Line', Time> | null>(null);
   const bbLowRef = useRef<ISeriesApi<'Line', Time> | null>(null);
+  const bbUpPtsRef = useRef<Array<{ time: UTCTimestamp; value: number }>>([]);
+  const bbLowPtsRef = useRef<Array<{ time: UTCTimestamp; value: number }>>([]);
   const candlesRef = useRef<TerminalCandle[]>([]);
   const subHistoricalLoadedRef = useRef<boolean>(false);
+  const subOverlayRedrawRef = useRef<(() => void) | null>(null);
+  const subCountdownSyncRef = useRef<(() => void) | null>(null);
+  const subScheduleRafRef = useRef<(() => void) | null>(null);
+  const subPosLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
 
   const subLastBullRef = useRef<boolean | null>(null);
   const subMeta = SYMBOL_OPTIONS.find((s) => s.value === subSymbol) ?? SYMBOL_OPTIONS[2];
+  const subTfLabel = TIMEFRAME_OPTIONS.find((t) => t.value === subTf)?.label ?? subTf;
+
+  useEffect(() => {
+    if (subPrice !== null && Number.isFinite(subPrice)) {
+      onLivePriceTick?.(subSymbol, subPrice);
+    }
+  }, [subSymbol, subPrice, onLivePriceTick]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -3029,7 +3564,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
       autoSize: true,
       layout: {
         ...initialSubTheme.layout,
-        fontSize: 10,
+        fontSize: 10.5,
         attributionLogo: false,
       },
       grid: initialSubTheme.grid,
@@ -3070,7 +3605,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
         ticksVisible: true,
         entireTextOnly: true,
         alignLabels: true,
-        minimumWidth: 56,
+        minimumWidth: 62,
         scaleMargins: { top: 0.16, bottom: 0.16 },
       },
     });
@@ -3114,15 +3649,42 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
     chartRef.current = chart;
     candleRef.current = candles;
 
+    let rafId: number | null = null;
+    const scheduleSubRaf = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        subOverlayRedrawRef.current?.();
+        subCountdownSyncRef.current?.();
+      });
+    };
+    subScheduleRafRef.current = scheduleSubRaf;
+
+    const onPassiveTouch = () => scheduleSubRaf();
+    el.addEventListener('touchstart', onPassiveTouch, { passive: true });
+    el.addEventListener('touchmove', onPassiveTouch, { passive: true });
+    el.addEventListener('touchend', onPassiveTouch, { passive: true });
+    el.addEventListener('wheel', onPassiveTouch, { passive: true });
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => scheduleSubRaf());
+    chart.subscribeCrosshairMove(() => scheduleSubRaf());
+
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect && rect.width > 0 && rect.height > 0) {
         chart.resize(Math.floor(rect.width), Math.floor(rect.height));
+        scheduleSubRaf();
       }
     });
     ro.observe(el);
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      subScheduleRafRef.current = null;
+      el.removeEventListener('touchstart', onPassiveTouch);
+      el.removeEventListener('touchmove', onPassiveTouch);
+      el.removeEventListener('touchend', onPassiveTouch);
+      el.removeEventListener('wheel', onPassiveTouch);
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -3143,10 +3705,15 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
         const bb = calcBollingerSeries(bars, 20, 2);
         bbUpRef.current?.setData(bb.upper);
         bbLowRef.current?.setData(bb.lower);
+        bbUpPtsRef.current = bb.upper;
+        bbLowPtsRef.current = bb.lower;
       } else {
         bbUpRef.current?.setData([]);
         bbLowRef.current?.setData([]);
+        bbUpPtsRef.current = [];
+        bbLowPtsRef.current = [];
       }
+      subScheduleRafRef.current?.();
     },
     [showEma20, showEma50, showBollinger]
   );
@@ -3158,8 +3725,13 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
   }, [syncSubIndicators]);
 
   useEffect(() => {
+    subScheduleRafRef.current?.();
+  }, [showSupportResistance, showPatterns, showSwingLabels, showBosChoch, showVolumeProfile, subSymbol, subTf]);
+
+  useEffect(() => {
     chartRef.current?.applyOptions(getChartThemeOptions(themeMode));
     candleRef.current?.applyOptions(getCandleStyleOptions(themeMode));
+    subScheduleRafRef.current?.();
   }, [themeMode]);
 
   useEffect(() => {
@@ -3168,39 +3740,102 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
     });
   }, [subMeta.precision, subMeta.minMove]);
 
+  // Live Demo Position P&L lines for Chart 2 symbol
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+
+    for (const line of subPosLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // ignore
+      }
+    }
+    subPosLinesRef.current = [];
+
+    const matching = demoPositions.filter((p) => p.symbol === subSymbol);
+    if (matching.length === 0) return;
+
+    const mark = subPrice ?? matching[0].entryPrice;
+    for (const pos of matching.slice(0, 6)) {
+      const pnl = calcPositionPnl(pos, mark);
+      const color = pnl >= 0 ? '#059669' : '#DC2626';
+      try {
+        const line = series.createPriceLine({
+          price: pos.entryPrice,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `${pos.side} ${pos.lots.toFixed(2)} · ${formatUsd(pnl, true)}`,
+        });
+        subPosLinesRef.current.push(line);
+      } catch {
+        // ignore
+      }
+    }
+  }, [demoPositions, subSymbol, subPrice]);
+
   useEffect(() => {
     const controller = new AbortController();
     let disposed = false;
     let ws: WebSocket | null = null;
     let reconnectTimer: number | null = null;
 
+    const subTfSec = TIMEFRAME_SECONDS[subTf] ?? 900;
+    let lastSubMsgAt = Date.now();
+    let lastSubRealPrice: number | null = null;
+    let subSmoothTimer: number | null = null;
+
     subHistoricalLoadedRef.current = false;
     candlesRef.current = [];
+    setSubStructure(null);
     candleRef.current?.setData([]);
     ema20Ref.current?.setData([]);
     ema50Ref.current?.setData([]);
     bbUpRef.current?.setData([]);
     bbLowRef.current?.setData([]);
 
-    const applyBar = (rawBar: TerminalCandle) => {
+    const applyBar = (rawBar: TerminalCandle, isSim = false) => {
       if (disposed || !candleRef.current || !subHistoricalLoadedRef.current) return;
       if (!Number.isFinite(rawBar.time) || !Number.isFinite(rawBar.close) || rawBar.close <= 0) return;
+      if (!isSim) lastSubRealPrice = rawBar.close;
+
+      const alignedTime = (Math.floor(Number(rawBar.time) / subTfSec) * subTfSec) as UTCTimestamp;
       const arr = candlesRef.current;
-      if (arr.length > 0 && rawBar.time < arr[arr.length - 1].time) return;
-      const bar =
-        arr.length > 0 && arr[arr.length - 1].time === rawBar.time
-          ? {
-              ...rawBar,
-              open: arr[arr.length - 1].open,
-              high: Math.max(arr[arr.length - 1].high, rawBar.high),
-              low: Math.min(arr[arr.length - 1].low, rawBar.low),
-            }
-          : rawBar;
+      if (arr.length > 0 && alignedTime < arr[arr.length - 1].time) return;
+
+      let bar: TerminalCandle;
+      let isNewBar = false;
+      if (arr.length > 0 && arr[arr.length - 1].time === alignedTime) {
+        const prevSame = arr[arr.length - 1];
+        bar = {
+          ...rawBar,
+          time: alignedTime,
+          open: prevSame.open,
+          high: Math.max(prevSame.high, rawBar.high, prevSame.open, rawBar.close),
+          low: Math.min(prevSame.low, rawBar.low, prevSame.open, rawBar.close),
+        };
+      } else if (arr.length > 0) {
+        isNewBar = true;
+        const connectedOpen = arr[arr.length - 1].close;
+        bar = {
+          ...rawBar,
+          time: alignedTime,
+          open: connectedOpen,
+          high: Math.max(connectedOpen, rawBar.high, rawBar.close),
+          low: Math.min(connectedOpen, rawBar.low, rawBar.close),
+        };
+      } else {
+        bar = { ...rawBar, time: alignedTime };
+      }
+
       const bull = bar.close >= bar.open;
       candleRef.current.update(toPureCandle(bar));
       if (subLastBullRef.current !== bull) {
         subLastBullRef.current = bull;
-        candleRef.current.applyOptions({ priceLineColor: bull ? '#089981' : '#F23645' });
+        candleRef.current.applyOptions({ priceLineColor: bull ? '#059669' : '#DC2626' });
       }
       if (arr.length > 0 && arr[arr.length - 1].time === bar.time) {
         arr[arr.length - 1] = bar;
@@ -3209,7 +3844,43 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
       }
       setSubPrice(bar.close);
       setSubBull(bull);
+      setSubLatestTime(bar.time);
+      if (isNewBar && arr.length >= 14) {
+        const nextStruct = analyzeChartStructure(arr);
+        if (nextStruct) setSubStructure(nextStruct);
+      }
+      subScheduleRafRef.current?.();
     };
+
+    subSmoothTimer = window.setInterval(() => {
+      if (disposed || !subHistoricalLoadedRef.current || candlesRef.current.length === 0) return;
+      const nowMs = Date.now();
+      const last = candlesRef.current[candlesRef.current.length - 1];
+      const bucketTime = (Math.floor(Math.floor(nowMs / 1000) / subTfSec) * subTfSec) as UTCTimestamp;
+      if (nowMs - lastSubMsgAt < 1800 && bucketTime <= last.time) return;
+
+      const anchor = lastSubRealPrice ?? last.close;
+      const stepScale = Math.max(subMeta.minMove, anchor * 0.000045);
+      const meanPull = (anchor - last.close) * 0.25;
+      const jitter = (Math.random() - 0.5) * 2 * stepScale;
+      const maxBand = Math.max(subMeta.minMove * 6, anchor * 0.00035);
+      const nextClose = Number(
+        Math.max(anchor - maxBand, Math.min(anchor + maxBand, last.close + meanPull + jitter)).toFixed(
+          subMeta.precision
+        )
+      );
+
+      applyBar(
+        {
+          time: bucketTime,
+          open: bucketTime > last.time ? last.close : last.open,
+          high: Math.max(bucketTime > last.time ? last.close : last.high, nextClose),
+          low: Math.min(bucketTime > last.time ? last.close : last.low, nextClose),
+          close: nextClose,
+        },
+        true
+      );
+    }, 1000);
 
     const connectWs = () => {
       if (disposed) return;
@@ -3223,6 +3894,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
         ws = new WebSocket(url);
         ws.onmessage = (ev) => {
           if (disposed) return;
+          lastSubMsgAt = Date.now();
           try {
             const data = JSON.parse(ev.data as string) as {
               k?: { t: number; o: string; h: string; l: string; c: string };
@@ -3266,13 +3938,20 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
         candleRef.current?.setData(bars.map(toPureCandle));
         subHistoricalLoadedRef.current = true;
         const last = bars[bars.length - 1];
+        lastSubRealPrice = last.close;
         const bull = last.close >= last.open;
         subLastBullRef.current = bull;
         setSubPrice(last.close);
         setSubBull(bull);
+        setSubLatestTime(last.time);
         candleRef.current?.applyOptions({
-          priceLineColor: bull ? '#089981' : '#F23645',
+          priceLineColor: bull ? '#059669' : '#DC2626',
         });
+
+        if (bars.length >= 14) {
+          const struct = analyzeChartStructure(bars);
+          if (struct) setSubStructure(struct);
+        }
 
         const applySubRange = () => {
           const chart = chartRef.current;
@@ -3288,6 +3967,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
           } else {
             chart.timeScale().fitContent();
           }
+          subScheduleRafRef.current?.();
         };
 
         applySubRange();
@@ -3303,9 +3983,10 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
       disposed = true;
       controller.abort();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (subSmoothTimer !== null) window.clearInterval(subSmoothTimer);
       ws?.close();
     };
-  }, [subSymbol, subTf, subMeta.isCrypto]);
+  }, [subSymbol, subTf, subMeta.isCrypto, subMeta.precision, subMeta.minMove]);
 
   const zoomSecondary = (factor: number) => {
     const ts = chartRef.current?.timeScale();
@@ -3318,58 +3999,124 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
   };
 
   return (
-    <div className="relative flex flex-col h-[340px] sm:h-[400px] lg:h-full min-w-0 bg-[var(--vp-canvas)] transition-colors duration-200">
-      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[var(--vp-header)] border-b border-[var(--vp-border)] transition-colors">
-        <div className="flex items-center gap-1.5">
-          <select
-            aria-label="Secondary chart symbol"
-            value={subSymbol}
-            onChange={(e) => setSubSymbol(e.target.value as SmcSymbol)}
-            className="rounded bg-[var(--vp-control)] text-[var(--vp-text)] px-2 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
-          >
-            {SYMBOL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Secondary chart timeframe"
-            value={subTf}
-            onChange={(e) => setSubTf(e.target.value as SmcTimeframe)}
-            className="rounded bg-[var(--vp-control)] text-[var(--vp-accent-text)] px-1.5 py-0.5 text-[11px] font-semibold outline-none cursor-pointer"
-          >
-            {TIMEFRAME_OPTIONS.map((tf) => (
-              <option key={tf.value} value={tf.value}>
-                {tf.label}
-              </option>
-            ))}
-          </select>
+    <div className="flex flex-col rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] shadow-sm overflow-hidden min-w-0">
+      {/* Dedicated Non-Overlapping Chart 2 Header */}
+      <div className="shrink-0 border-b border-[#E2E8F0] bg-[#FFFFFF] px-2.5 py-1.5 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="h-2 w-2 rounded-full bg-[#059669] animate-pulse shrink-0" />
+            <select
+              aria-label="Chart 2 symbol"
+              value={subSymbol}
+              onChange={(e) => setSubSymbol(e.target.value as SmcSymbol)}
+              className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] px-2 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate max-w-[140px]"
+            >
+              {SYMBOL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span
+              className="font-mono-tabular text-xs sm:text-[13px] font-bold"
+              style={{ color: subBull ? '#059669' : '#DC2626' }}
+            >
+              ${formatTerminalPrice(subPrice, subMeta.precision)}
+            </span>
+            <HeaderCountdownChip
+              timeframe={subTf}
+              latestBarTime={subLatestTime}
+              currentTfLabel={subTfLabel}
+              isBullTick={subBull}
+            />
+          </div>
         </div>
-        <span
-          className="font-mono-tabular text-xs font-bold"
-          style={{ color: subBull ? 'var(--vp-bull)' : 'var(--vp-bear)' }}
+
+        {/* Clean Non-Overlapping 1m–4H Buttons */}
+        <div
+          role="group"
+          aria-label="Chart 2 timeframe selector"
+          className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar"
         >
-          ${formatTerminalPrice(subPrice, subMeta.precision)}
-        </span>
+          <div className="flex items-center gap-1">
+            {COMPACT_TIMEFRAMES.map((tf) => {
+              const active = subTf === tf.value;
+              return (
+                <button
+                  key={`c2-tf-${tf.value}`}
+                  type="button"
+                  onClick={() => setSubTf(tf.value)}
+                  aria-pressed={active}
+                  className={`rounded-md px-2 py-0.5 text-[10.5px] font-mono-tabular font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                    active
+                      ? 'bg-[#0F172A] text-[#FFFFFF] shadow-sm'
+                      : 'bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[10px] font-mono-tabular font-semibold text-[#64748B] whitespace-nowrap shrink-0">
+            SMC Auto
+          </span>
+        </div>
       </div>
 
-      <div className="relative flex-1 min-h-0 overflow-hidden">
+      {/* Chart 2 Canvas Container */}
+      <div className="relative h-[245px] sm:h-[300px] lg:h-[350px] min-h-0 overflow-hidden bg-[#FFFFFF]">
         <div ref={wrapRef} className="smc-chart-host absolute inset-0 touch-none" />
-        <div className="absolute bottom-8 left-2.5 z-10 flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-header)]/95 p-1 shadow-md">
+
+        <ChartCanvasOverlay
+          redrawRef={subOverlayRedrawRef}
+          chart={chartRef.current}
+          candleSeries={candleRef.current}
+          candles={candlesRef.current}
+          symbol={subSymbol}
+          timeframe={subTf}
+          structure={subStructure}
+          bbUpper={bbUpPtsRef.current}
+          bbLower={bbLowPtsRef.current}
+          showBollinger={showBollinger}
+          showVolumeProfile={showVolumeProfile}
+          showSupportResistance={showSupportResistance}
+          showPatterns={showPatterns}
+          showSwingLabels={showSwingLabels}
+          showBosChoch={showBosChoch}
+          precision={subMeta.precision}
+          themeMode="light"
+          livePrice={subPrice}
+          isBullTick={subBull}
+        />
+
+        <PriceAxisCountdownTag
+          syncRef={subCountdownSyncRef}
+          chart={chartRef.current}
+          candleSeries={candleRef.current}
+          livePrice={subPrice}
+          isBullTick={subBull}
+          timeframe={subTf}
+          latestBarTime={subLatestTime}
+        />
+
+        <div className="absolute bottom-7 left-2 z-[25] flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]/95 p-0.5 shadow-sm">
           <button
             type="button"
             onClick={() => zoomSecondary(0.72)}
-            aria-label="Secondary Zoom In"
-            className="flex h-6 w-6 items-center justify-center rounded bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+            aria-label="Chart 2 Zoom In"
+            className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
           >
             +
           </button>
           <button
             type="button"
             onClick={() => zoomSecondary(1.38)}
-            aria-label="Secondary Zoom Out"
-            className="flex h-6 w-6 items-center justify-center rounded bg-[var(--vp-control)] text-xs font-bold text-[var(--vp-text)] hover:opacity-85 cursor-pointer"
+            aria-label="Chart 2 Zoom Out"
+            className="flex h-5 w-5 items-center justify-center rounded bg-[#F1F5F9] text-[11px] font-bold text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer"
           >
             -
           </button>
@@ -3378,11 +4125,12 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
             onClick={() => {
               chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
               chartRef.current?.timeScale().fitContent();
+              subScheduleRafRef.current?.();
             }}
-            aria-label="Secondary Reset"
-            className="flex h-6 items-center justify-center rounded bg-[var(--vp-control)] px-2 text-[10px] font-semibold text-[var(--vp-accent-text)] hover:opacity-85 cursor-pointer"
+            aria-label="Chart 2 Reset"
+            className="flex h-5 items-center justify-center rounded bg-[#F1F5F9] px-1.5 text-[9.5px] font-semibold text-[#B45309] hover:bg-[#E2E8F0] cursor-pointer"
           >
-            Reset
+            All
           </button>
         </div>
       </div>

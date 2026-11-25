@@ -207,9 +207,8 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
       return true;
     };
 
-    // Reserve top-left timeframe + OHLCV legend space and compact bottom-left zoom bar
-    placedBoxes.push({ x1: 0, y1: 0, x2: Math.min(width * 0.72, 380), y2: 88 });
-    placedBoxes.push({ x1: 0, y1: Math.max(0, height - 38), x2: Math.min(width - 40, 220), y2: height });
+    // Reserve only compact bottom-left zoom bar area (timeframe controls live above the chart canvas)
+    placedBoxes.push({ x1: 0, y1: Math.max(0, height - 34), x2: Math.min(width - 40, 145), y2: height });
 
     // 1. Bollinger Bands Translucent Ribbon Fill
     if (showBollinger && bbUpper.length >= 2 && bbLower.length >= 2) {
@@ -364,8 +363,8 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           const drawH = Math.max(3, Math.abs(yBot - yTop));
           const isBull = ob.type === 'Bullish';
 
-          ctx.fillStyle = isBull ? 'rgba(8, 153, 129, 0.10)' : 'rgba(242, 54, 69, 0.10)';
-          ctx.strokeStyle = isBull ? 'rgba(8, 153, 129, 0.35)' : 'rgba(242, 54, 69, 0.35)';
+          ctx.fillStyle = isBull ? 'rgba(5, 150, 105, 0.10)' : 'rgba(220, 38, 38, 0.10)';
+          ctx.strokeStyle = isBull ? 'rgba(5, 150, 105, 0.38)' : 'rgba(220, 38, 38, 0.38)';
           ctx.lineWidth = 1;
           ctx.fillRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
           ctx.strokeRect(drawX1, drawY, Math.max(8, x2 - drawX1), drawH);
@@ -374,9 +373,9 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
             isBull ? 'OB+' : 'OB-',
             Math.min(plotRight - 42, drawX1 + 22),
             drawY + drawH / 2,
-            isLight ? 'rgba(255,255,255,0.9)' : 'rgba(13,17,23,0.88)',
-            isBull ? 'rgba(8, 153, 129, 0.55)' : 'rgba(242, 54, 69, 0.55)',
-            isBull ? '#089981' : '#F23645',
+            isLight ? 'rgba(255,255,255,0.94)' : 'rgba(13,17,23,0.88)',
+            isBull ? 'rgba(5, 150, 105, 0.65)' : 'rgba(220, 38, 38, 0.65)',
+            isBull ? '#059669' : '#DC2626',
             { align: 'left', fontSize: 9 }
           );
         }
@@ -426,9 +425,9 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
             `${sr.label} ${sr.price.toFixed(precision)}`,
             tagX,
             y,
-            isLight ? 'rgba(255,255,255,0.94)' : 'rgba(13,17,23,0.92)',
+            isLight ? 'rgba(255,255,255,0.96)' : 'rgba(13,17,23,0.92)',
             sr.color,
-            sr.kind === 'support' ? '#089981' : '#F23645',
+            sr.kind === 'support' ? '#059669' : '#DC2626',
             { align: 'right', fontSize: 9.5 }
           );
         }
@@ -548,19 +547,19 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
     if (liveY !== null && liveY >= 0 && liveY <= height && candles.length > 0) {
       const lastBar = candles[candles.length - 1];
       const lastX = toX(lastBar.time);
-      const pulseColor = isBullTick ? '#089981' : '#F23645';
+      const pulseColor = isBullTick ? '#059669' : '#DC2626';
 
       const grad = ctx.createLinearGradient(0, liveY, plotRight, liveY);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.65, isBullTick ? 'rgba(8, 153, 129, 0.10)' : 'rgba(242, 54, 69, 0.10)');
-      grad.addColorStop(1, isBullTick ? 'rgba(8, 153, 129, 0.35)' : 'rgba(242, 54, 69, 0.35)');
+      grad.addColorStop(0.65, isBullTick ? 'rgba(5, 150, 105, 0.10)' : 'rgba(220, 38, 38, 0.10)');
+      grad.addColorStop(1, isBullTick ? 'rgba(5, 150, 105, 0.35)' : 'rgba(220, 38, 38, 0.35)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, liveY - 1.5, plotRight, 3);
 
       const dotX = lastX !== null && lastX > 12 && lastX < plotRight - 4 ? lastX : plotRight - 6;
       ctx.beginPath();
       ctx.arc(dotX, liveY, 6, 0, Math.PI * 2);
-      ctx.fillStyle = isBullTick ? 'rgba(8, 153, 129, 0.25)' : 'rgba(242, 54, 69, 0.25)';
+      ctx.fillStyle = isBullTick ? 'rgba(5, 150, 105, 0.25)' : 'rgba(220, 38, 38, 0.25)';
       ctx.fill();
 
       ctx.beginPath();

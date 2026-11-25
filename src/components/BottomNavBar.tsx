@@ -5,6 +5,7 @@ import type { AppTab } from '../types/news';
 interface BottomNavBarProps {
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
+  alwaysVisible?: boolean;
 }
 
 const TABS: {
@@ -17,14 +18,18 @@ const TABS: {
   { id: 'academy', label: 'Academy', Icon: GraduationCap },
 ];
 
-export const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onSelectTab }) => {
+export const BottomNavBar: React.FC<BottomNavBarProps> = ({
+  activeTab,
+  onSelectTab,
+  alwaysVisible = false,
+}) => {
   return (
     <nav
       aria-label="Primary bottom navigation"
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-xl pb-[env(safe-area-inset-bottom)] transition-colors duration-200"
+      className={`${alwaysVisible ? '' : 'md:hidden '}fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-xl pb-[env(safe-area-inset-bottom)] transition-colors duration-200`}
       style={{
-        backgroundColor: 'color-mix(in srgb, var(--vp-canvas) 90%, transparent)',
-        borderColor: 'var(--vp-border)',
+        backgroundColor: '#FFFFFF',
+        borderColor: '#E2E8F0',
       }}
     >
       <div className="grid grid-cols-3 h-16 items-center">

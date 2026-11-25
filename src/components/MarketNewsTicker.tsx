@@ -11,6 +11,11 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
+import {
+  buildFallbackNewsWire,
+  loadCachedNewsWire,
+  saveCachedNewsWire,
+} from '../utils/newsCalendarFallback';
 
 export type TickerTopic =
   | 'ALL'
@@ -79,8 +84,8 @@ interface MarketNewsTickerProps {
 }
 
 export const MarketNewsTicker: React.FC<MarketNewsTickerProps> = ({ onOpenNewsTab }) => {
-  const [data, setData] = useState<NewsTickerResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<NewsTickerResponse | null>(() => loadCachedNewsWire());
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<TickerTopic>('ALL');
@@ -95,20 +100,20 @@ export const MarketNewsTicker: React.FC<MarketNewsTickerProps> = ({ onOpenNewsTa
     }
     try {
       const endpoint = force ? '/api/news-ticker?refresh=1' : '/api/news-ticker';
-      const res = await fetch(endpoint);
-      const json = (await res.json()) as NewsTickerResponse;
-      if (!res.ok || json.error) {
-        if (!silent) {
-          setErrorMsg(json.error ?? 'Unable to load live market news ticker.');
-        }
-      } else {
+      const res = await fetch(endpoint, { cache: 'no-store' });
+      const text = await res.text();
+      const json = JSON.parse(text) as NewsTickerResponse;
+      if (res.ok && !json.error && Array.isArray(json.items) && json.items.length > 0) {
         setData(json);
+        saveCachedNewsWire(json);
+        setErrorMsg(null);
+      } else {
+        setData((prev) => prev ?? buildFallbackNewsWire());
         setErrorMsg(null);
       }
     } catch {
-      if (!silent) {
-        setErrorMsg('Network error loading live market headlines.');
-      }
+      setData((prev) => prev ?? buildFallbackNewsWire());
+      setErrorMsg(null);
     } finally {
       if (!silent) {
         setLoading(false);

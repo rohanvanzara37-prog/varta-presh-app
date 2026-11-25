@@ -101,7 +101,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
   const optionLetters = ['A', 'B', 'C'] as const;
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-[var(--vp-canvas)] text-[var(--vp-text)] flex flex-col transition-colors duration-200">
+    <div className="h-[100dvh] max-h-[100dvh] w-full overflow-hidden pb-[68px] bg-[#FFFFFF] text-[#0F172A] flex flex-col transition-colors duration-200">
       {/* 1. Compact Top Bar: Title, Timeframe Badge & XP Counter */}
       <header className="shrink-0 h-12 border-b border-[var(--vp-border)] bg-[var(--vp-header)]/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 transition-colors">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -121,7 +121,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="inline-flex items-center rounded-full bg-[#F59E0B] px-2.5 py-0.5 text-[11px] font-bold text-[#0B0E14] font-mono-tabular whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.28)]">
+          <span className="inline-flex items-center rounded-full bg-[#F59E0B] px-2.5 py-0.5 text-[11px] font-bold text-[#0F172A] font-mono-tabular whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.28)]">
             {scenario.timeframe}
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-0.5 text-xs font-bold text-[var(--vp-text)] font-mono-tabular whitespace-nowrap shrink-0">
@@ -192,7 +192,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
               <button
                 type="button"
                 onClick={handleNext}
-                className="vp-pill-btn inline-flex h-7 items-center gap-1 bg-[#F59E0B] hover:bg-[#D97706] px-3 text-[11px] font-bold text-[#0B0E14] cursor-pointer whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.3)]"
+                className="vp-pill-btn inline-flex h-7 items-center gap-1 bg-[#F59E0B] hover:bg-[#D97706] px-3 text-[11px] font-bold text-[#0F172A] cursor-pointer whitespace-nowrap shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.3)]"
               >
                 <span>{stepIdx < 2 ? `Step ${stepIdx + 2}` : 'Next Setup'}</span>
                 <ArrowRight className="h-3 w-3" />
