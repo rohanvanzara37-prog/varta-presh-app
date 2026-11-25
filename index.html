@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0B0E14" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFFFF" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Varta Presh" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
@@ -14,49 +14,61 @@
     <title>Varta Presh — Pro Trading Terminal, News, Reels &amp; Academy</title>
     <meta
       name="description"
-      content="Institutional dark-mode trading terminal featuring live Gold, Silver, Crypto, S&P 500 & US Oil charts, SMC BOS/CHoCH structure, Gemini market news, trading reels, and SMC Academy."
+      content="Institutional white-mode trading terminal featuring live Gold, Silver, Crypto, S&P 500 & US Oil charts, SMC BOS/CHoCH structure, market news, and SMC Academy."
     />
-    <meta property="og:title" content="Varta Presh — Pro Trading Terminal, News, Reels &amp; Academy" />
-    <meta
-      property="og:description"
-      content="Live TradingView & SMC charts for XAU/USD, BTC, ETH, S&P 500 & US Oil with real-time news, trading reels, and trading academy."
-    />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <style>
+      /* 1. पक्का जीरो साइड-स्क्रॉल (Strict No Side-Scroll) */
+      html, body {
+        width: 100% !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: relative !important;
+      }
+      #root {
+        width: 100% !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+        background-color: #ffffff !important;
+      }
+      * {
+        box-sizing: border-box !important;
+      }
+      /* 2. कस्टम डार्क कलर्स (#0B0E14, #131722 आदि) को ज़बरदस्ती सफेद करना */
+      [class*="0B0E14"], [class*="0b0e14"], [class*="131722"], [class*="0B0E11"], [class*="161A25"], [class*="1E222D"],
+      .bg-slate-950, .bg-slate-900, .bg-gray-950, .bg-gray-900, .bg-zinc-950, .bg-neutral-950, .bg-black {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+      }
+      [class*="1A1F2E"], [class*="181C27"], .bg-slate-800, .bg-gray-800, .bg-zinc-900, .bg-zinc-800 {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+      }
+      .text-white, .text-slate-100, .text-slate-200, .text-slate-300, .text-gray-100, .text-gray-200 {
+        color: #0f172a !important;
+      }
+      .text-slate-400, .text-gray-400 {
+        color: #475569 !important;
+      }
+      /* 3. इंडिकेटर बटनों को स्क्रीन के अंदर मोड़ना (Wrap) */
+      canvas, svg {
+        max-width: 100% !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <style>
-  html, body, #root {
-    max-width: 100vw !important;
-    overflow-x: hidden !important;
-    background-color: #ffffff !important;
-    color: #0f172a !important;
-  }
-  * {
-    box-sizing: border-box !important;
-  }
-  .bg-slate-950, .bg-slate-900, .bg-gray-950, .bg-gray-900, .bg-zinc-950, .bg-black {
-    background-color: #ffffff !important;
-    color: #0f172a !important;
-    border-color: #e2e8f0 !important;
-  }
-  .bg-slate-800, .bg-gray-800, .bg-zinc-900 {
-    background-color: #f8fafc !important;
-    color: #0f172a !important;
-    border-color: #cbd5e1 !important;
-  }
-  .text-white, .text-slate-100, .text-slate-200 {
-    color: #0f172a !important;
-  }
-</style>
-
   </body>
 </html>
