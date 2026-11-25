@@ -34,7 +34,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
   targetCandleIndex,
   targetZoneId,
   isAnswered,
-  themeMode = 'dark',
+  themeMode = 'light',
 }) => {
   const isLight = themeMode === 'light';
   const canvasBg = isLight ? '#FFFFFF' : '#0B0E14';

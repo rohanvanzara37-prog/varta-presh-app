@@ -29,6 +29,8 @@ interface ChartCanvasOverlayProps {
   chart: IChartApi | null;
   candleSeries: ISeriesApi<'Candlestick', Time> | null;
   candles: TerminalCandle[];
+  symbol: string;
+  timeframe: string;
   structure: ChartStructureOverlayData | null;
   bbUpper: Array<{ time: UTCTimestamp; value: number }>;
   bbLower: Array<{ time: UTCTimestamp; value: number }>;
@@ -48,6 +50,8 @@ interface CachedVp {
   key: string;
   buckets: VolumeProfileBucket[];
   pocPrice: number | null;
+  vahPrice: number | null;
+  valPrice: number | null;
   maxVol: number;
 }
 
@@ -67,6 +71,8 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
       chart,
       candleSeries,
       candles,
+      symbol,
+      timeframe,
       structure,
       bbUpper,
       bbLower,
@@ -242,13 +248,16 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
       }
     }
 
-    // 2. Visible Range Volume Profile (VPVR) with Range Cache for O(1) Vertical Pan
+    // 2. Visible Range Volume Profile (VPVR) keyed per symbol & timeframe
     if (showVolumeProfile && candles.length > 0) {
       const range = ts.getVisibleLogicalRange();
       const fromIdx = range ? Math.max(0, Math.floor(range.from)) : 0;
       const toIdx = range ? Math.min(candles.length - 1, Math.ceil(range.to)) : candles.length - 1;
+      const firstBar = candles[0];
+      const fromBar = candles[fromIdx];
+      const toBar = candles[toIdx];
       const lastBar = candles[candles.length - 1];
-      const vpKey = `${candles.length}:${lastBar?.time}:${lastBar?.close}:${fromIdx}:${toIdx}`;
+      const vpKey = `${symbol}:${timeframe}:${firstBar?.time ?? 0}:${fromBar?.time ?? 0}:${toBar?.time ?? 0}:${lastBar?.time ?? 0}:${lastBar?.high ?? 0}:${lastBar?.low ?? 0}:${lastBar?.close ?? 0}:${lastBar?.volume ?? 0}:${candles.length}:${fromIdx}:${toIdx}`;
 
       let vp = vpCacheRef.current;
       if (!vp || vp.key !== vpKey) {
@@ -259,7 +268,11 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
       }
 
       if (vp.maxVol > 0) {
-        const maxBarW = Math.min(86, width * 0.19);
+        const maxBarW = Math.min(88, width * 0.2);
+        // Subtle right-edge baseline anchor for histogram
+        ctx.fillStyle = isLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(148, 163, 184, 0.12)';
+        ctx.fillRect(plotRight - 1, 8, 1, Math.max(20, height - 16));
+
         for (let i = 0; i < vp.buckets.length; i += 1) {
           const b = vp.buckets[i];
           const yTop = toY(b.high);
@@ -269,13 +282,38 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           const h = Math.max(2, Math.abs(yBot - yTop) - 1);
           const bullW = (b.bullVol / vp.maxVol) * maxBarW;
           const bearW = (b.bearVol / vp.maxVol) * maxBarW;
+          const inValueArea =
+            vp.vahPrice !== null &&
+            vp.valPrice !== null &&
+            b.high >= vp.valPrice &&
+            b.low <= vp.vahPrice;
 
           if (bearW > 0) {
-            ctx.fillStyle = b.isPoc ? 'rgba(245, 158, 11, 0.45)' : 'rgba(242, 54, 69, 0.28)';
+            ctx.fillStyle = b.isPoc
+              ? isLight
+                ? 'rgba(217, 119, 6, 0.55)'
+                : 'rgba(245, 158, 11, 0.50)'
+              : inValueArea
+                ? isLight
+                  ? 'rgba(220, 38, 38, 0.36)'
+                  : 'rgba(242, 54, 69, 0.34)'
+                : isLight
+                  ? 'rgba(220, 38, 38, 0.20)'
+                  : 'rgba(242, 54, 69, 0.18)';
             ctx.fillRect(plotRight - bullW - bearW, y, bearW, h);
           }
           if (bullW > 0) {
-            ctx.fillStyle = b.isPoc ? 'rgba(245, 158, 11, 0.65)' : 'rgba(8, 153, 129, 0.34)';
+            ctx.fillStyle = b.isPoc
+              ? isLight
+                ? 'rgba(217, 119, 6, 0.72)'
+                : 'rgba(245, 158, 11, 0.68)'
+              : inValueArea
+                ? isLight
+                  ? 'rgba(8, 153, 129, 0.42)'
+                  : 'rgba(8, 153, 129, 0.40)'
+                : isLight
+                  ? 'rgba(8, 153, 129, 0.24)'
+                  : 'rgba(8, 153, 129, 0.22)';
             ctx.fillRect(plotRight - bullW, y, bullW, h);
           }
         }
@@ -286,7 +324,7 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
         if (pocY !== null && pocY >= 0 && pocY <= height) {
           ctx.save();
           ctx.setLineDash([4, 3]);
-          ctx.strokeStyle = 'rgba(245, 158, 11, 0.78)';
+          ctx.strokeStyle = isLight ? 'rgba(180, 83, 9, 0.82)' : 'rgba(245, 158, 11, 0.78)';
           ctx.lineWidth = 1.1;
           ctx.beginPath();
           ctx.moveTo(0, pocY);
@@ -300,8 +338,8 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
               `POC ${vp.pocPrice.toFixed(precision)}`,
               plotRight - 6,
               pocY - 10,
-              isLight ? 'rgba(255,251,235,0.94)' : 'rgba(17,22,33,0.92)',
-              'rgba(245, 158, 11, 0.7)',
+              isLight ? 'rgba(255,251,235,0.96)' : 'rgba(17,22,33,0.92)',
+              isLight ? 'rgba(180, 83, 9, 0.75)' : 'rgba(245, 158, 11, 0.7)',
               isLight ? '#B45309' : '#F59E0B',
               { align: 'right', fontSize: 9.5 }
             );
@@ -548,6 +586,8 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
     props.chart,
     props.candleSeries,
     props.candles,
+    props.symbol,
+    props.timeframe,
     props.structure,
     props.bbUpper,
     props.bbLower,

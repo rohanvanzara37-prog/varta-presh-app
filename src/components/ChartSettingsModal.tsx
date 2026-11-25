@@ -102,7 +102,8 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
           onToggle: overlays.onToggleRsi,
         },
         {
-          label: 'Volume Profile',
+          label: 'Volume Profile (Histogram)',
+          description: 'Side volume profile & POC for active timeframe',
           checked: overlays.showVolumeProfile,
           onToggle: overlays.onToggleVolumeProfile,
         },
@@ -175,7 +176,7 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
                 <div className="min-w-0">
                   <div className="text-xs font-bold">Theme</div>
                   <p className="text-[11px]" style={{ color: 'var(--vp-muted)' }}>
-                    {isLight ? 'Light / White Theme active' : 'Obsidian Dark Theme active (Default)'}
+                    {isLight ? 'Light / White Theme active (Default)' : 'Obsidian Dark Theme active'}
                   </p>
                 </div>
 
@@ -275,7 +276,14 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
                     className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left"
                     style={{ borderColor: 'var(--vp-border)' }}
                   >
-                    <span>{item.label}</span>
+                    <div className="min-w-0">
+                      <span className="block">{item.label}</span>
+                      {'description' in item && item.description && (
+                        <span className="block text-[10px] font-normal" style={{ color: 'var(--vp-muted)' }}>
+                          {item.description}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors shrink-0"
                       style={{

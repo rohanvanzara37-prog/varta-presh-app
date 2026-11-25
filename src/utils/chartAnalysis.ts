@@ -292,22 +292,47 @@ export function computeVisibleVolumeProfile(
     isPoc: false,
   }));
 
+  // Estimate consistent volume scale so live tick bars without feed volume align cleanly with historical bars
+  const volPerRangeSamples: number[] = [];
+  for (const c of visibleCandles) {
+    if (c.volume && c.volume > 0) {
+      const r = Math.max(step * 0.25, c.high - c.low);
+      volPerRangeSamples.push(c.volume / r);
+    }
+  }
+  volPerRangeSamples.sort((a, b) => a - b);
+  const medianVolDensity =
+    volPerRangeSamples.length > 0
+      ? volPerRangeSamples[Math.floor(volPerRangeSamples.length / 2)]
+      : 100;
+
   let totalProfileVol = 0;
   for (const c of visibleCandles) {
+    const candleRange = Math.max(step * 0.25, c.high - c.low);
+    const bodyLow = Math.min(c.open, c.close);
+    const bodyHigh = Math.max(c.open, c.close);
     const rawVol =
       c.volume && c.volume > 0
         ? c.volume
-        : Math.max(1, (c.high - c.low) * 100 + Math.abs(c.close - c.open) * 150);
+        : Math.max(1, candleRange * medianVolDensity);
     const isBull = c.close >= c.open;
-    const startIdx = Math.max(0, Math.min(bucketCount - 1, Math.floor((c.low - minLow) / step)));
-    const endIdx = Math.max(startIdx, Math.min(bucketCount - 1, Math.floor((c.high - minLow) / step)));
-    const span = endIdx - startIdx + 1;
-    const perBucket = rawVol / span;
-    for (let b = startIdx; b <= endIdx; b += 1) {
-      if (isBull) buckets[b].bullVol += perBucket;
-      else buckets[b].bearVol += perBucket;
-      buckets[b].totalVol += perBucket;
-      totalProfileVol += perBucket;
+
+    const fullStart = Math.max(0, Math.min(bucketCount - 1, Math.floor((c.low - minLow) / step)));
+    const fullEnd = Math.max(fullStart, Math.min(bucketCount - 1, Math.floor((c.high - minLow) / step)));
+    const bodyStart = Math.max(fullStart, Math.min(fullEnd, Math.floor((bodyLow - minLow) / step)));
+    const bodyEnd = Math.max(bodyStart, Math.min(fullEnd, Math.floor((bodyHigh - minLow) / step)));
+
+    const fullSpan = fullEnd - fullStart + 1;
+    const bodySpan = bodyEnd - bodyStart + 1;
+    const wickVolPerBucket = (rawVol * 0.35) / fullSpan;
+    const bodyVolPerBucket = (rawVol * 0.65) / bodySpan;
+
+    for (let b = fullStart; b <= fullEnd; b += 1) {
+      const addVol = wickVolPerBucket + (b >= bodyStart && b <= bodyEnd ? bodyVolPerBucket : 0);
+      if (isBull) buckets[b].bullVol += addVol;
+      else buckets[b].bearVol += addVol;
+      buckets[b].totalVol += addVol;
+      totalProfileVol += addVol;
     }
   }
 

@@ -51,7 +51,7 @@ import {
 
 const STORAGE_KEYS = {
   palette: 'vp_active_palette_v3',
-  themeMode: 'vp_theme_mode_v1',
+  themeMode: 'vp_theme_mode_v2',
   typography: 'vp_typography_v2',
   watchlist: 'vp_watchlist_symbols_v1',
   localAlerts: 'vp_local_price_alerts_v1',
@@ -148,13 +148,13 @@ export default function App() {
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
   const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('OANDA:XAUUSD');
 
-  // Theme Mode (Dark default, Light/White saved in localStorage) & Typography
+  // Theme Mode (Light/White default, Dark optional in localStorage) & Typography
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.themeMode);
-      return saved === 'light' ? 'light' : 'dark';
+      return saved === 'dark' ? 'dark' : 'light';
     } catch {
-      return 'dark';
+      return 'light';
     }
   });
   const activePalette: ColorPalette =
@@ -244,6 +244,10 @@ export default function App() {
     document.documentElement.style.backgroundColor = activePalette.canvas;
     document.body.style.backgroundColor = activePalette.canvas;
     document.body.style.color = activePalette.text;
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', activePalette.canvas);
+    }
   }, [activePalette]);
 
   useEffect(() => {

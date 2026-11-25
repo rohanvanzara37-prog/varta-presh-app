@@ -43,7 +43,7 @@ function loadCompleted(): string[] {
 
 export const AcademyView: React.FC<AcademyViewProps> = ({
   onNavigateTab,
-  themeMode = 'dark',
+  themeMode = 'light',
 }) => {
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [stepIdx, setStepIdx] = useState<0 | 1 | 2>(0);

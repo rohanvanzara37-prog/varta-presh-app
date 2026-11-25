@@ -117,21 +117,21 @@ function getCandleStyleOptions(themeMode: ThemeMode) {
     ? {
         upColor: '#089981',
         downColor: '#F23645',
-        borderUpColor: '#057A66',
-        borderDownColor: '#C81E2B',
-        wickUpColor: '#057A66',
-        wickDownColor: '#C81E2B',
-        borderVisible: true,
+        borderUpColor: '#089981',
+        borderDownColor: '#F23645',
+        wickUpColor: '#067A66',
+        wickDownColor: '#DC2626',
+        borderVisible: false,
         wickVisible: true,
       }
     : {
         upColor: '#089981',
         downColor: '#F23645',
-        borderUpColor: '#14B89B',
-        borderDownColor: '#FF4E5E',
-        wickUpColor: '#26D7B7',
-        wickDownColor: '#FF6B79',
-        borderVisible: true,
+        borderUpColor: '#089981',
+        borderDownColor: '#F23645',
+        wickUpColor: '#10B981',
+        wickDownColor: '#FB7185',
+        borderVisible: false,
         wickVisible: true,
       };
 }
@@ -410,7 +410,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   externalTvSymbol,
   onSelectTvSymbol,
   onTelemetryChange,
-  themeMode = 'dark',
+  themeMode = 'light',
   onChangeThemeMode,
 }) => {
   const [symbol, setSymbol] = useState<SmcSymbol>(() => mapTvSymbolToSmc(externalTvSymbol) ?? 'XAUUSD');
@@ -570,10 +570,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         ...initialChartTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 5,
-        barSpacing: 11.5,
-        minBarSpacing: 2.5,
-        maxBarSpacing: 36,
+        rightOffset: 6,
+        barSpacing: 7.5,
+        minBarSpacing: 1.5,
+        maxBarSpacing: 20,
         fixLeftEdge: false,
         fixRightEdge: false,
         lockVisibleTimeRangeOnResize: true,
@@ -830,7 +830,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
     const containerW = chartWrapRef.current?.clientWidth || chart.paneSize(0).width || 360;
     const plotW = Math.max(200, containerW - 64);
-    const targetVisibleBars = Math.max(26, Math.min(candles.length, 82, Math.round(plotW / 12)));
+    const targetVisibleBars = Math.max(38, Math.min(candles.length, 110, Math.round(plotW / 8)));
 
     chart.priceScale('right').applyOptions({
       autoScale: true,
@@ -853,7 +853,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     if (candles.length > targetVisibleBars) {
       chart.timeScale().setVisibleLogicalRange({
         from: Math.max(0, candles.length - targetVisibleBars),
-        to: candles.length - 1 + 4.5,
+        to: candles.length - 1 + 5.5,
       });
     } else {
       chart.timeScale().fitContent();
@@ -868,7 +868,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     const range = ts.getVisibleLogicalRange();
     if (!range) return;
     const span = range.to - range.from;
-    const nextSpan = Math.max(10, span * 0.72);
+    const nextSpan = Math.max(16, span * 0.72);
     ts.setVisibleLogicalRange({
       from: range.to - nextSpan,
       to: range.to,
@@ -1194,6 +1194,18 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       syncTechnicalIndicators(latestCandlesRef.current, false);
     }
   }, [syncTechnicalIndicators]);
+
+  useEffect(() => {
+    scheduleOverlayRafRef.current?.();
+  }, [
+    showVolumeProfile,
+    showSupportResistance,
+    showPatterns,
+    showSwingLabels,
+    showBosChoch,
+    timeframe,
+    symbol,
+  ]);
 
   const runSmcAnalysis = useCallback((candles: TerminalCandle[]) => {
     if (candles.length < 14) {
@@ -2284,9 +2296,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   type="button"
                   onClick={toggleFullScreen}
                   aria-label="Exit Full Screen"
-                  className="pointer-events-auto inline-flex min-h-[34px] sm:min-h-[38px] items-center gap-1.5 rounded-full border border-[#F59E0B]/70 bg-[#0D1117]/95 px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold text-[#F8FAFC] shadow-2xl hover:bg-[#1E2638] active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+                  className="pointer-events-auto inline-flex min-h-[34px] sm:min-h-[38px] items-center gap-1.5 rounded-full border border-[#F59E0B]/70 bg-[var(--vp-header)]/95 px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold text-[var(--vp-text)] shadow-2xl hover:opacity-90 active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
                 >
-                  <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#F59E0B]" />
+                  <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[var(--vp-accent-text)]" />
                   <span className="sm:hidden">Exit</span>
                   <span className="hidden sm:inline">Exit Full Screen</span>
                 </button>
@@ -2299,6 +2311,8 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               chart={chartApiRef.current}
               candleSeries={candleSeriesRef.current}
               candles={latestCandlesRef.current}
+              symbol={symbol}
+              timeframe={timeframe}
               structure={structureOverlay}
               bbUpper={bbUpperPointsRef.current}
               bbLower={bbLowerPointsRef.current}
@@ -3040,10 +3054,10 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
         ...initialSubTheme.timeScale,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 5,
-        barSpacing: 11,
-        minBarSpacing: 2.5,
-        maxBarSpacing: 36,
+        rightOffset: 6,
+        barSpacing: 7.5,
+        minBarSpacing: 1.5,
+        maxBarSpacing: 20,
         fixLeftEdge: false,
         fixRightEdge: false,
         lockVisibleTimeRangeOnResize: true,
@@ -3265,11 +3279,11 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
           if (!chart || disposed) return;
           chart.priceScale('right').applyOptions({ autoScale: true });
           const chartWidth = wrapRef.current?.clientWidth || 320;
-          const visibleBars = Math.max(26, Math.min(bars.length, 76, Math.round(Math.max(180, chartWidth - 60) / 12)));
+          const visibleBars = Math.max(36, Math.min(bars.length, 102, Math.round(Math.max(180, chartWidth - 60) / 8)));
           if (bars.length > visibleBars) {
             chart.timeScale().setVisibleLogicalRange({
               from: Math.max(0, bars.length - visibleBars),
-              to: bars.length - 1 + 4.5,
+              to: bars.length - 1 + 5.5,
             });
           } else {
             chart.timeScale().fitContent();
@@ -3299,7 +3313,7 @@ const SecondarySplitChart: React.FC<SecondarySplitChartProps> = memo(({
     if (!ts || !range) return;
     const span = range.to - range.from;
     const maxSpan = Math.max(180, candlesRef.current.length + 20);
-    const nextSpan = Math.max(10, Math.min(maxSpan, span * factor));
+    const nextSpan = Math.max(16, Math.min(maxSpan, span * factor));
     ts.setVisibleLogicalRange({ from: range.to - nextSpan, to: range.to });
   };
 
