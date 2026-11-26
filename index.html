@@ -53,7 +53,7 @@
       * {
         box-sizing: border-box !important;
       }
-      /* 2. कस्टम डार्क कलर्स (#0B0E14, #131722 आदि) को ज़बरदस्ती सफेद करना */
+      /* 2. कस्टम डार्क कलर्स को सफेद करना */
       [class*="0B0E14"], [class*="0b0e14"], [class*="131722"], [class*="0B0E11"], [class*="161A25"], [class*="1E222D"],
       .bg-slate-950, .bg-slate-900, .bg-gray-950, .bg-gray-900, .bg-zinc-950, .bg-neutral-950, .bg-black {
         background-color: #ffffff !important;
@@ -71,11 +71,9 @@
       .text-slate-400, .text-gray-400 {
         color: #475569 !important;
       }
-      /* 3. इंडिकेटर बटनों को स्क्रीन के अंदर मोड़ना (Wrap) */
       canvas, svg {
         max-width: 100% !important;
       }
-      /* 4. Full-Screen mode strict pure white background */
       :fullscreen,
       :-webkit-full-screen,
       :-moz-full-screen,
@@ -86,50 +84,52 @@
         background: #ffffff !important;
         color: #0f172a !important;
       }
+      /* Intro Animations */
+      @keyframes pulseLogo {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.06); }
+      }
+      @keyframes loadBar {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(0%); }
+      }
     </style>
   </head>
   <body>
+    <!-- TREDAURA Clean White Intro Screen -->
+    <div id="tredaura-intro" style="position:fixed; inset:0; background:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999999; transition:opacity 0.5s ease;">
+      <img src="/logo.png" alt="TREDAURA" style="width:95px; height:95px; border-radius:22px; box-shadow:0 10px 25px rgba(0,0,0,0.08); margin-bottom:18px; animation: pulseLogo 1.5s infinite;" />
+      <h1 style="color:#0f172a; font-family:sans-serif; font-size:28px; font-weight:800; letter-spacing:4px; margin:0;">TREDAURA</h1>
+      <p style="color:#059669; font-family:sans-serif; font-size:12px; font-weight:600; letter-spacing:2px; margin-top:8px;">SMART TRADING AI</p>
+      <div style="width:140px; height:4px; background:#e2e8f0; border-radius:4px; margin-top:24px; overflow:hidden;">
+        <div style="width:100%; height:100%; background:#059669; animation: loadBar 2.5s ease-in-out;"></div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <script>
+      // काली Loading स्क्रीन को तुरंत हटाने का कोड
+      const hideOldLoader = setInterval(() => {
+        document.querySelectorAll('div').forEach(el => {
+          if (el.id !== 'tredaura-intro' && el.innerText && el.innerText.includes('TRDAURA') && el.innerText.includes('Loading...')) {
+            el.style.display = 'none';
+          }
+        });
+      }, 50);
+
+      // 2.5 सेकंड बाद सफेद इंट्रो हटाने का कोड
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const intro = document.getElementById('tredaura-intro');
+          if (intro) {
+            intro.style.opacity = '0';
+            setTimeout(() => intro.remove(), 500);
+          }
+          clearInterval(hideOldLoader);
+        }, 2500);
+      });
+    </script>
   </body>
-  <body>
-  <!-- यहाँ मेरा दिया हुआ नया इंट्रो कोड पेस्ट करें -->
-
-  <!-- नीचे आपका पुराना सारा कोड जैसा था वैसा ही रहेगा -->
-  <div id="root"></div>
-  ...
-  </body>
-  <!-- TREDAURA Clean White Intro Screen -->
-<div id="tredaura-intro" style="position:fixed; inset:0; background:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999999; transition:opacity 0.5s ease;">
-  <img src="/logo.png" alt="TREDAURA" style="width:95px; height:95px; border-radius:22px; box-shadow:0 10px 25px rgba(0,0,0,0.08); margin-bottom:18px; animation: pulseLogo 1.5s infinite;" />
-  <h1 style="color:#0f172a; font-family:sans-serif; font-size:28px; font-weight:800; letter-spacing:4px; margin:0;">TREDAURA</h1>
-  <p style="color:#059669; font-family:sans-serif; font-size:12px; font-weight:600; letter-spacing:2px; margin-top:8px;">SMART TRADING AI</p>
-  <div style="width:140px; height:4px; background:#e2e8f0; border-radius:4px; margin-top:24px; overflow:hidden;">
-    <div style="width:100%; height:100%; background:#059669; animation: loadBar 2s ease-in-out;"></div>
-  </div>
-</div>
-
-<style>
-  @keyframes pulseLogo {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.06); }
-  }
-  @keyframes loadBar {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(0%); }
-  }
-</style>
-
-<script>
-  window.addEventListener('load', function() {
-    setTimeout(function() {
-      var intro = document.getElementById('tredaura-intro');
-      if (intro) {
-        intro.style.opacity = '0';
-        setTimeout(function() { intro.remove(); }, 500);
-      }
-    }, 2000);
-  });
-</script>
-  
 </html>
