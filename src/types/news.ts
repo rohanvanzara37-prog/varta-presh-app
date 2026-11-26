@@ -1,4 +1,11 @@
-export type AppTab = 'terminal' | 'news' | 'academy';
+export type AppTab = 'terminal' | 'ai' | 'news' | 'academy';
+
+export interface ChartLayerPrefs {
+  smc: boolean;
+  trendlines: boolean;
+  patterns: boolean;
+  aiSignals: boolean;
+}
 
 export type ThemeMode = 'light' | 'dark';
 

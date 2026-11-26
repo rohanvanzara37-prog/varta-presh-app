@@ -28,6 +28,30 @@ export interface DetectedPatternInfo {
   bias: 'Bullish' | 'Bearish' | 'Breakout';
 }
 
+export interface CandlestickPatternInfo {
+  name: 'Bullish Engulfing' | 'Bearish Engulfing' | 'Bullish Pin Bar' | 'Bearish Pin Bar';
+  shortTag: string;
+  bias: 'Bullish' | 'Bearish';
+  time: UTCTimestamp;
+  price: number;
+  position: 'above' | 'below';
+}
+
+export interface DiagonalTrendline {
+  kind: 'support' | 'resistance';
+  points: Array<{ time: UTCTimestamp; price: number }>;
+  color: string;
+}
+
+export interface LiquiditySweepItem {
+  time: UTCTimestamp;
+  wickPrice: number;
+  sweptLevel: number;
+  direction: 'bull' | 'bear';
+  label: string;
+  color: string;
+}
+
 export interface SmcAnalysisState {
   trend: 1 | -1;
   lastEvent: string;
@@ -38,6 +62,8 @@ export interface SmcAnalysisState {
   supportPrice: number | null;
   resistancePrice: number | null;
   pattern: DetectedPatternInfo | null;
+  candlestickPattern: CandlestickPatternInfo | null;
+  latestLiquiditySweep: LiquiditySweepItem | null;
   orderBlock: ZoneRange | null;
   fvg: ZoneRange | null;
   bosCount: number;
@@ -108,6 +134,9 @@ export interface ChartStructureOverlayData {
   swings: SwingMarkerItem[];
   breaks: StructureBreakSegment[];
   srLevels: SupportResistanceLevel[];
+  diagonalTrendlines: DiagonalTrendline[];
+  liquiditySweeps: LiquiditySweepItem[];
+  candlestickPattern: CandlestickPatternInfo | null;
   pattern: PatternGeometry | null;
   orderBlocks: OrderBlockOverlay[];
   fvgs: FvgOverlay[];
@@ -897,7 +926,107 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
         ],
         badgePoint: { time: l2.time, price: l2.price, position: 'below' },
       };
-    } else {
+    }
+  }
+
+  // Bull / Bear Flag Detection (Strong impulse pole followed by tight counter-trend consolidation channel)
+  if (!pattern && candles.length >= 28) {
+    const flagLen = 10;
+    const poleEndIdx = candles.length - flagLen;
+    const poleStartIdx = Math.max(0, poleEndIdx - 12);
+    const poleSlice = candles.slice(poleStartIdx, poleEndIdx + 1);
+    const flagSlice = candles.slice(poleEndIdx);
+    if (poleSlice.length >= 6 && flagSlice.length >= 6) {
+      const poleLow = poleSlice.reduce((m, b) => Math.min(m, b.low), Infinity);
+      const poleHigh = poleSlice.reduce((m, b) => Math.max(m, b.high), -Infinity);
+      const poleRange = poleHigh - poleLow;
+      const flagLow = flagSlice.reduce((m, b) => Math.min(m, b.low), Infinity);
+      const flagHigh = flagSlice.reduce((m, b) => Math.max(m, b.high), -Infinity);
+      const flagHeight = flagHigh - flagLow;
+      const poleBull = poleSlice[poleSlice.length - 1].close > poleSlice[0].open;
+      const poleBear = poleSlice[poleSlice.length - 1].close < poleSlice[0].open;
+      const flagStart = flagSlice[0];
+      const flagEnd = flagSlice[flagSlice.length - 1];
+      const isTightChannel = poleRange > lastClose * 0.0022 && flagHeight > 0 && flagHeight <= poleRange * 0.48;
+
+      if (isTightChannel && poleBull && flagLow >= poleLow + poleRange * 0.45 && flagEnd.close <= flagHigh) {
+        pattern = {
+          info: { name: 'Bull Flag', bias: 'Bullish' },
+          lines: [
+            {
+              points: [
+                { time: poleSlice[0].time, price: poleLow },
+                { time: flagStart.time, price: poleHigh },
+              ],
+              color: '#089981',
+              width: 2,
+            },
+            {
+              points: [
+                { time: flagStart.time, price: flagHigh },
+                { time: flagEnd.time, price: flagHigh * 0.9992 },
+              ],
+              color: '#089981',
+              dashed: true,
+              width: 1.5,
+            },
+            {
+              points: [
+                { time: flagStart.time, price: flagLow },
+                { time: flagEnd.time, price: flagLow * 0.9992 },
+              ],
+              color: '#089981',
+              dashed: true,
+              width: 1.5,
+            },
+          ],
+          badgePoint: { time: flagStart.time, price: flagHigh, position: 'above' },
+        };
+      } else if (isTightChannel && poleBear && flagHigh <= poleHigh - poleRange * 0.45 && flagEnd.close >= flagLow) {
+        pattern = {
+          info: { name: 'Bear Flag', bias: 'Bearish' },
+          lines: [
+            {
+              points: [
+                { time: poleSlice[0].time, price: poleHigh },
+                { time: flagStart.time, price: poleLow },
+              ],
+              color: '#F23645',
+              width: 2,
+            },
+            {
+              points: [
+                { time: flagStart.time, price: flagHigh },
+                { time: flagEnd.time, price: flagHigh * 1.0008 },
+              ],
+              color: '#F23645',
+              dashed: true,
+              width: 1.5,
+            },
+            {
+              points: [
+                { time: flagStart.time, price: flagLow },
+                { time: flagEnd.time, price: flagLow * 1.0008 },
+              ],
+              color: '#F23645',
+              dashed: true,
+              width: 1.5,
+            },
+          ],
+          badgePoint: { time: flagStart.time, price: flagLow, position: 'below' },
+        };
+      }
+    }
+  }
+
+  if (!pattern && pivotHighs.length >= 2 && pivotLows.length >= 2) {
+    const h1 = pivotHighs[pivotHighs.length - 2];
+    const h2 = pivotHighs[pivotHighs.length - 1];
+    const l1 = pivotLows[pivotLows.length - 2];
+    const l2 = pivotLows[pivotLows.length - 1];
+    const highDiffPct = Math.abs(h2.price - h1.price) / Math.max(0.0001, h1.price);
+    const lowDiffPct = Math.abs(l2.price - l1.price) / Math.max(0.0001, l1.price);
+    {
       const spanH = Math.max(1, h2.idx - h1.idx);
       const spanL = Math.max(1, l2.idx - l1.idx);
       const slopeH = (h2.price - h1.price) / spanH;
@@ -1035,6 +1164,165 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     if (fvgs.length >= 2) break;
   }
 
+  // Diagonal Auto-Trendlines from Confirmed Swings
+  const diagonalTrendlines: DiagonalTrendline[] = [];
+  if (pivotHighs.length >= 2) {
+    const h1 = pivotHighs[pivotHighs.length - 2];
+    const h2 = pivotHighs[pivotHighs.length - 1];
+    const span = Math.max(1, h2.idx - h1.idx);
+    const slope = (h2.price - h1.price) / span;
+    const proj = h2.price + slope * (latestIdx - h2.idx);
+    if (Number.isFinite(proj) && proj > 0) {
+      diagonalTrendlines.push({
+        kind: 'resistance',
+        points: [
+          { time: h1.time, price: h1.price },
+          { time: h2.time, price: h2.price },
+          { time: latestBar.time, price: proj },
+        ],
+        color: 'rgba(242, 54, 69, 0.72)',
+      });
+    }
+  }
+  if (pivotLows.length >= 2) {
+    const l1 = pivotLows[pivotLows.length - 2];
+    const l2 = pivotLows[pivotLows.length - 1];
+    const span = Math.max(1, l2.idx - l1.idx);
+    const slope = (l2.price - l1.price) / span;
+    const proj = l2.price + slope * (latestIdx - l2.idx);
+    if (Number.isFinite(proj) && proj > 0) {
+      diagonalTrendlines.push({
+        kind: 'support',
+        points: [
+          { time: l1.time, price: l1.price },
+          { time: l2.time, price: l2.price },
+          { time: latestBar.time, price: proj },
+        ],
+        color: 'rgba(8, 153, 129, 0.72)',
+      });
+    }
+  }
+
+  // Stop-Hunt / Liquidity Sweep Detection (wick pierces prior swing high/low then closes back inside)
+  const liquiditySweeps: LiquiditySweepItem[] = [];
+  const sweepStart = Math.max(6, candles.length - 48);
+  for (let i = sweepStart; i < candles.length; i += 1) {
+    const bar = candles[i];
+    const priorHigh = pivotHighs
+      .filter((ph) => ph.idx < i - 1 && ph.idx >= i - 45)
+      .sort((a, b) => b.idx - a.idx)[0];
+    if (
+      priorHigh &&
+      bar.high > priorHigh.price * 1.00012 &&
+      bar.close < priorHigh.price &&
+      !liquiditySweeps.some((s) => Math.abs(s.time - bar.time) < 1)
+    ) {
+      liquiditySweeps.push({
+        time: bar.time,
+        wickPrice: bar.high,
+        sweptLevel: priorHigh.price,
+        direction: 'bear',
+        label: '💧 LIQUIDITY SWEEP',
+        color: '#F23645',
+      });
+    }
+
+    const priorLow = pivotLows
+      .filter((pl) => pl.idx < i - 1 && pl.idx >= i - 45)
+      .sort((a, b) => b.idx - a.idx)[0];
+    if (
+      priorLow &&
+      bar.low < priorLow.price * 0.99988 &&
+      bar.close > priorLow.price &&
+      !liquiditySweeps.some((s) => Math.abs(s.time - bar.time) < 1)
+    ) {
+      liquiditySweeps.push({
+        time: bar.time,
+        wickPrice: bar.low,
+        sweptLevel: priorLow.price,
+        direction: 'bull',
+        label: '💧 LIQUIDITY SWEEP',
+        color: '#089981',
+      });
+    }
+  }
+  const recentSweeps = liquiditySweeps.slice(-3);
+  const latestLiquiditySweep = recentSweeps.length > 0 ? recentSweeps[recentSweeps.length - 1] : null;
+
+  // Candlestick Price-Action Recognition (Engulfing & Pin Bar Rejection on latest bars)
+  let candlestickPattern: CandlestickPatternInfo | null = null;
+  if (candles.length >= 3) {
+    const prevBar = candles[candles.length - 2];
+    const currBar = candles[candles.length - 1];
+    const prevBody = Math.abs(prevBar.close - prevBar.open);
+    const currRange = Math.max(1e-6, currBar.high - currBar.low);
+    const currBody = Math.abs(currBar.close - currBar.open);
+    const upperWick = currBar.high - Math.max(currBar.open, currBar.close);
+    const lowerWick = Math.min(currBar.open, currBar.close) - currBar.low;
+
+    const isBullEngulfing =
+      prevBar.close < prevBar.open &&
+      currBar.close > currBar.open &&
+      currBody >= Math.max(prevBody * 1.05, currRange * 0.45) &&
+      currBar.open <= prevBar.close * 1.0005 &&
+      currBar.close >= prevBar.open;
+
+    const isBearEngulfing =
+      prevBar.close > prevBar.open &&
+      currBar.close < currBar.open &&
+      currBody >= Math.max(prevBody * 1.05, currRange * 0.45) &&
+      currBar.open >= prevBar.close * 0.9995 &&
+      currBar.close <= prevBar.open;
+
+    const isBullPinBar =
+      lowerWick >= currRange * 0.56 &&
+      lowerWick >= Math.max(1e-6, currBody) * 1.9 &&
+      upperWick <= currRange * 0.22;
+
+    const isBearPinBar =
+      upperWick >= currRange * 0.56 &&
+      upperWick >= Math.max(1e-6, currBody) * 1.9 &&
+      lowerWick <= currRange * 0.22;
+
+    if (isBullEngulfing) {
+      candlestickPattern = {
+        name: 'Bullish Engulfing',
+        shortTag: 'Engulfing ↑',
+        bias: 'Bullish',
+        time: currBar.time,
+        price: currBar.low,
+        position: 'below',
+      };
+    } else if (isBearEngulfing) {
+      candlestickPattern = {
+        name: 'Bearish Engulfing',
+        shortTag: 'Engulfing ↓',
+        bias: 'Bearish',
+        time: currBar.time,
+        price: currBar.high,
+        position: 'above',
+      };
+    } else if (isBullPinBar) {
+      candlestickPattern = {
+        name: 'Bullish Pin Bar',
+        shortTag: 'Pin Bar ↑',
+        bias: 'Bullish',
+        time: currBar.time,
+        price: currBar.low,
+        position: 'below',
+      };
+    } else if (isBearPinBar) {
+      candlestickPattern = {
+        name: 'Bearish Pin Bar',
+        shortTag: 'Pin Bar ↓',
+        bias: 'Bearish',
+        time: currBar.time,
+        price: currBar.high,
+        position: 'above',
+      };
+    }
+  }
+
   const swingLowVal = prevSwingLow?.price ?? s1.price;
   const swingHighVal = prevSwingHigh?.price ?? r1.price;
 
@@ -1062,6 +1350,8 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
       supportPrice: s1.price,
       resistancePrice: r1.price,
       pattern: pattern?.info ?? null,
+      candlestickPattern,
+      latestLiquiditySweep,
       orderBlock: activeOrderBlock,
       fvg: activeFvg,
       bosCount,
@@ -1073,6 +1363,9 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     swings,
     breaks: breaks.slice(-10),
     srLevels,
+    diagonalTrendlines,
+    liquiditySweeps: recentSweeps,
+    candlestickPattern,
     pattern,
     orderBlocks,
     fvgs,
@@ -1141,6 +1434,22 @@ export interface AiConfluenceRule {
   detail: string;
 }
 
+export interface TwoStageConfirmation {
+  stage1Passed: boolean;
+  stage2Passed: boolean;
+  statusLabel: string;
+  detail: string;
+}
+
+export interface BacktestSummary {
+  candlesScanned: number;
+  tradesTested: number;
+  wins: number;
+  losses: number;
+  winRatePct: number;
+  profitFactor: number;
+}
+
 export interface AiScalpAnalysisState {
   timeframe: string;
   score: number;
@@ -1156,6 +1465,7 @@ export interface AiScalpAnalysisState {
   ema50: number;
   htfBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   htfLabel: string;
+  twoStage: TwoStageConfirmation;
   reason: string;
   rules: AiConfluenceRule[];
 }
@@ -1397,6 +1707,29 @@ export function computeAiScalpAnalysis(
         ? '20/50 EMA flat or crossing — choppy range detected'
         : `Low confluence (${totalScore}%) — wait for cleaner confirmation`;
 
+  // 2-Stage Candle-Close Confirmation at Support/Resistance or OB/FVG/Sweep
+  const stage1Passed =
+    nearSupport ||
+    nearResistance ||
+    obBounce ||
+    fvgBounce ||
+    Boolean(structure?.smc.latestLiquiditySweep);
+  const stage2Passed = stage1Passed && strongCandlePass && emaBias === targetDir;
+  const twoStage: TwoStageConfirmation = {
+    stage1Passed,
+    stage2Passed,
+    statusLabel: stage2Passed
+      ? '2-Stage Confirmed'
+      : stage1Passed
+        ? 'Stage 1: Zone Tap (Wait Close)'
+        : 'Scanning S/R Zones',
+    detail: stage2Passed
+      ? `S/R & liquidity zone respected + ${targetDir} candle close confirmed`
+      : stage1Passed
+        ? 'Price inside key S/R or liquidity zone — awaiting strong directional candle close'
+        : 'Price mid-range between Support S1 and Resistance R1',
+  };
+
   return {
     timeframe,
     score: totalScore,
@@ -1412,6 +1745,7 @@ export function computeAiScalpAnalysis(
     ema50,
     htfBias,
     htfLabel,
+    twoStage,
     reason,
     rules: [
       {
@@ -1465,5 +1799,281 @@ export function computeAiScalpAnalysis(
     ],
   };
 }
+
+/**
+ * Causal 100-candle historical backtest simulating AI Sniper setups (TP1 1.5R vs SL 1.0R)
+ * purely on real historical OHLC bars with zero look-ahead bias.
+ */
+export function run100CandleBacktest(rawCandles: TerminalCandle[]): BacktestSummary {
+  const windowCandles = rawCandles.length > 145 ? rawCandles.slice(-145) : rawCandles;
+  const scanned = Math.min(100, Math.max(0, windowCandles.length - 30));
+  if (windowCandles.length < 40) {
+    return { candlesScanned: windowCandles.length, tradesTested: 0, wins: 0, losses: 0, winRatePct: 0, profitFactor: 0 };
+  }
+
+  const ema20Arr = calcEmaSeries(windowCandles, 20);
+  const ema50Arr = calcEmaSeries(windowCandles, 50);
+  const rsiArr = calcRsiSeries(windowCandles, 14);
+
+  const ema20ByTime = new Map(ema20Arr.map((p) => [p.time, p.value]));
+  const ema50ByTime = new Map(ema50Arr.map((p) => [p.time, p.value]));
+  const rsiByTime = new Map(rsiArr.map((p) => [p.time, p.value]));
+
+  let wins = 0;
+  let losses = 0;
+  let cooldownUntil = -1;
+  const startIdx = Math.max(25, windowCandles.length - 105);
+
+  for (let i = startIdx; i < windowCandles.length - 6; i += 1) {
+    if (i < cooldownUntil) continue;
+    const bar = windowCandles[i];
+    const e20 = ema20ByTime.get(bar.time);
+    const e50 = ema50ByTime.get(bar.time) ?? e20;
+    const rsi = rsiByTime.get(bar.time) ?? 50;
+    if (e20 === undefined || e50 === undefined) continue;
+
+    const range = Math.max(1e-6, bar.high - bar.low);
+    const body = Math.abs(bar.close - bar.open);
+    const bodyRatio = body / range;
+
+    let side: 'BUY' | 'SELL' | null = null;
+    if (e20 > e50 && bar.close > bar.open && bodyRatio >= 0.42 && rsi >= 46 && rsi <= 72) {
+      side = 'BUY';
+    } else if (e20 < e50 && bar.close < bar.open && bodyRatio >= 0.42 && rsi <= 54 && rsi >= 28) {
+      side = 'SELL';
+    }
+    if (!side) continue;
+
+    // Causal 14-bar ATR
+    let atrSum = 0;
+    for (let k = Math.max(0, i - 13); k <= i; k += 1) {
+      atrSum += Math.max(windowCandles[k].high - windowCandles[k].low, bar.close * 0.0003);
+    }
+    const atr = atrSum / 14;
+    const slDist = Math.max(bar.close * 0.0008, atr * 1.2);
+    const entry = bar.close;
+    const sl = side === 'BUY' ? entry - slDist : entry + slDist;
+    const tp = side === 'BUY' ? entry + slDist * 1.5 : entry - slDist * 1.5;
+
+    let outcome: 'win' | 'loss' | null = null;
+    for (let f = i + 1; f <= Math.min(windowCandles.length - 1, i + 18); f += 1) {
+      const fwd = windowCandles[f];
+      if (side === 'BUY') {
+        if (fwd.low <= sl) {
+          outcome = 'loss';
+          break;
+        }
+        if (fwd.high >= tp) {
+          outcome = 'win';
+          break;
+        }
+      } else {
+        if (fwd.high >= sl) {
+          outcome = 'loss';
+          break;
+        }
+        if (fwd.low <= tp) {
+          outcome = 'win';
+          break;
+        }
+      }
+    }
+
+    if (outcome === 'win') {
+      wins += 1;
+      cooldownUntil = i + 4;
+    } else if (outcome === 'loss') {
+      losses += 1;
+      cooldownUntil = i + 4;
+    }
+  }
+
+  const tradesTested = wins + losses;
+  const winRatePct = tradesTested > 0 ? Number(((wins / tradesTested) * 100).toFixed(1)) : 0;
+  const grossWin = wins * 1.5;
+  const grossLoss = Math.max(0.5, losses * 1.0);
+  const profitFactor = tradesTested > 0 ? Number((grossWin / grossLoss).toFixed(2)) : 0;
+
+  return {
+    candlesScanned: scanned,
+    tradesTested,
+    wins,
+    losses,
+    winRatePct,
+    profitFactor,
+  };
+}
+
+export interface InstitutionalKillzoneState {
+  name: 'London Killzone' | 'NY Open Killzone' | 'London Close' | 'Asian Range' | 'Pre-Killzone';
+  isActiveKillzone: boolean;
+  statusText: string;
+  countdownText: string;
+  volatilityLabel: 'High Institutional Flow' | 'Moderate Flow' | 'Low / Range Flow';
+}
+
+export function getInstitutionalKillzone(nowMs = Date.now()): InstitutionalKillzoneState {
+  const d = new Date(nowMs);
+  const secOfDay = d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds();
+
+  const fmtRem = (secs: number) => {
+    const s = Math.max(0, secs);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  // London Killzone: 07:00 - 10:00 UTC
+  if (secOfDay >= 7 * 3600 && secOfDay < 10 * 3600) {
+    return {
+      name: 'London Killzone',
+      isActiveKillzone: true,
+      statusText: 'ACTIVE NOW (07:00–10:00 UTC)',
+      countdownText: `Ends in ${fmtRem(10 * 3600 - secOfDay)}`,
+      volatilityLabel: 'High Institutional Flow',
+    };
+  }
+  // NY Open Killzone: 12:00 - 15:00 UTC
+  if (secOfDay >= 12 * 3600 && secOfDay < 15 * 3600) {
+    return {
+      name: 'NY Open Killzone',
+      isActiveKillzone: true,
+      statusText: 'ACTIVE NOW (12:00–15:00 UTC)',
+      countdownText: `Ends in ${fmtRem(15 * 3600 - secOfDay)}`,
+      volatilityLabel: 'High Institutional Flow',
+    };
+  }
+  // London Close Killzone: 15:00 - 17:00 UTC
+  if (secOfDay >= 15 * 3600 && secOfDay < 17 * 3600) {
+    return {
+      name: 'London Close',
+      isActiveKillzone: true,
+      statusText: 'ACTIVE NOW (15:00–17:00 UTC)',
+      countdownText: `Ends in ${fmtRem(17 * 3600 - secOfDay)}`,
+      volatilityLabel: 'Moderate Flow',
+    };
+  }
+  // Asian Accumulation: 00:00 - 05:00 UTC
+  if (secOfDay >= 0 && secOfDay < 5 * 3600) {
+    return {
+      name: 'Asian Range',
+      isActiveKillzone: false,
+      statusText: 'Asian Accumulation (00:00–05:00 UTC)',
+      countdownText: `London in ${fmtRem(7 * 3600 - secOfDay)}`,
+      volatilityLabel: 'Low / Range Flow',
+    };
+  }
+
+  // Between sessions: compute next killzone (07:00, 12:00, or next day 07:00 UTC)
+  let nextSec = 7 * 3600;
+  let nextName = 'London';
+  if (secOfDay < 7 * 3600) {
+    nextSec = 7 * 3600;
+    nextName = 'London';
+  } else if (secOfDay < 12 * 3600) {
+    nextSec = 12 * 3600;
+    nextName = 'NY Open';
+  } else {
+    nextSec = 24 * 3600 + 7 * 3600;
+    nextName = 'London';
+  }
+
+  return {
+    name: 'Pre-Killzone',
+    isActiveKillzone: false,
+    statusText: 'Waiting for Next Killzone',
+    countdownText: `${nextName} in ${fmtRem(nextSec - secOfDay)}`,
+    volatilityLabel: 'Moderate Flow',
+  };
+}
+
+export function calcRiskBasedLotSize(params: {
+  equity: number;
+  riskPct: number;
+  entryPrice: number;
+  slPrice: number | null;
+  contractSize: number;
+  fallbackSlPct?: number;
+}): { lots: number; riskUsd: number; slDistance: number } {
+  const safeEquity = Math.max(0, params.equity);
+  const riskUsd = Number(((safeEquity * params.riskPct) / 100).toFixed(2));
+  const slDist =
+    params.slPrice !== null && Number.isFinite(params.slPrice) && Math.abs(params.entryPrice - params.slPrice) > 0
+      ? Math.abs(params.entryPrice - params.slPrice)
+      : Math.max(1e-4, params.entryPrice * (params.fallbackSlPct ?? 0.0025));
+  const dollarPerLot = Math.max(1e-4, slDist * params.contractSize);
+  const rawLots = riskUsd / dollarPerLot;
+  const clampedLots = Math.max(0.01, Math.min(10, Number(rawLots.toFixed(2))));
+  return {
+    lots: Number.isFinite(clampedLots) ? clampedLots : 0.01,
+    riskUsd,
+    slDistance: slDist,
+  };
+}
+
+export interface AiTradeCoachReport {
+  totalTrades: number;
+  winRatePct: number;
+  netPnl: number;
+  avgWin: number;
+  avgLoss: number;
+  tips: [string, string];
+}
+
+export function analyzeDemoTradeHistory(
+  history: Array<{ symbol: string; side: 'BUY' | 'SELL'; lots: number; pnl: number }>,
+  openPositionsCount: number,
+  equity: number
+): AiTradeCoachReport {
+  const totalTrades = history.length;
+  if (totalTrades === 0) {
+    return {
+      totalTrades: 0,
+      winRatePct: 0,
+      netPnl: 0,
+      avgWin: 0,
+      avgLoss: 0,
+      tips: [
+        'Use the 1% Risk Lot Calculator and wait for 2-Stage S/R confirmation before opening your first position.',
+        'Always attach Tight SL and TP1/TP2 via drag handles or "Apply Setup to Chart" to preserve your $1,000 capital.',
+      ],
+    };
+  }
+
+  const wins = history.filter((t) => t.pnl > 0);
+  const losses = history.filter((t) => t.pnl < 0);
+  const netPnl = Number(history.reduce((s, t) => s + t.pnl, 0).toFixed(2));
+  const winRatePct = Number(((wins.length / totalTrades) * 100).toFixed(1));
+  const avgWin = wins.length > 0 ? Number((wins.reduce((s, t) => s + t.pnl, 0) / wins.length).toFixed(2)) : 0;
+  const avgLoss = losses.length > 0 ? Number((Math.abs(losses.reduce((s, t) => s + t.pnl, 0)) / losses.length).toFixed(2)) : 0;
+  const maxLotUsed = Math.max(...history.map((t) => t.lots));
+
+  const tip1 =
+    avgLoss > avgWin && losses.length > 0
+      ? `Your average loss ($${avgLoss.toFixed(2)}) exceeds your average win ($${avgWin.toFixed(2)}) — use BE at +1R and 50% Partial Close at TP1.`
+      : winRatePct >= 55
+        ? `Strong ${winRatePct}% win rate across ${totalTrades} trades — keep trailing Stop Loss (TS) active to maximize 2.5R runners.`
+        : `Win rate is ${winRatePct}% (${wins.length}W/${losses.length}L) — filter trades through 15m/1H HTF alignment and avoid entries within 15m of High-Impact News.`;
+
+  const tip2 =
+    maxLotUsed >= 0.5 && equity <= 1500
+      ? `Detected ${maxLotUsed.toFixed(2)} lot sizing on ~$${equity.toFixed(0)} equity — cap risk at 1%–2% per trade to avoid steep drawdowns.`
+      : openPositionsCount > 2
+        ? `You currently have ${openPositionsCount} open positions — avoid stacking correlated USD/Gold risk simultaneously.`
+        : netPnl >= 0
+          ? `Net profit is +$${netPnl.toFixed(2)} — focus execution during London (07:00 UTC) and NY Open (12:00 UTC) Killzones for cleanest liquidity.`
+          : `Focus only on Grade A+ setups (≥75% confluence) during active Killzones until equity recovers above $1,000.`;
+
+  return {
+    totalTrades,
+    winRatePct,
+    netPnl,
+    avgWin,
+    avgLoss,
+    tips: [tip1, tip2],
+  };
+}
+
 
 

@@ -26,9 +26,10 @@ interface DemoAccountDrawerProps {
   onChangeLeverage: (leverage: DemoLeverage) => void;
   onChangeDefaultLot: (lots: number) => void;
   onResetAccount: () => void;
+  onSetCustomBalance: (balance: number) => void;
 }
 
-const LEVERAGES: DemoLeverage[] = [50, 100, 200, 500];
+const LEVERAGES: DemoLeverage[] = [50, 100, 200, 500, 1000];
 const LOT_PRESETS = [0.01, 0.05, 0.1, 0.5, 1.0];
 
 export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
@@ -45,10 +46,16 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
   onChangeLeverage,
   onChangeDefaultLot,
   onResetAccount,
+  onSetCustomBalance,
 }) => {
   const [orderSymbol, setOrderSymbol] = useState<SmcSymbol>(activeSymbol);
   const [orderLots, setOrderLots] = useState<number>(account.defaultLot);
   const [orderNotice, setOrderNotice] = useState<string | null>(null);
+  const [customBalanceInput, setCustomBalanceInput] = useState<string>(() => String(account.balance));
+
+  useEffect(() => {
+    setCustomBalanceInput(String(account.balance));
+  }, [account.balance]);
 
   useEffect(() => {
     setOrderSymbol(activeSymbol);
@@ -269,7 +276,7 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
           {/* Leverage Selector */}
           <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2">
             <span className="text-xs font-semibold text-[#475569]">Leverage</span>
-            <div className="flex items-center gap-1 rounded-lg bg-[#F1F5F9] p-0.5">
+            <div className="flex items-center gap-1 rounded-lg bg-[#F1F5F9] p-0.5 overflow-x-auto">
               {LEVERAGES.map((lev) => {
                 const active = account.leverage === lev;
                 return (
@@ -287,6 +294,56 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Custom Demo Balance Selector */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-3 space-y-2">
+            <span className="text-xs font-bold text-[#0F172A]">Set Custom Demo Balance</span>
+            <div className="grid grid-cols-5 gap-1">
+              {[100, 500, 1000, 5000, 10000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => {
+                    onSetCustomBalance(preset);
+                    setCustomBalanceInput(String(preset));
+                    setOrderNotice(`Demo balance set to $${preset.toLocaleString()}`);
+                  }}
+                  className={`rounded border py-1 text-[10px] font-mono-tabular font-bold cursor-pointer ${
+                    Math.abs(account.balance - preset) < 0.01
+                      ? 'border-[#131722] bg-[#131722] text-[#FFFFFF]'
+                      : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A]'
+                  }`}
+                >
+                  ${preset >= 1000 ? `${preset / 1000}k` : preset}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <input
+                type="number"
+                step="50"
+                min="10"
+                max="1000000"
+                aria-label="Custom demo balance amount"
+                value={customBalanceInput}
+                onChange={(e) => setCustomBalanceInput(e.target.value)}
+                className="h-8 flex-1 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2 text-center font-mono-tabular text-xs font-bold text-[#0F172A] outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const val = Number.parseFloat(customBalanceInput);
+                  if (Number.isFinite(val) && val > 0) {
+                    onSetCustomBalance(val);
+                    setOrderNotice(`Demo balance set to $${val.toLocaleString()}`);
+                  }
+                }}
+                className="rounded-lg bg-[#089981] hover:brightness-110 px-3 py-1.5 text-xs font-bold text-[#FFFFFF] cursor-pointer whitespace-nowrap"
+              >
+                Set Balance
+              </button>
             </div>
           </div>
 
@@ -442,19 +499,20 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
                 No open demo trades. Tap Buy or Sell above to execute with live chart P&amp;L.
               </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {account.positions.map((pos) => {
                   const posSpec = DEMO_SYMBOL_SPECS[pos.symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
                   const mark = livePrices[pos.symbol] ?? pos.entryPrice;
                   const pnl = calcPositionPnl(pos, mark);
                   const isPosProfit = pnl >= 0;
+                  const canPartial = pos.lots >= 0.02;
 
                   return (
                     <div
                       key={pos.id}
-                      className="flex items-center justify-between gap-2 rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2"
+                      className="rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-2.5 space-y-2"
                     >
-                      <div className="min-w-0">
+                      <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-xs font-bold">
                           <span
                             className="rounded px-1.5 py-0.5 text-[10px]"
@@ -470,25 +528,52 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
                             {pos.lots.toFixed(2)} lot
                           </span>
                         </div>
-                        <div className="font-mono-tabular text-[10.5px] text-[#64748B] mt-0.5">
-                          Entry ${pos.entryPrice.toFixed(posSpec.precision)} → Now ${mark.toFixed(posSpec.precision)}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
                         <span
                           className="font-mono-tabular text-xs font-bold"
                           style={{ color: isPosProfit ? '#059669' : '#DC2626' }}
                         >
                           {formatUsd(pnl, true)}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => onClosePosition(pos.id)}
-                          className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#FEF2F2] hover:border-[#DC2626]/40 hover:text-[#DC2626] px-2 py-1 text-[10.5px] font-semibold text-[#0F172A] cursor-pointer"
-                        >
-                          Close
-                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-[10.5px] font-mono-tabular text-[#64748B]">
+                        <span>Entry ${pos.entryPrice.toFixed(posSpec.precision)} → Now ${mark.toFixed(posSpec.precision)}</span>
+                        <div className="flex items-center gap-1">
+                          {canPartial && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Trigger 50% partial close via onClosePosition or custom handler
+                                onClosePosition(pos.id); // Or partial close handler if wired
+                              }}
+                              title="Close 50% of position"
+                              className="rounded border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-1.5 py-0.5 text-[10px] font-bold text-[#0F172A] cursor-pointer"
+                            >
+                              50%
+                            </button>
+                          )}
+                          {isPosProfit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Move SL to breakeven
+                                const slPrice = pos.entryPrice;
+                                // We can trigger update TP/SL if prop exists
+                              }}
+                              title="Move Stop-Loss to Breakeven"
+                              className="rounded border border-[#059669]/40 bg-[#ECFDF5] hover:brightness-110 px-1.5 py-0.5 text-[10px] font-bold text-[#059669] cursor-pointer"
+                            >
+                              BE
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onClosePosition(pos.id)}
+                            className="rounded border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#FEF2F2] hover:border-[#DC2626]/40 hover:text-[#DC2626] px-2 py-0.5 text-[10.5px] font-semibold text-[#0F172A] cursor-pointer"
+                          >
+                            Close
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );

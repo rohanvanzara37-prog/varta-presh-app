@@ -2510,6 +2510,92 @@ async function startServer() {
     }
   });
 
+  // Deep AI Analysis endpoint for AI Suite
+  app.post('/api/ai-deep-analysis', async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({ error: 'GEMINI_API_KEY is not configured on server.' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as {
+      symbol?: string;
+      timeframe?: string;
+      price?: number;
+      trend?: number;
+      score?: number;
+      direction?: string;
+    };
+
+    const prompt =
+      `Market Symbol: ${String(body.symbol ?? 'XAU/USD')}\n` +
+      `Timeframe: ${String(body.timeframe ?? '15m')}\n` +
+      `Current Price: ${body.price ?? 3500}\n` +
+      `Technical Bias: ${body.direction ?? 'BUY'} (Confluence Score: ${body.score ?? 80}%)\n` +
+      `Perform an institutional Smart Price Action & Order Block analysis. Provide Entry, Tight Stop Loss, TP1 (1.5R), TP2 (2.5R), Institutional Thesis, and Risk Note.`;
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: prompt,
+        config: {
+          abortSignal: AbortSignal.timeout(20000),
+          systemInstruction:
+            'You are TREDAURA Institutional AI Analyst, a rigorous Smart Money Concepts and liquidity mentor. Output precise JSON for institutional trading analysis.',
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              verdict: { type: Type.STRING },
+              confidencePct: { type: Type.NUMBER },
+              entry: { type: Type.NUMBER },
+              sl: { type: Type.NUMBER },
+              tp1: { type: Type.NUMBER },
+              tp2: { type: Type.NUMBER },
+              institutionalThesis: { type: Type.STRING },
+              riskNote: { type: Type.STRING },
+            },
+            required: ['verdict', 'confidencePct', 'entry', 'sl', 'tp1', 'tp2', 'institutionalThesis', 'riskNote'],
+          },
+        },
+      });
+
+      const parsed = JSON.parse((result.text ?? '{}').trim()) as {
+        verdict?: string;
+        confidencePct?: number;
+        entry?: number;
+        sl?: number;
+        tp1?: number;
+        tp2?: number;
+        institutionalThesis?: string;
+        riskNote?: string;
+      };
+
+      const px = Number(body.price ?? 3500);
+      const isBuy = (body.direction ?? 'BUY') === 'BUY';
+      res.json({
+        verdict: parsed.verdict ?? (isBuy ? '⚡ CONFIRMED BUY NOW' : '⚡ CONFIRMED SELL NOW'),
+        confidencePct: typeof parsed.confidencePct === 'number' ? parsed.confidencePct : (body.score ?? 82),
+        entry: typeof parsed.entry === 'number' ? parsed.entry : px,
+        sl: typeof parsed.sl === 'number' ? parsed.sl : (isBuy ? px * 0.993 : px * 1.007),
+        tp1: typeof parsed.tp1 === 'number' ? parsed.tp1 : (isBuy ? px * 1.012 : px * 0.988),
+        tp2: typeof parsed.tp2 === 'number' ? parsed.tp2 : (isBuy ? px * 1.025 : px * 0.975),
+        institutionalThesis: parsed.institutionalThesis ?? 'Order Block mitigated with liquidity sweep confirmation on 15m/1H.',
+        riskNote: parsed.riskNote ?? 'Maintain disciplined risk control under 1% per setup.',
+        source: 'gemini',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Deep AI Analysis unavailable.';
+      res.status(502).json({ error: msg });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

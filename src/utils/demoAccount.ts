@@ -3,7 +3,7 @@ import type { SmcSymbol } from '../components/ProSmcTerminal';
 export const DEMO_INITIAL_BALANCE = 1000;
 export const DEMO_STORAGE_KEY = 'vp_demo_account_v1';
 
-export type DemoLeverage = 50 | 100 | 200 | 500;
+export type DemoLeverage = 50 | 100 | 200 | 500 | 1000;
 
 export interface DemoPosition {
   id: string;
@@ -77,7 +77,7 @@ export function loadDemoAccount(): DemoAccountState {
         ? parsed.balance
         : DEMO_INITIAL_BALANCE;
     const leverage: DemoLeverage =
-      parsed.leverage === 50 || parsed.leverage === 100 || parsed.leverage === 200 || parsed.leverage === 500
+      parsed.leverage === 50 || parsed.leverage === 100 || parsed.leverage === 200 || parsed.leverage === 500 || parsed.leverage === 1000
         ? parsed.leverage
         : 200;
     const defaultLot =

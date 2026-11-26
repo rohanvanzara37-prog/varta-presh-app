@@ -411,7 +411,7 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
         }
       }
 
-      // 4. Support & Resistance Horizontal Levels (Collision-Safe Right Tags)
+      // 4. Support & Resistance Horizontal Levels & Diagonal Trendlines
       if (showSupportResistance) {
         for (let i = 0; i < structure.srLevels.length; i += 1) {
           const sr = structure.srLevels[i];
@@ -444,54 +444,132 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
             { align: 'right', fontSize: 9.5 }
           );
         }
+
+        // Diagonal Trendlines
+        if (Array.isArray(structure.diagonalTrendlines)) {
+          for (let i = 0; i < structure.diagonalTrendlines.length; i += 1) {
+            const dt = structure.diagonalTrendlines[i];
+            const pts: Array<{ x: number; y: number }> = [];
+            for (let j = 0; j < dt.points.length; j += 1) {
+              const p = dt.points[j];
+              const x = toX(p.time);
+              const y = toY(p.price);
+              if (x !== null && y !== null) pts.push({ x, y });
+            }
+            if (pts.length < 2) continue;
+            ctx.save();
+            ctx.strokeStyle = dt.color;
+            ctx.lineWidth = 1.4;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let j = 1; j < pts.length; j += 1) {
+              ctx.lineTo(pts[j].x, pts[j].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
       }
 
-      // 5. Chart Patterns (Trendlines, Neckline & Single Non-Overlapping Pattern Badge)
-      if (showPatterns && structure.pattern) {
-        for (let i = 0; i < structure.pattern.lines.length; i += 1) {
-          const ln = structure.pattern.lines[i];
-          const pts: Array<{ x: number; y: number }> = [];
-          for (let j = 0; j < ln.points.length; j += 1) {
-            const p = ln.points[j];
-            const x = toX(p.time);
-            const y = toY(p.price);
-            if (x !== null && y !== null) pts.push({ x, y });
+      // 5. Chart Patterns, Candlestick Patterns & Liquidity Sweeps
+      if (showPatterns) {
+        if (structure.pattern) {
+          for (let i = 0; i < structure.pattern.lines.length; i += 1) {
+            const ln = structure.pattern.lines[i];
+            const pts: Array<{ x: number; y: number }> = [];
+            for (let j = 0; j < ln.points.length; j += 1) {
+              const p = ln.points[j];
+              const x = toX(p.time);
+              const y = toY(p.price);
+              if (x !== null && y !== null) pts.push({ x, y });
+            }
+
+            if (pts.length < 2) continue;
+            ctx.save();
+            ctx.strokeStyle = ln.color;
+            ctx.lineWidth = ln.width ?? 1.6;
+            if (ln.dashed) ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let j = 1; j < pts.length; j += 1) {
+              ctx.lineTo(pts[j].x, pts[j].y);
+            }
+            ctx.stroke();
+            ctx.restore();
           }
 
-          if (pts.length < 2) continue;
-          ctx.save();
-          ctx.strokeStyle = ln.color;
-          ctx.lineWidth = ln.width ?? 1.6;
-          if (ln.dashed) ctx.setLineDash([5, 4]);
-          ctx.beginPath();
-          ctx.moveTo(pts[0].x, pts[0].y);
-          for (let j = 1; j < pts.length; j += 1) {
-            ctx.lineTo(pts[j].x, pts[j].y);
+          const bp = structure.pattern.badgePoint;
+          const bx = toX(bp.time);
+          const by = toY(bp.price);
+          if (bx !== null && by !== null && bx >= 20 && bx <= plotRight - 20) {
+            const offsetY = bp.position === 'above' ? by - 26 : by + 26;
+            const badgeColor =
+              structure.pattern.info.bias === 'Bullish'
+                ? '#089981'
+                : structure.pattern.info.bias === 'Bearish'
+                  ? '#F23645'
+                  : '#F59E0B';
+            drawPillLabel(
+              structure.pattern.info.name,
+              bx,
+              offsetY,
+              isLight ? 'rgba(255,255,255,0.95)' : 'rgba(13,17,23,0.94)',
+              badgeColor,
+              badgeColor,
+              { fontSize: 9.5 }
+            );
           }
-          ctx.stroke();
-          ctx.restore();
         }
 
-        const bp = structure.pattern.badgePoint;
-        const bx = toX(bp.time);
-        const by = toY(bp.price);
-        if (bx !== null && by !== null && bx >= 20 && bx <= plotRight - 20) {
-          const offsetY = bp.position === 'above' ? by - 26 : by + 26;
-          const badgeColor =
-            structure.pattern.info.bias === 'Bullish'
-              ? '#089981'
-              : structure.pattern.info.bias === 'Bearish'
-                ? '#F23645'
-                : '#F59E0B';
-          drawPillLabel(
-            structure.pattern.info.name,
-            bx,
-            offsetY,
-            isLight ? 'rgba(255,255,255,0.95)' : 'rgba(13,17,23,0.94)',
-            badgeColor,
-            badgeColor,
-            { fontSize: 9.5 }
-          );
+        // Candlestick Pattern Badge
+        if (structure.candlestickPattern) {
+          const cp = structure.candlestickPattern;
+          const cx = toX(cp.time);
+          const cy = toY(cp.price);
+          if (cx !== null && cy !== null && cx >= 10 && cx <= plotRight - 10) {
+            const isBull = cp.bias === 'Bullish';
+            drawPillLabel(
+              cp.name,
+              cx,
+              isBull ? cy + 18 : cy - 18,
+              isLight ? 'rgba(255,255,255,0.95)' : 'rgba(13,17,23,0.94)',
+              isBull ? '#089981' : '#F23645',
+              isBull ? '#089981' : '#F23645',
+              { fontSize: 9 }
+            );
+          }
+        }
+
+        // Liquidity Sweeps (Stop-Hunt markers)
+        if (Array.isArray(structure.liquiditySweeps)) {
+          for (let i = 0; i < structure.liquiditySweeps.length; i += 1) {
+            const lq = structure.liquiditySweeps[i];
+            const lx = toX(lq.time);
+            const ly = toY(lq.wickPrice);
+            if (lx === null || ly === null || lx < 0 || lx > plotRight) continue;
+
+            const isBear = lq.direction === 'bear';
+            ctx.save();
+            ctx.strokeStyle = lq.color;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.moveTo(lx, ly + (isBear ? -18 : 18));
+            ctx.lineTo(lx, ly);
+            ctx.stroke();
+            ctx.restore();
+
+            drawPillLabel(
+              lq.label,
+              lx,
+              isBear ? ly - 22 : ly + 22,
+              isLight ? 'rgba(255,255,255,0.95)' : 'rgba(13,17,23,0.92)',
+              lq.color,
+              lq.color,
+              { fontSize: 8.5 }
+            );
+          }
         }
       }
 

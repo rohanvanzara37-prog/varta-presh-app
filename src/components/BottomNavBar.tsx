@@ -1,5 +1,5 @@
 import React from 'react';
-import { CandlestickChart, GraduationCap, Newspaper } from 'lucide-react';
+import { CandlestickChart, GraduationCap, Newspaper, Sparkles } from 'lucide-react';
 import type { AppTab } from '../types/news';
 
 interface BottomNavBarProps {
@@ -14,6 +14,7 @@ const TABS: {
   Icon: React.ComponentType<{ className?: string }>;
 }[] = [
   { id: 'terminal', label: 'Terminal', Icon: CandlestickChart },
+  { id: 'ai', label: 'AI Suite', Icon: Sparkles },
   { id: 'news', label: 'News', Icon: Newspaper },
   { id: 'academy', label: 'Academy', Icon: GraduationCap },
 ];
@@ -32,7 +33,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
         borderColor: '#E2E8F0',
       }}
     >
-      <div className="grid grid-cols-3 h-16 items-center">
+      <div className="grid grid-cols-4 h-16 items-center">
         {TABS.map(({ id, label, Icon }) => {
           const isActive = activeTab === id;
           return (

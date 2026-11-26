@@ -13,6 +13,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { AcademyView } from './components/AcademyView';
+import { AiSuiteView } from './components/AiSuiteView';
 import { BottomNavBar } from './components/BottomNavBar';
 import { DemoAccountDrawer } from './components/DemoAccountDrawer';
 import { ForexMarketView } from './components/ForexMarketView';
@@ -754,6 +755,12 @@ export default function App() {
     setMarginCallActive(false);
   }, []);
 
+  const handleSetCustomBalance = useCallback((balance: number) => {
+    const clean = Math.max(0, Number(balance.toFixed(2)));
+    setDemoAccount((prev) => ({ ...prev, balance: clean }));
+    setMarginCallActive(clean <= 0);
+  }, []);
+
   const handleUpdateDemoPositionTpSl = useCallback(
     (positionId: string, tp: number | undefined, sl: number | undefined) => {
       setDemoAccount((prev) => ({
@@ -940,6 +947,7 @@ export default function App() {
           onChangeLeverage={handleChangeDemoLeverage}
           onChangeDefaultLot={handleChangeDemoDefaultLot}
           onResetAccount={handleResetDemoAccount}
+          onSetCustomBalance={handleSetCustomBalance}
         />
         <OfflineIndicator />
       </div>
@@ -1006,7 +1014,34 @@ export default function App() {
               : 'vp-tab-stage mx-auto max-w-7xl px-2 sm:px-5 pt-2.5 pb-20 md:pb-6'
         }
       >
-        {activeTab === 'terminal' ? (
+        {activeTab === 'ai' ? (
+          <AiSuiteView
+            onNavigateTab={handleSelectTab}
+            onSelectSymbolAndJump={handleOpenPairInTerminal}
+            themeMode={themeMode}
+            demoPositions={demoAccount.positions}
+            demoMetrics={demoMetrics}
+            demoBalance={demoAccount.balance}
+            onExecuteDemoOrder={handleExecuteDemoOrder}
+            onCloseDemoPosition={handleCloseDemoPosition}
+            onApplyAiSetupToTerminal={(setup, sym) => {
+              const tvMap: Record<string, string> = {
+                XAUUSD: 'OANDA:XAUUSD',
+                EURUSD: 'FX:EURUSD',
+                XAGUSD: 'OANDA:XAGUSD',
+                BTCUSDT: 'BINANCE:BTCUSDT',
+                ETHUSDT: 'BINANCE:ETHUSDT',
+                SOLUSDT: 'BINANCE:SOLUSDT',
+                BNBUSDT: 'BINANCE:BNBUSDT',
+                XRPUSDT: 'BINANCE:XRPUSDT',
+                US500: 'FOREXCOM:SPXUSD',
+                USOIL: 'TVC:USOIL',
+              };
+              setSelectedMarketSymbol(tvMap[sym] ?? 'OANDA:XAUUSD');
+              setActiveTab('terminal');
+            }}
+          />
+        ) : activeTab === 'terminal' ? (
           activeMarketAsset ? (
             <MarketDetails
               asset={activeMarketAsset}
@@ -1078,6 +1113,7 @@ export default function App() {
         onChangeLeverage={handleChangeDemoLeverage}
         onChangeDefaultLot={handleChangeDemoDefaultLot}
         onResetAccount={handleResetDemoAccount}
+        onSetCustomBalance={handleSetCustomBalance}
       />
 
       <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
