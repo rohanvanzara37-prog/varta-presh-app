@@ -1,0 +1,272 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --vp-primary: #F59E0B;
+  --vp-primary-fg: #0B0E14;
+  --vp-secondary: #E2E8F0;
+  --vp-secondary-fg: #0F172A;
+  --vp-accent: #D97706;
+  --vp-accent-fg: #FFFFFF;
+  --vp-accent-text: #B45309;
+  --vp-canvas: #FFFFFF;
+  --vp-surface: #F8FAFC;
+  --vp-surface-glass: rgba(248, 250, 252, 0.92);
+  --vp-header: #F1F5F9;
+  --vp-elevated: #F1F5F9;
+  --vp-control: #E2E8F0;
+  --vp-text: #0F172A;
+  --vp-muted: #64748B;
+  --vp-border: #E2E8F0;
+  --vp-bull: #089981;
+  --vp-bear: #DC2626;
+  --vp-card-shadow: 0 10px 26px -12px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --vp-glow-gold: 0 0 18px rgba(245, 158, 11, 0.22);
+  --vp-msg-self-bg: #F59E0B;
+  --vp-msg-self-fg: #0B0E14;
+  --vp-msg-other-bg: #F1F5F9;
+  --vp-msg-other-fg: #0F172A;
+}
+
+.dark {
+  --vp-primary: #F59E0B;
+  --vp-primary-fg: #0B0E14;
+  --vp-secondary: #1E2433;
+  --vp-secondary-fg: #F1F5F9;
+  --vp-accent: #F59E0B;
+  --vp-accent-fg: #0B0E14;
+  --vp-accent-text: #F59E0B;
+  --vp-canvas: #0B0E14;
+  --vp-surface: #131722;
+  --vp-surface-glass: rgba(19, 23, 34, 0.86);
+  --vp-header: #0F131D;
+  --vp-elevated: #181D2B;
+  --vp-control: #1E2433;
+  --vp-text: #F1F5F9;
+  --vp-muted: #8B95A5;
+  --vp-border: #1E2433;
+  --vp-bull: #089981;
+  --vp-bear: #F23645;
+  --vp-card-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --vp-msg-self-bg: #F59E0B;
+  --vp-msg-self-fg: #0B0E14;
+  --vp-msg-other-bg: #181D2B;
+  --vp-msg-other-fg: #F1F5F9;
+}
+
+.light {
+  --vp-accent-text: #B45309;
+  --vp-bull: #089981;
+  --vp-bear: #DC2626;
+  --vp-border: #E2E8F0;
+  --vp-surface-glass: rgba(248, 250, 252, 0.92);
+  --vp-card-shadow: 0 10px 26px -12px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+@layer base {
+  html,
+  body,
+  *,
+  *::before,
+  *::after {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable="true"],
+  [contenteditable=""] {
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  html,
+  body {
+    background-color: var(--vp-canvas);
+    color: var(--vp-text);
+    font-family: "Inter", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+.font-display {
+  font-family: "Inter", system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-mono-tabular {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Flagship institutional glass cards & micro-polish */
+.vp-glass-card {
+  background-color: var(--vp-surface-glass);
+  border: 1px solid var(--vp-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--vp-card-shadow);
+  transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vp-pill-btn {
+  border-radius: 9999px;
+  transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 140ms ease;
+}
+
+.vp-pill-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@keyframes vpFadeSlideIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vpModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.vp-tab-stage {
+  animation: vpFadeSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vp-modal-in {
+  animation: vpModalIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: inline-flex;
+  width: max-content;
+  white-space: nowrap;
+  animation: marqueeScroll 25s linear infinite;
+}
+
+.ticker-wrap:hover .animate-ticker,
+.ticker-wrap[data-paused="true"] .animate-ticker {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ticker {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Hide TradingView Lightweight Charts attribution watermark */
+#tv-attr-logo,
+.tv-attr-logo,
+.smc-chart-host #tv-attr-logo,
+.smc-chart-host .tv-attr-logo,
+.smc-chart-host a[href*="tradingview.com"],
+.tv-lightweight-charts a[href*="tradingview.com"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Lock touch gestures to chart & isolate layout compositing so Android vertical/horizontal panning is 60fps */
+.smc-chart-host {
+  touch-action: none !important;
+  overscroll-behavior: none;
+  contain: layout style;
+  background-color: #FFFFFF !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.smc-chart-host * {
+  touch-action: none !important;
+}
+
+/* CSS Fixed Full-Screen Overlay (replaces native browser fullscreen black backdrop) */
+.vp-fullscreen-root {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 9999 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  color: #131722 !important;
+}
+
+/* Hide app headers and bottom navigation in Full-Screen chart mode */
+body.chart-fullscreen-active {
+  background-color: #FFFFFF !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+body.chart-fullscreen-active .vp-tab-stage {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+body.chart-fullscreen-active header,
+body.chart-fullscreen-active nav[aria-label="Primary bottom navigation"] {
+  display: none !important;
+}
