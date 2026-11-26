@@ -1,0 +1,39 @@
+{
+  "id": "/",
+  "name": "TREDAURA — Institutional Multi-Market Trading Terminal",
+  "short_name": "TREDAURA",
+  "description": "Mobile-first institutional pure white trading terminal with real-time Gold (XAU/USD), Crypto & EUR/USD candlestick charts, SMC structure, economic calendar, and Market Replay Academy.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "news", "education"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
