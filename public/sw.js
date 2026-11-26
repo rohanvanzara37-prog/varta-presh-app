@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vartapress-pro-v5';
+const CACHE_NAME = 'tredaura-cache-v2';
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',

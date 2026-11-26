@@ -30,22 +30,12 @@ const NAV_ITEMS: { id: AppTab; label: string }[] = [
 ];
 
 export const TredauraMark: React.FC<{ className?: string }> = ({ className = 'h-7 w-7' }) => (
-  <div
-    className={`${className} flex items-center justify-center rounded-xl bg-[#131722] text-[#089981] shadow-xs border border-[#089981]/30`}
-  >
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      className="w-4 h-4 sm:w-4.5 sm:h-4.5"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 17l6-6 4 4 8-8" />
-      <path d="M14 7h7v7" />
-    </svg>
-  </div>
+  <img
+    src="/logo.png"
+    alt="TREDAURA Logo"
+    className={`${className} rounded-full object-cover border border-[#089981]/40 shadow-xs`}
+    style={{ width: '28px', height: '28px', borderRadius: '50%' }}
+  />
 );
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({

@@ -170,11 +170,18 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const fadeTimer = window.setTimeout(() => {
+      setSplashFading(true);
+    }, 2200);
+    const hideTimer = window.setTimeout(() => {
       setShowSplash(false);
-    }, 1800);
-    return () => window.clearTimeout(timer);
+    }, 2500);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(hideTimer);
+    };
   }, []);
 
   const [activeTab, setActiveTab] = useState<AppTab>('terminal');
@@ -934,9 +941,13 @@ export default function App() {
 
   if (showSplash) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FFFFFF] px-4 text-center">
+      <div
+        className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FFFFFF] px-4 text-center transition-opacity duration-300 ${
+          splashFading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
+      >
         <div className="relative mb-6">
-          <div className="absolute -inset-3 rounded-full bg-[#089981]/15 blur-xl animate-pulse" />
+          <div className="absolute -inset-3 rounded-full bg-[#089981]/20 blur-xl animate-pulse" />
           <img
             src="/logo.png"
             alt="TREDAURA Logo"
@@ -950,7 +961,7 @@ export default function App() {
           TRADE • ANALYZE • GROW
         </p>
         <div className="w-48 sm:w-56 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-          <div className="h-full bg-[#089981] rounded-full animate-pulse" style={{ width: '100%' }} />
+          <div className="h-full bg-[#089981] rounded-full animate-pulse" style={{ width: '100%', animationDuration: '2.5s' }} />
         </div>
       </div>
     );

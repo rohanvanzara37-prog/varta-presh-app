@@ -39,7 +39,7 @@ export async function sendPushNotification(params: {
           body: params.body,
           icon: '/pwa-192x192.png',
           badge: '/pwa-192x192.png',
-          tag: params.tag ?? 'vartapress-alert',
+          tag: params.tag ?? 'tredaura-alert',
           renotify: true,
         } as NotificationOptions);
         return true;
@@ -49,7 +49,7 @@ export async function sendPushNotification(params: {
     new Notification(params.title, {
       body: params.body,
       icon: '/pwa-192x192.png',
-      tag: params.tag ?? 'vartapress-alert',
+      tag: params.tag ?? 'tredaura-alert',
     });
     return true;
   } catch {
