@@ -29,23 +29,23 @@ const NAV_ITEMS: { id: AppTab; label: string }[] = [
   { id: 'academy', label: 'Academy' },
 ];
 
-export const TredauraMark: React.FC<{ className?: string }> = ({ className = 'h-6 w-6' }) => (
-  <svg
-    viewBox="0 0 32 32"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-    className={className}
+export const TredauraMark: React.FC<{ className?: string }> = ({ className = 'h-7 w-7' }) => (
+  <div
+    className={`${className} flex items-center justify-center rounded-xl bg-[#131722] text-[#089981] shadow-xs border border-[#089981]/30`}
   >
-    <rect x="1" y="1" width="30" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="1.5" />
-    <line x1="9" y1="12" x2="9" y2="23.5" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" />
-    <rect x="7" y="14.5" width="4" height="6.5" rx="1.2" fill="#F59E0B" />
-    <line x1="16" y1="8.5" x2="16" y2="23.5" stroke="#089981" strokeWidth="1.5" strokeLinecap="round" />
-    <rect x="14" y="11" width="4" height="10" rx="1.2" fill="#089981" />
-    <line x1="23" y1="5.5" x2="23" y2="23.5" stroke="#089981" strokeWidth="1.6" strokeLinecap="round" />
-    <rect x="21" y="7.5" width="4" height="12.5" rx="1.2" fill="#089981" />
-    <path d="M6.5 25.5H25.5" stroke="#131722" strokeWidth="1.6" strokeLinecap="round" />
-  </svg>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className="w-4 h-4 sm:w-4.5 sm:h-4.5"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 17l6-6 4 4 8-8" />
+      <path d="M14 7h7v7" />
+    </svg>
+  </div>
 );
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({

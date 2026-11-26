@@ -169,6 +169,14 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 ];
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowSplash(false);
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<AppTab>('terminal');
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
   const [selectedMarketSymbol, setSelectedMarketSymbol] = useState<string>('OANDA:XAUUSD');
@@ -923,6 +931,30 @@ export default function App() {
       setMarginCallActive(true);
     }
   }, [demoAccount.positions.length, demoAccount.balance, demoMetrics.equity, liveSymbolPrices]);
+
+  if (showSplash) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FFFFFF] px-4 text-center">
+        <div className="relative mb-6">
+          <div className="absolute -inset-3 rounded-full bg-[#089981]/15 blur-xl animate-pulse" />
+          <img
+            src="/logo.png"
+            alt="TREDAURA Logo"
+            className="relative h-24 w-24 sm:h-28 sm:w-28 rounded-full object-cover shadow-2xl border-2 border-[#089981]"
+          />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#131722] mb-1">
+          TREDAURA
+        </h1>
+        <p className="text-xs sm:text-sm font-semibold tracking-widest text-[#089981] uppercase mb-8">
+          TRADE • ANALYZE • GROW
+        </p>
+        <div className="w-48 sm:w-56 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+          <div className="h-full bg-[#089981] rounded-full animate-pulse" style={{ width: '100%' }} />
+        </div>
+      </div>
+    );
+  }
 
   if (activeTab === 'academy') {
     return (
