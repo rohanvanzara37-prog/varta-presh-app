@@ -1,6 +1,7 @@
 import type { SmcSymbol } from '../components/ProSmcTerminal';
 
 export const DEMO_INITIAL_BALANCE = 1000;
+export const LOCKED_DEMO_LEVERAGE: DemoLeverage = 1000;
 export const DEMO_STORAGE_KEY = 'vp_demo_account_v1';
 export const DEMO_LOCAL_KEYS = {
   balance: 'demoBalance',
@@ -161,7 +162,7 @@ export function createDefaultPropShield(baseEquity = DEMO_INITIAL_BALANCE): Prop
 export function createInitialDemoAccount(): DemoAccountState {
   return {
     balance: DEMO_INITIAL_BALANCE,
-    leverage: 200,
+    leverage: LOCKED_DEMO_LEVERAGE,
     defaultLot: 0.1,
     simMode: 'real',
     positions: [],
@@ -290,10 +291,7 @@ export function loadDemoAccount(): DemoAccountState {
       typeof rawBalance === 'number' && Number.isFinite(rawBalance) && rawBalance >= 0
         ? Number(rawBalance.toFixed(2))
         : DEMO_INITIAL_BALANCE;
-    const leverage: DemoLeverage =
-      parsed.leverage === 50 || parsed.leverage === 100 || parsed.leverage === 200 || parsed.leverage === 500 || parsed.leverage === 1000
-        ? parsed.leverage
-        : 200;
+    const leverage: DemoLeverage = LOCKED_DEMO_LEVERAGE;
     const defaultLot =
       typeof parsed.defaultLot === 'number' && Number.isFinite(parsed.defaultLot) && parsed.defaultLot >= 0.01
         ? Math.min(10, Number(parsed.defaultLot.toFixed(2)))
@@ -337,6 +335,7 @@ export function saveDemoAccount(state: DemoAccountState): void {
     const normalized: DemoAccountState = {
       ...state,
       balance: safeBalance,
+      leverage: LOCKED_DEMO_LEVERAGE,
       defaultLot: Number.isFinite(state.defaultLot) && state.defaultLot >= 0.01 ? Number(state.defaultLot.toFixed(2)) : 0.1,
     };
     localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(normalized));
@@ -382,7 +381,7 @@ export function calcRequiredMargin(
   const spec = DEMO_SYMBOL_SPECS[symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
   const contractSize = spec.contractSize;
   const cleanLots = Number.isFinite(lots) && lots > 0 ? Number(lots.toFixed(2)) : 0;
-  const safeLev = Number.isFinite(leverage) && leverage > 0 ? leverage : 200;
+  const safeLev = Number.isFinite(leverage) && leverage > 0 ? leverage : LOCKED_DEMO_LEVERAGE;
   if (!Number.isFinite(price) || price <= 0 || cleanLots <= 0) return 0;
   const margin = (cleanLots * contractSize * price) / safeLev;
   return Number.isFinite(margin) ? Number(margin.toFixed(2)) : 0;

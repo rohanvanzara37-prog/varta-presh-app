@@ -188,20 +188,6 @@ const DEFAULT_MARKET_ASSETS: MarketAsset[] = [
 ];
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
-  const [splashFading, setSplashFading] = useState(false);
-  useEffect(() => {
-    const fadeTimer = window.setTimeout(() => {
-      setSplashFading(true);
-    }, 1500);
-    const hideTimer = window.setTimeout(() => {
-      setShowSplash(false);
-    }, 1800);
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(hideTimer);
-    };
-  }, []);
 
   const [activeTab, setActiveTab] = useState<AppTab>('terminal');
   const [activeMarketAsset, setActiveMarketAsset] = useState<MarketAsset | null>(null);
@@ -1000,8 +986,8 @@ export default function App() {
     });
   }, [liveSymbolPrices, createClosedRow]);
 
-  const handleChangeDemoLeverage = useCallback((leverage: DemoLeverage) => {
-    setDemoAccount((prev) => ({ ...prev, leverage }));
+  const handleChangeDemoLeverage = useCallback((_leverage: DemoLeverage) => {
+    setDemoAccount((prev) => ({ ...prev, leverage: 1000 }));
   }, []);
 
   const handleChangeDemoDefaultLot = useCallback((defaultLot: number) => {
@@ -1296,45 +1282,9 @@ export default function App() {
     }
   }, [demoAccount.positions.length, demoAccount.balance, demoMetrics.equity, liveSymbolPrices, createClosedRow, marginCallActive]);
 
-  const isDarkSplash = themeMode === 'dark';
-  const splashOverlay = showSplash ? (
-    <div
-      className={`fixed inset-0 z-[200] flex flex-col items-center justify-center px-4 text-center transition-opacity duration-300 ${
-        isDarkSplash ? 'bg-[#060911]' : 'bg-[#FFFFFF]'
-      } ${splashFading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-    >
-      <div className="relative mb-6">
-        <div className="absolute -inset-3 rounded-full bg-[#10B981]/20 blur-xl animate-pulse" />
-        <img
-          src="/logo.png"
-          alt="TREDAURA Logo"
-          className="relative h-24 w-24 sm:h-28 sm:w-28 rounded-full object-cover shadow-2xl border-2 border-[#F59E0B]"
-        />
-      </div>
-      <h1
-        className={`font-display text-2xl sm:text-3xl font-extrabold tracking-wide mb-1 ${
-          isDarkSplash ? 'text-[#FFFFFF]' : 'text-[#131722]'
-        }`}
-      >
-        TREDAURA
-      </h1>
-      <p className="text-xs sm:text-sm font-bold tracking-widest text-[#F59E0B] uppercase mb-8">
-        TRADE • ANALYZE • GROW
-      </p>
-      <div
-        className={`w-48 sm:w-56 h-1.5 rounded-full overflow-hidden border border-[var(--vp-border)] ${
-          isDarkSplash ? 'bg-[#0F1626]' : 'bg-[#F1F5F9]'
-        }`}
-      >
-        <div className="h-full bg-[#F59E0B] rounded-full animate-pulse" style={{ width: '100%', animationDuration: '1.8s' }} />
-      </div>
-    </div>
-  ) : null;
-
   if (activeTab === 'academy') {
     return (
       <div className="vp-tab-stage min-h-screen bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-x-hidden">
-        {splashOverlay}
         <AcademyView
           onOpenPairInTerminal={handleOpenPairInTerminal}
           onNavigateTab={handleSelectTab}
@@ -1379,7 +1329,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--vp-canvas)] text-[var(--vp-text)] transition-colors overflow-x-hidden">
-      {splashOverlay}
       <HeaderNav
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
@@ -1423,7 +1372,7 @@ export default function App() {
       <main
         key={activeTab}
         className={
-          activeTab === 'terminal' && !activeMarketAsset
+          (activeTab === 'terminal' && !activeMarketAsset) || activeTab === 'ai'
             ? 'vp-tab-stage h-[calc(100dvh-110px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-1.5 sm:px-4 py-1 overflow-hidden flex flex-col'
             : activeTab === 'news'
               ? 'vp-tab-stage h-[calc(100dvh-110px)] md:h-[calc(100dvh-56px)] mx-auto max-w-7xl px-2 sm:px-4 py-1 overflow-hidden'

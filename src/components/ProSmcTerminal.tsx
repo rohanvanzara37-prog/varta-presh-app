@@ -190,12 +190,12 @@ function getChartThemeOptions(themeMode: ThemeMode, showGrid = true) {
   const isDark = themeMode === 'dark';
   const gridCol = showGrid
     ? isDark
-      ? 'rgba(255, 255, 255, 0.05)'
-      : 'rgba(19, 23, 34, 0.045)'
+      ? 'rgba(255, 255, 255, 0.10)'
+      : 'rgba(148, 163, 184, 0.15)'
     : 'rgba(0, 0, 0, 0)';
   return {
     layout: {
-      background: { type: ColorType.Solid, color: isDark ? '#060911' : '#FFFFFF' },
+      background: { type: ColorType.Solid, color: isDark ? '#05070D' : '#FFFFFF' },
       textColor: isDark ? '#FFFFFF' : '#131722',
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
     },
@@ -211,11 +211,11 @@ function getChartThemeOptions(themeMode: ThemeMode, showGrid = true) {
     },
     crosshair: {
       vertLine: {
-        color: isDark ? 'rgba(245, 158, 11, 0.65)' : 'rgba(180, 83, 9, 0.45)',
+        color: isDark ? 'rgba(245, 158, 11, 0.75)' : 'rgba(180, 83, 9, 0.45)',
         labelBackgroundColor: isDark ? '#0F1626' : '#131722',
       },
       horzLine: {
-        color: isDark ? 'rgba(245, 158, 11, 0.65)' : 'rgba(180, 83, 9, 0.45)',
+        color: isDark ? 'rgba(245, 158, 11, 0.75)' : 'rgba(180, 83, 9, 0.45)',
         labelBackgroundColor: isDark ? '#0F1626' : '#131722',
       },
     },
@@ -230,12 +230,12 @@ function getChartThemeOptions(themeMode: ThemeMode, showGrid = true) {
 
 function getCandleStyleOptions(_themeMode: ThemeMode) {
   return {
-    upColor: '#089981',
-    downColor: '#F23645',
-    borderUpColor: '#089981',
-    borderDownColor: '#F23645',
-    wickUpColor: '#089981',
-    wickDownColor: '#F23645',
+    upColor: '#10B981',
+    downColor: '#F43F5E',
+    borderUpColor: '#10B981',
+    borderDownColor: '#F43F5E',
+    wickUpColor: '#34D399',
+    wickDownColor: '#FB7185',
     borderVisible: false,
     wickVisible: true,
   };
@@ -282,6 +282,7 @@ const COMPACT_TIMEFRAMES: { value: SmcTimeframe; label: string }[] = [
   { value: '30m', label: '30m' },
   { value: '1h', label: '1H' },
   { value: '4h', label: '4H' },
+  { value: '1d', label: '1D' },
 ];
 
 function mapTvSymbolToSmc(tvSymbol?: string): SmcSymbol | null {
@@ -577,7 +578,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const [showKeyLevels, setShowKeyLevels] = useState(false);
   const [showLiquidityPools, setShowLiquidityPools] = useState(false);
   const [showFibWaves, setShowFibWaves] = useState(false);
-  const [showGhostCandles, setShowGhostCandles] = useState(true);
+  const [showGhostCandles, setShowGhostCandles] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // On-Chart Technical Indicators & Expanded Drawing Suite (persisted in localStorage)
@@ -628,7 +629,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const [smc, setSmc] = useState<SmcAnalysisState | null>(null);
   const [structureOverlay, setStructureOverlay] = useState<ChartStructureOverlayData | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AiScalpAnalysisState | null>(null);
-  const [showAiSignals, setShowAiSignals] = useState<boolean>(true);
+  const [showAiSignals, setShowAiSignals] = useState<boolean>(false);
   const [layersOpen, setLayersOpen] = useState<boolean>(false);
   const [shareModalOpen, setShareModalOpen] = useState<boolean>(false);
   const [shareCopied, setShareCopied] = useState<boolean>(false);
@@ -653,6 +654,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const savedScrollYRef = useRef<number>(0);
   const lastPriceLineBullRef = useRef<boolean | null>(null);
   const primaryPositionLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
+  const aiSetupLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
@@ -682,6 +684,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
   const tradeOverlaySyncRef = useRef<(() => void) | null>(null);
   const isTouchPanningRef = useRef<boolean>(false);
   const touchPanCooldownUntilRef = useRef<number>(0);
+  const spikeCatalystsMapRef = useRef<Map<number, string>>(new Map());
 
   const symbolMeta = SYMBOL_OPTIONS.find((s) => s.value === symbol) ?? SYMBOL_OPTIONS[0];
   const latestBarTime = latestBarSnapshot?.time;
@@ -909,17 +912,17 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: LineStyle.Dashed,
-      priceLineColor: '#089981',
+      priceLineColor: '#10B981',
       lastValueVisible: true,
     });
 
     const lineModeSeries = chart.addSeries(LineSeries, {
-      color: '#089981',
+      color: '#10B981',
       lineWidth: 2,
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: LineStyle.Dashed,
-      priceLineColor: '#089981',
+      priceLineColor: '#10B981',
       lastValueVisible: true,
       visible: false,
     });
@@ -1047,6 +1050,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
 
     chart.subscribeCrosshairMove((param) => {
       scheduleOverlayTick();
+      if (isTouchPanningRef.current || performance.now() < touchPanCooldownUntilRef.current) {
+        return;
+      }
       if (!param || !param.point || !param.time) {
         setCrosshairXray((prev) => (prev === null ? prev : null));
         return;
@@ -1080,7 +1086,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       const sellerPct = 100 - buyerPct;
       const spec = DEMO_SYMBOL_SPECS[symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
       const pips = (totalRng / Math.max(1e-6, spec.pipSize)).toFixed(1);
-      const spk = detectSpikeCatalysts(latestCandlesRef.current).find((s) => s.time === param.time);
+      const spkCat = spikeCatalystsMapRef.current.get(Number(param.time));
       setCrosshairXray({
         range: rangeVal,
         pips,
@@ -1090,7 +1096,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         buyerPct,
         sellerPct,
         isBull,
-        spikeCatalyst: spk?.catalyst,
+        spikeCatalyst: spkCat,
       });
     });
 
@@ -1670,7 +1676,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
       syncMainVisualSeries(sliced);
       const last = sliced[sliced.length - 1];
       candleSeriesRef.current.applyOptions({
-        priceLineColor: last.close >= last.open ? '#089981' : '#F23645',
+        priceLineColor: last.close >= last.open ? '#10B981' : '#F43F5E',
       });
       syncTechnicalIndicators(sliced, false);
       runSmcAnalysis(sliced);
@@ -1689,7 +1695,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         syncMainVisualSeries(full);
         const last = full[full.length - 1];
         candleSeriesRef.current.applyOptions({
-          priceLineColor: last.close >= last.open ? '#089981' : '#F23645',
+          priceLineColor: last.close >= last.open ? '#10B981' : '#F43F5E',
         });
         syncTechnicalIndicators(full, false);
         runSmcAnalysis(full);
@@ -1722,7 +1728,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         syncMainVisualSeries(sliced);
         const last = sliced[sliced.length - 1];
         candleSeriesRef.current?.applyOptions({
-          priceLineColor: last.close >= last.open ? '#089981' : '#F23645',
+          priceLineColor: last.close >= last.open ? '#10B981' : '#F43F5E',
         });
         syncTechnicalIndicators(sliced, false);
         runSmcAnalysis(sliced);
@@ -1879,10 +1885,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         if (lastPriceLineBullRef.current !== isBullAnim) {
           lastPriceLineBullRef.current = isBullAnim;
           candleSeriesRef.current.applyOptions({
-            priceLineColor: isBullAnim ? '#089981' : '#F23645',
+            priceLineColor: isBullAnim ? '#10B981' : '#F43F5E',
           });
           lineModeSeriesRef.current?.applyOptions({
-            priceLineColor: isBullAnim ? '#089981' : '#F23645',
+            priceLineColor: isBullAnim ? '#10B981' : '#F43F5E',
           });
         }
         const nowPerf = performance.now();
@@ -2327,10 +2333,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
         const initBull = latest.close >= latest.open;
         lastPriceLineBullRef.current = initBull;
         candleSeriesRef.current?.applyOptions({
-          priceLineColor: initBull ? '#089981' : '#F23645',
+          priceLineColor: initBull ? '#10B981' : '#F43F5E',
         });
         lineModeSeriesRef.current?.applyOptions({
-          priceLineColor: initBull ? '#089981' : '#F23645',
+          priceLineColor: initBull ? '#10B981' : '#F43F5E',
         });
 
         historicalLoadedRef.current = true;
@@ -2599,6 +2605,52 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     tradeOverlaySyncRef.current?.();
   }, [demoPositions, demoPendingOrders, symbol, livePrice, dragPreview, simMode]);
 
+  // Render bright 2px AI Trade Lines (AI Entry #FBBF24, Tight SL #FF2A5F, TP1 & TP2 #00FFA3) when AI Signals active
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    for (const line of aiSetupLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // ignore stale price line
+      }
+    }
+    aiSetupLinesRef.current = [];
+
+    if (!showAiSignals || !aiAnalysis?.actionable || aiAnalysis.entry === null) return;
+
+    const specs = [
+      { price: aiAnalysis.entry, color: '#FBBF24', style: LineStyle.Solid, title: 'AI Entry' },
+      ...(aiAnalysis.sl !== null
+        ? [{ price: aiAnalysis.sl, color: '#FF2A5F', style: LineStyle.Dashed, title: 'Tight SL' }]
+        : []),
+      ...(aiAnalysis.tp1 !== null
+        ? [{ price: aiAnalysis.tp1, color: '#00FFA3', style: LineStyle.Dashed, title: 'TP1' }]
+        : []),
+      ...(aiAnalysis.tp2 !== null
+        ? [{ price: aiAnalysis.tp2, color: '#00FFA3', style: LineStyle.Dashed, title: 'TP2' }]
+        : []),
+    ];
+
+    for (const sp of specs) {
+      try {
+        const line = series.createPriceLine({
+          price: sp.price,
+          color: sp.color,
+          lineWidth: 2,
+          lineStyle: sp.style,
+          axisLabelVisible: true,
+          title: sp.title,
+        });
+        aiSetupLinesRef.current.push(line);
+      } catch {
+        // ignore disposed series
+      }
+    }
+  }, [showAiSignals, aiAnalysis, symbol, timeframe]);
+
   const activeSpec = DEMO_SYMBOL_SPECS[symbol] ?? DEMO_SYMBOL_SPECS.XAUUSD;
   const bidAsk = getBidAskPrices(symbol, livePrice ?? activeSpec.defaultPrice, { simMode });
   const activePositions = useMemo(
@@ -2625,6 +2677,11 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
     const zoneMitigations = computeZoneMitigations(bars, structureOverlay);
     const ghostPath = buildGhostCandles(bars, aiAnalysis, symbolMeta.precision);
     const spikeMarkers = detectSpikeCatalysts(bars);
+    const nextSpikeMap = new Map<number, string>();
+    for (const spk of spikeMarkers) {
+      nextSpikeMap.set(Number(spk.time), spk.catalyst);
+    }
+    spikeCatalystsMapRef.current = nextSpikeMap;
     const breakoutFilter = evaluateBreakoutVsFakeout(bars, pools);
     const mtfMatrix = computeMtfMatrix(bars);
     return {
@@ -2887,13 +2944,13 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
           {/* Dedicated 48px Full-Screen Header Bar */}
           {isFullScreen && (
             <div className="h-[48px] shrink-0 border-b border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="font-bold text-xs text-[var(--vp-text)] whitespace-nowrap">
                   {symbolMeta.shortLabel}
                 </span>
                 <span
                   className="font-mono-tabular text-xs font-bold whitespace-nowrap"
-                  style={{ color: isBullTick ? '#089981' : '#F23645' }}
+                  style={{ color: isBullTick ? '#10B981' : '#F43F5E' }}
                 >
                   ${formatTerminalPrice(livePrice, symbolMeta.precision)}
                 </span>
@@ -2910,10 +2967,10 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         type="button"
                         onClick={() => setTimeframe(tf.value)}
                         aria-pressed={active}
-                        className={`rounded-md px-2 py-1 text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        className={`rounded-md border px-2.5 py-1 min-h-[28px] text-[11px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                           active
-                            ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
-                            : 'bg-[var(--vp-elevated)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
+                            ? 'border-[#F59E0B] bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
+                            : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
                         }`}
                       >
                         {tf.label}
@@ -2923,19 +2980,46 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={toggleFullScreen}
-                aria-label="Exit Full Screen"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 text-xs font-bold text-[var(--vp-text)] cursor-pointer shrink-0 whitespace-nowrap hover:opacity-90"
-              >
-                <Minimize2 className="h-3.5 w-3.5 text-[var(--vp-text)]" />
-                <span>Exit</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  ref={isFullScreen ? layersBtnRef : undefined}
+                  type="button"
+                  aria-expanded={layersOpen}
+                  aria-label="Chart Tools & Layers"
+                  onClick={() => setLayersOpen((o) => !o)}
+                  className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    layersOpen || activeDrawTool !== 'none'
+                      ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
+                      : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>Tools</span>
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  aria-label="Chart Settings"
+                  title="Chart Settings"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B] cursor-pointer"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleFullScreen}
+                  aria-label="Exit Full Screen"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 text-xs font-bold text-[var(--vp-text)] cursor-pointer shrink-0 whitespace-nowrap hover:border-[#F59E0B]"
+                >
+                  <Minimize2 className="h-3.5 w-3.5 text-[var(--vp-text)]" />
+                  <span>Exit</span>
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Clean Non-Overlapping Institutional Header */}
+          {/* Clean TradingView-Style Top Header: Market + Price + Settings/Fullscreen + Single Clean 1m–1D & Tools Row */}
           {!isFullScreen && (
             <div className="shrink-0 border-b border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-1 space-y-1">
               <div className="flex items-center justify-between gap-[6px] w-full min-w-0">
@@ -2956,7 +3040,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                       const found = SYMBOL_OPTIONS.find((opt) => opt.value === nextSym);
                       if (found) onSelectTvSymbol?.(found.tvSymbol);
                     }}
-                    className="min-w-0 flex-1 max-w-[128px] rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] px-1.5 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate"
+                    className="min-w-0 flex-1 max-w-[132px] rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] px-2 py-0.5 text-[11px] font-bold outline-none cursor-pointer hover:border-[#F59E0B] truncate"
                   >
                     {SYMBOL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -2975,9 +3059,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-[6px] shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <span
-                    className="font-mono-tabular text-[11px] sm:text-xs font-bold whitespace-nowrap shrink-0"
+                    className="font-mono-tabular text-xs font-extrabold whitespace-nowrap shrink-0"
                     style={{ color: isBullTick ? '#10B981' : '#F43F5E' }}
                   >
                     ${formatTerminalPrice(livePrice, symbolMeta.precision)}
@@ -2993,7 +3077,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     onClick={() => setShareModalOpen(true)}
                     aria-label="Share Setup"
                     title="Share Trade Setup"
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
                   >
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </button>
@@ -3002,24 +3086,24 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     onClick={toggleFullScreen}
                     aria-label="Enter Full Screen"
                     title="Full Screen"
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
                   >
-                    <Maximize2 className="h-3 w-3" />
+                    <Maximize2 className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setSettingsOpen(true)}
                     aria-label="Chart Settings"
                     title="Chart Settings"
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer"
                   >
-                    <Settings className="h-3 w-3" />
+                    <Settings className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Clean 1m–4H Timeframe Bar + Chart Visual Mode + Indicators + Pro Drawing Suite + Split + Focus + Layers */}
-              <div className="flex items-center justify-between gap-1.5 flex-wrap sm:flex-nowrap">
+              {/* Single Clean Row: 1m–1D Timeframes + Chart Type (Cdl/HA/Line) + Single Tools Menu Button */}
+              <div className="flex items-center justify-between gap-1.5">
                 <div
                   role="group"
                   aria-label="Chart timeframe selector"
@@ -3033,7 +3117,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         type="button"
                         onClick={() => setTimeframe(tf.value)}
                         aria-pressed={active}
-                        className={`rounded-md border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        className={`rounded-md border px-2 py-0.5 min-h-[26px] text-[10.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                           active
                             ? 'border-[#F59E0B] bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
                             : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
@@ -3045,9 +3129,9 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                   })}
                 </div>
 
-                <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
+                <div className="flex items-center gap-1 shrink-0">
                   {/* Chart Mode: Candles / Heikin-Ashi / Line */}
-                  <div className="inline-flex items-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-0.5 shrink-0 shadow-xs">
+                  <div className="inline-flex items-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-0.5 shrink-0">
                     {(
                       [
                         { id: 'candles', label: 'Cdl' },
@@ -3071,166 +3155,22 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     ))}
                   </div>
 
+                  {/* Single Compact Tools & Layers Menu Button */}
                   <button
-                    type="button"
-                    aria-pressed={showEma20 || showEma50}
-                    onClick={() => {
-                      const next = !(showEma20 || showEma50);
-                      setShowEma20(next);
-                      setShowEma50(next);
-                    }}
-                    title="Toggle EMA 20 & 50"
-                    className={`rounded-md border px-1.5 py-0.5 text-[9.5px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs ${
-                      showEma20 || showEma50
-                        ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                    }`}
-                  >
-                    EMA
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={showRsi}
-                    onClick={() => setShowRsi((v) => !v)}
-                    title="Toggle RSI (14)"
-                    className={`rounded-md border px-1.5 py-0.5 text-[9.5px] font-mono-tabular font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs ${
-                      showRsi
-                        ? 'border-[#A78BFA] bg-[#A78BFA]/20 text-[#A78BFA]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                    }`}
-                  >
-                    RSI{liveRsi !== null ? ` ${liveRsi.toFixed(0)}` : ''}
-                  </button>
-
-                  {/* Pro Drawing Suite */}
-                  {(
-                    [
-                      { id: 'trendline', label: 'Line', icon: Pencil, title: 'Trendline (2 taps)' },
-                      { id: 'hline', label: 'H-Lvl', icon: Crosshair, title: 'Horizontal Level (1 tap)' },
-                      { id: 'long_rr', label: 'L-RR', icon: ArrowUpRight, title: 'Long Risk/Reward Box (2 taps)' },
-                      { id: 'short_rr', label: 'S-RR', icon: Zap, title: 'Short Risk/Reward Box (2 taps)' },
-                      { id: 'ruler', label: 'Ruler', icon: Ruler, title: 'Pip / $ Distance Ruler (2 taps)' },
-                      { id: 'anchored_vwap', label: 'AVWAP', icon: Sparkles, title: 'Anchored VWAP (1 tap)' },
-                    ] as const
-                  ).map((tool) => {
-                    const ToolIcon = tool.icon;
-                    const active = activeDrawTool === tool.id;
-                    return (
-                      <button
-                        key={tool.id}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => {
-                          setPendingTrendPoint(null);
-                          setActiveDrawTool((curr) => (curr === tool.id ? 'none' : tool.id));
-                        }}
-                        title={tool.title}
-                        className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs ${
-                          active
-                            ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
-                            : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                        }`}
-                      >
-                        <ToolIcon className="h-2.5 w-2.5" />
-                        <span>{tool.label}</span>
-                      </button>
-                    );
-                  })}
-
-                  {userDrawings.some((d) => d.symbol === symbol) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUserDrawings((prev) => {
-                            const lastIdx = [...prev].reverse().findIndex((d) => d.symbol === symbol);
-                            if (lastIdx === -1) return prev;
-                            const removeIdx = prev.length - 1 - lastIdx;
-                            return prev.filter((_, idx) => idx !== removeIdx);
-                          });
-                        }}
-                        title="Undo last drawing"
-                        className="inline-flex items-center justify-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1 py-0.5 text-[9.5px] font-bold text-[var(--vp-text)] hover:border-[#F59E0B] shrink-0 cursor-pointer"
-                      >
-                        <RotateCcw className="h-2.5 w-2.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUserDrawings((prev) => prev.filter((d) => d.symbol !== symbol));
-                          setPendingTrendPoint(null);
-                        }}
-                        title="Clear symbol drawings"
-                        aria-label="Clear symbol drawings"
-                        className="inline-flex items-center justify-center rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1 py-0.5 text-[9.5px] text-[#F43F5E] shrink-0 cursor-pointer hover:opacity-85"
-                      >
-                        <Trash2 className="h-2.5 w-2.5" />
-                      </button>
-                    </>
-                  )}
-
-                  {/* Focus Mode (Hide drawings cleanly) */}
-                  <button
-                    type="button"
-                    aria-pressed={focusMode}
-                    onClick={() => setFocusMode((v) => !v)}
-                    title={focusMode ? 'Exit Focus Mode (Show overlays)' : 'Focus Mode (Hide overlays)'}
-                    className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
-                      focusMode
-                        ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                    }`}
-                  >
-                    {focusMode ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
-                    <span className="hidden sm:inline">Focus</span>
-                  </button>
-
-                  {/* Multi-Chart Split Screen */}
-                  <button
-                    type="button"
-                    aria-pressed={splitScreen}
-                    onClick={() => setSplitScreen((v) => !v)}
-                    title="Toggle Dual Timeframe Split Screen"
-                    className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
-                      splitScreen
-                        ? 'border-[#10B981] bg-[#10B981]/20 text-[#10B981]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                    }`}
-                  >
-                    <Columns2 className="h-2.5 w-2.5" />
-                    <span className="hidden sm:inline">Split</span>
-                  </button>
-
-                  {/* MTF Matrix Drawer Toggle */}
-                  <button
-                    type="button"
-                    aria-pressed={showMtfMatrix}
-                    onClick={() => setShowMtfMatrix((v) => !v)}
-                    title="Toggle 1m–4H Multi-Timeframe Matrix"
-                    className={`rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
-                      showMtfMatrix
-                        ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                    }`}
-                  >
-                    MTF
-                  </button>
-
-                  <button
-                    ref={layersBtnRef}
+                    ref={!isFullScreen ? layersBtnRef : undefined}
                     type="button"
                     aria-expanded={layersOpen}
-                    aria-label="Toggle Chart Layers"
+                    aria-label="Toggle Tools, Indicators and Layers"
                     onClick={() => setLayersOpen((o) => !o)}
-                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs ${
-                      layersOpen || activeLayerCount < 3
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 min-h-[26px] text-[10.5px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      layersOpen || activeDrawTool !== 'none'
                         ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
                         : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
                     }`}
                   >
-                    <Layers className="h-2.5 w-2.5" />
-                    <span>{activeLayerCount === 0 ? 'Clean' : 'Layers'}</span>
-                    <ChevronDown className="h-2.5 w-2.5" />
+                    <Layers className="h-3 w-3" />
+                    <span>Tools</span>
+                    <ChevronDown className="h-3 w-3" />
                   </button>
                 </div>
               </div>
@@ -3258,11 +3198,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
             }`}
           >
           <div
-            style={
-              isFullScreen
-                ? { height: 'calc(100dvh - 48px)', backgroundColor: 'var(--vp-canvas)' }
-                : { backgroundColor: 'var(--vp-canvas)' }
-            }
+            style={{ backgroundColor: 'var(--vp-canvas)' }}
             onDoubleClick={(e) => handleChartDoubleClick(e.clientY)}
             className="relative flex-1 min-w-0 min-h-0 overflow-hidden bg-[var(--vp-canvas)]"
           >
@@ -3279,23 +3215,38 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 }}
                 className="absolute inset-0 z-[23] cursor-crosshair"
               >
-                <div className="pointer-events-none absolute top-11 left-1/2 -translate-x-1/2 rounded-full border border-[#F59E0B] bg-[var(--vp-surface)]/95 px-2.5 py-0.5 text-[10px] font-bold text-[#F59E0B] shadow-md whitespace-nowrap">
-                  {activeDrawTool === 'hline' || activeDrawTool === 'anchored_vwap'
-                    ? `Tap Chart to Anchor ${activeDrawTool.toUpperCase()}`
-                    : pendingTrendPoint
-                      ? 'Tap End Point on Chart'
-                      : 'Tap Start Point on Chart'}
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute top-10 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-[#F59E0B] bg-[var(--vp-surface)]/95 px-2.5 py-0.5 text-[10px] font-bold text-[#F59E0B] shadow-md whitespace-nowrap"
+                >
+                  <span>
+                    {activeDrawTool === 'hline' || activeDrawTool === 'anchored_vwap'
+                      ? `Tap Chart to Anchor ${activeDrawTool.toUpperCase()}`
+                      : pendingTrendPoint
+                        ? 'Tap End Point on Chart'
+                        : 'Tap Start Point on Chart'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveDrawTool('none');
+                      setPendingTrendPoint(null);
+                    }}
+                    className="rounded-full bg-[#F59E0B]/20 px-1.5 py-0.2 text-[9px] text-[#FFFFFF] hover:bg-[#F59E0B] hover:text-[#060911] cursor-pointer"
+                  >
+                    Done
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Tiny Sleek Horizontal Double-Tap Limit Order Pill */}
-            {quickLimitTap && onPlaceLimitOrder && !isFullScreen && (
+            {quickLimitTap && onPlaceLimitOrder && (
               <div
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                className="absolute top-9 left-2 z-[46] inline-flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-0.5 shadow-[var(--vp-card-shadow)] backdrop-blur-md whitespace-nowrap"
+                className="absolute top-10 left-1.5 z-[46] inline-flex items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-0.5 shadow-[var(--vp-card-shadow)] backdrop-blur-md whitespace-nowrap"
               >
                 <span className="font-mono-tabular text-[9.5px] font-bold text-[var(--vp-text)]">
                   Limit @ ${quickLimitTap.price.toFixed(symbolMeta.precision)}
@@ -3333,24 +3284,28 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               </div>
             )}
 
-            {/* Ultra-Compact Sharp Floating SELL | Lot | BUY Bar in Top-Left Corner */}
-            {!isFullScreen && !isDepleted && (
-              <div className="absolute top-1.5 left-2 z-[30] inline-flex items-center gap-1 rounded-md border border-[var(--vp-border)] bg-[var(--vp-surface)] px-1 py-0.5 shadow-[var(--vp-card-shadow)] backdrop-blur-md">
+            {/* Slim 32px Mini Pill: Live Bid / Lot / Ask Bar Tucked in Top-Left Corner */}
+            {!isDepleted && (
+              <div className="absolute top-1.5 left-1.5 z-[30] h-[30px] inline-flex items-center gap-1 rounded-md border border-[var(--vp-border)] bg-[var(--vp-surface)]/95 p-0.5 shadow-[var(--vp-card-shadow)] backdrop-blur-md">
                 <button
                   type="button"
                   onClick={() => handleQuickDemoOrder('SELL')}
                   title={`Sell @ Bid $${bidAsk.bid.toFixed(symbolMeta.precision)}`}
-                  className="h-5 px-1.5 rounded bg-[#F43F5E] hover:brightness-110 text-[9.5px] font-extrabold text-[#FFFFFF] cursor-pointer shadow-[0_0_14px_rgba(244,63,94,0.55)] active:scale-[0.98] leading-none flex items-center gap-1"
+                  className="h-[24px] px-1.5 rounded bg-[#F43F5E] hover:brightness-110 text-[#FFFFFF] cursor-pointer active:scale-[0.98] flex flex-col items-center justify-center leading-none"
                 >
-                  <span>SELL</span>
-                  <span className="font-mono-tabular font-bold hidden sm:inline">{bidAsk.bid.toFixed(symbolMeta.precision)}</span>
+                  <span className="font-mono-tabular text-[9.5px] font-extrabold leading-none">
+                    {bidAsk.bid.toFixed(symbolMeta.precision)}
+                  </span>
+                  <span className="text-[6.5px] font-extrabold uppercase tracking-wider leading-none mt-[1px] opacity-95">
+                    SELL
+                  </span>
                 </button>
                 <div className="flex items-center rounded border border-[var(--vp-border)] bg-[var(--vp-elevated)] overflow-hidden">
                   <button
                     type="button"
                     aria-label="Decrease lot size"
                     onClick={() => handleStepCornerLot(-0.01)}
-                    className="h-5 w-4 flex items-center justify-center text-[10px] font-bold text-[var(--vp-text)] hover:bg-[#F59E0B]/20 cursor-pointer border-r border-[var(--vp-border)]"
+                    className="h-[24px] w-4 flex items-center justify-center text-[10px] font-bold text-[var(--vp-text)] hover:bg-[#F59E0B]/20 cursor-pointer border-r border-[var(--vp-border)]"
                   >
                     −
                   </button>
@@ -3365,7 +3320,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                         setCustomLotInput(rounded.toFixed(2));
                       }
                     }}
-                    className="h-5 bg-[var(--vp-elevated)] px-1 text-[9.5px] font-mono-tabular font-bold text-[var(--vp-text)] outline-none cursor-pointer"
+                    className="h-[24px] bg-[var(--vp-elevated)] px-1 text-[9.5px] font-mono-tabular font-bold text-[var(--vp-text)] outline-none cursor-pointer"
                   >
                     {[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0].map((lot) => (
                       <option key={lot} value={lot}>
@@ -3380,35 +3335,23 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                     type="button"
                     aria-label="Increase lot size"
                     onClick={() => handleStepCornerLot(0.01)}
-                    className="h-5 w-4 flex items-center justify-center text-[10px] font-bold text-[var(--vp-text)] hover:bg-[#F59E0B]/20 cursor-pointer border-l border-[var(--vp-border)]"
+                    className="h-[24px] w-4 flex items-center justify-center text-[10px] font-bold text-[var(--vp-text)] hover:bg-[#F59E0B]/20 cursor-pointer border-l border-[var(--vp-border)]"
                   >
                     +
                   </button>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleSetRiskLot(10)}
-                  title="Auto-calculate lot for $10 Risk to SL"
-                  className="h-5 rounded border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1 text-[8.5px] font-mono-tabular font-bold text-[var(--vp-text)] hover:border-[#F59E0B] cursor-pointer"
-                >
-                  $10R
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSetRiskLot(25)}
-                  title="Auto-calculate lot for $25 Risk to SL"
-                  className="h-5 rounded border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1 text-[8.5px] font-mono-tabular font-bold text-[var(--vp-text)] hover:border-[#F59E0B] cursor-pointer hidden sm:inline-flex items-center"
-                >
-                  $25R
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleQuickDemoOrder('BUY')}
                   title={`Buy @ Ask $${bidAsk.ask.toFixed(symbolMeta.precision)}`}
-                  className="h-5 px-1.5 rounded bg-[#10B981] hover:brightness-110 text-[9.5px] font-extrabold text-[#FFFFFF] cursor-pointer shadow-[0_0_14px_rgba(16,185,129,0.55)] active:scale-[0.98] leading-none flex items-center gap-1"
+                  className="h-[24px] px-1.5 rounded bg-[#10B981] hover:brightness-110 text-[#FFFFFF] cursor-pointer active:scale-[0.98] flex flex-col items-center justify-center leading-none"
                 >
-                  <span>BUY</span>
-                  <span className="font-mono-tabular font-bold hidden sm:inline">{bidAsk.ask.toFixed(symbolMeta.precision)}</span>
+                  <span className="font-mono-tabular text-[9.5px] font-extrabold leading-none">
+                    {bidAsk.ask.toFixed(symbolMeta.precision)}
+                  </span>
+                  <span className="text-[6.5px] font-extrabold uppercase tracking-wider leading-none mt-[1px] opacity-95">
+                    BUY
+                  </span>
                 </button>
                 <span
                   title={`Simulated Spread (${simMode === 'zero' ? 'Zero' : 'Real Broker'}): ${bidAsk.spread}`}
@@ -3419,139 +3362,332 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
               </div>
             )}
 
-            {quickOrderNote && !isFullScreen && (
-              <div className="pointer-events-none absolute top-9 right-2 z-[29] rounded border border-[var(--vp-border)] bg-[var(--vp-surface)]/95 px-2 py-0.5 text-[9px] font-mono-tabular font-bold text-[var(--vp-text)] shadow-sm">
+            {quickOrderNote && (
+              <div className="pointer-events-none absolute top-10 right-2 z-[29] rounded border border-[var(--vp-border)] bg-[var(--vp-surface)]/95 px-2 py-0.5 text-[9px] font-mono-tabular font-bold text-[var(--vp-text)] shadow-sm">
                 {quickOrderNote}
               </div>
             )}
 
-            {/* Compact Layers Visibility Popover (SMC Zones / Auto Trendlines / Key Levels / Liquidity / Fib+Waves / Ghost) */}
-            {!isFullScreen && layersOpen && (
+            {/* Unified Tools, Indicators, Drawing Tools & Layers Popover (Top-Right inside Chart) */}
+            {layersOpen && (
               <div
                 ref={layersMenuRef}
                 role="menu"
-                aria-label="Chart Layer Visibility"
-                className="absolute top-1.5 right-2 z-[45] w-56 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2 shadow-xl space-y-1.5"
+                aria-label="Chart Tools, Indicators and Layers"
+                className="absolute top-1.5 right-2 z-[45] w-64 max-h-[72vh] overflow-y-auto rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2.5 shadow-2xl space-y-2.5"
               >
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-[var(--vp-border)]">
-                  <span className="text-[10.5px] font-bold text-[var(--vp-text)]">Chart Layers</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeLayerCount > 0) {
-                        setShowBosChoch(false);
-                        setShowSwingLabels(false);
-                        setShowPatterns(false);
-                        setShowSupportResistance(false);
-                        setShowAiSignals(false);
-                        setShowKeyLevels(false);
-                        setShowLiquidityPools(false);
-                        setShowFibWaves(false);
-                        setShowGhostCandles(false);
-                      } else {
-                        setShowBosChoch(true);
-                        setShowPatterns(true);
-                        setShowSupportResistance(true);
-                        setShowAiSignals(true);
-                        setShowGhostCandles(true);
-                      }
-                    }}
-                    className="text-[10px] font-bold text-[var(--vp-accent-text)] hover:underline cursor-pointer"
-                  >
-                    {activeLayerCount > 0 ? 'Clean View' : 'Show All'}
-                  </button>
+                <div className="flex items-center justify-between px-0.5 pb-1.5 border-b border-[var(--vp-border)]">
+                  <span className="text-[11px] font-extrabold text-[var(--vp-text)]">Tools &amp; Layers</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeLayerCount > 0) {
+                          setShowBosChoch(false);
+                          setShowSwingLabels(false);
+                          setShowPatterns(false);
+                          setShowSupportResistance(false);
+                          setShowAiSignals(false);
+                          setShowKeyLevels(false);
+                          setShowLiquidityPools(false);
+                          setShowFibWaves(false);
+                          setShowGhostCandles(false);
+                        } else {
+                          setShowBosChoch(true);
+                          setShowPatterns(true);
+                          setShowSupportResistance(true);
+                          setShowAiSignals(true);
+                          setShowGhostCandles(true);
+                        }
+                      }}
+                      className="text-[10px] font-bold text-[#F59E0B] hover:underline cursor-pointer"
+                    >
+                      {activeLayerCount > 0 ? 'Clean Chart' : 'Show Layers'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLayersOpen(false)}
+                      aria-label="Close Tools"
+                      className="text-xs font-bold text-[var(--vp-text)] hover:text-[#F59E0B] cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
 
-                {[
-                  {
-                    id: 'smc',
-                    label: 'SMC Zones',
-                    sub: 'OB, FVG & BOS/CHoCH',
-                    enabled: smcZonesOn,
-                    onToggle: () => {
-                      const next = !smcZonesOn;
-                      setShowBosChoch(next);
-                      if (!next) setShowSwingLabels(false);
-                    },
-                  },
-                  {
-                    id: 'trendlines',
-                    label: 'Auto Trendlines',
-                    sub: 'Patterns & S/R Touches',
-                    enabled: autoTrendlinesOn,
-                    onToggle: () => {
-                      const next = !autoTrendlinesOn;
-                      setShowPatterns(next);
-                      setShowSupportResistance(next);
-                    },
-                  },
-                  {
-                    id: 'ai',
-                    label: 'AI Signals & Ghost Path',
-                    sub: 'Sniper + What-If Paths',
-                    enabled: showAiSignals,
-                    onToggle: () => {
-                      const next = !showAiSignals;
-                      setShowAiSignals(next);
-                      setShowGhostCandles(next);
-                    },
-                  },
-                  {
-                    id: 'keylevels',
-                    label: 'Key Levels',
-                    sub: 'PDH/PDL, VWAP, Asia H/L',
-                    enabled: showKeyLevels,
-                    onToggle: () => setShowKeyLevels((v) => !v),
-                  },
-                  {
-                    id: 'liquidity',
-                    label: 'Liquidity Heatmap',
-                    sub: 'BSL/SSL Pools & Sweeps',
-                    enabled: showLiquidityPools,
-                    onToggle: () => setShowLiquidityPools((v) => !v),
-                  },
-                  {
-                    id: 'fibwaves',
-                    label: 'Fib 50% + Elliott + Wyckoff',
-                    sub: 'EQ, Harmonics & Phases',
-                    enabled: showFibWaves,
-                    onToggle: () => setShowFibWaves((v) => !v),
-                  },
-                ].map((layer) => (
-                  <button
-                    key={layer.id}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={layer.enabled}
-                    onClick={layer.onToggle}
-                    className="w-full flex items-center justify-between gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:opacity-90 px-2 py-1 text-left cursor-pointer transition-colors"
-                  >
-                    <div className="min-w-0">
-                      <span className="block text-[10.5px] font-bold text-[var(--vp-text)] leading-tight">
-                        {layer.label}
-                      </span>
-                      <span className="block text-[9px] text-[var(--vp-muted)] truncate">
-                        {layer.sub}
-                      </span>
-                    </div>
-                    <span
-                      className="rounded px-1.5 py-0.5 text-[9px] font-mono-tabular font-bold shrink-0"
-                      style={{
-                        backgroundColor: layer.enabled ? '#089981' : 'var(--vp-control)',
-                        color: layer.enabled ? '#FFFFFF' : 'var(--vp-muted)',
+                {/* Indicators Grid */}
+                <div className="space-y-1">
+                  <span className="block text-[9.5px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
+                    Indicators
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    <button
+                      type="button"
+                      aria-pressed={showEma20 || showEma50}
+                      onClick={() => {
+                        const next = !(showEma20 || showEma50);
+                        setShowEma20(next);
+                        setShowEma50(next);
                       }}
+                      className={`rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        showEma20 || showEma50
+                          ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
                     >
-                      {layer.enabled ? 'ON' : 'OFF'}
+                      EMA 20/50
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={showRsi}
+                      onClick={() => setShowRsi((v) => !v)}
+                      className={`rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        showRsi
+                          ? 'border-[#A78BFA] bg-[#A78BFA]/20 text-[#A78BFA]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
+                    >
+                      RSI{liveRsi !== null ? ` ${liveRsi.toFixed(0)}` : ''}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={activeDrawTool === 'anchored_vwap'}
+                      onClick={() => {
+                        setPendingTrendPoint(null);
+                        setActiveDrawTool((curr) => (curr === 'anchored_vwap' ? 'none' : 'anchored_vwap'));
+                        setLayersOpen(false);
+                      }}
+                      className={`rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        activeDrawTool === 'anchored_vwap'
+                          ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
+                    >
+                      AVWAP
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={showFibWaves}
+                      onClick={() => setShowFibWaves((v) => !v)}
+                      className={`rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        showFibWaves
+                          ? 'border-[#C084FC] bg-[#C084FC]/25 text-[#FFFFFF]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
+                    >
+                      Fib Levels
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={showAiSignals}
+                      onClick={() => {
+                        const next = !showAiSignals;
+                        setShowAiSignals(next);
+                        setShowGhostCandles(next);
+                      }}
+                      className={`col-span-2 rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        showAiSignals
+                          ? 'border-[#10B981] bg-[#10B981]/25 text-[#FFFFFF]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
+                    >
+                      AI Signals &amp; Target
+                    </button>
+                  </div>
+                </div>
+
+                {/* Drawing Tools Grid */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
+                      Drawing Tools
                     </span>
-                  </button>
-                ))}
+                    {userDrawings.some((d) => d.symbol === symbol) && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDrawings((prev) => {
+                              const lastIdx = [...prev].reverse().findIndex((d) => d.symbol === symbol);
+                              if (lastIdx === -1) return prev;
+                              const removeIdx = prev.length - 1 - lastIdx;
+                              return prev.filter((_, idx) => idx !== removeIdx);
+                            });
+                          }}
+                          className="rounded border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--vp-text)] cursor-pointer"
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDrawings((prev) => prev.filter((d) => d.symbol !== symbol));
+                            setPendingTrendPoint(null);
+                          }}
+                          className="rounded border border-[#F43F5E]/40 bg-[#F43F5E]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#F43F5E] cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: 'trendline', label: 'Trendline', icon: Pencil },
+                        { id: 'hline', label: 'H-Level', icon: Crosshair },
+                        { id: 'ruler', label: 'Ruler', icon: Ruler },
+                        { id: 'long_rr', label: 'Long R:R', icon: ArrowUpRight },
+                        { id: 'short_rr', label: 'Short R:R', icon: Zap },
+                      ] as const
+                    ).map((tool) => {
+                      const ToolIcon = tool.icon;
+                      const active = activeDrawTool === tool.id;
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => {
+                            setPendingTrendPoint(null);
+                            setActiveDrawTool((curr) => (curr === tool.id ? 'none' : tool.id));
+                            setLayersOpen(false);
+                          }}
+                          className={`inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                            active
+                              ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
+                              : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
+                          }`}
+                        >
+                          <ToolIcon className="h-3 w-3 shrink-0" />
+                          <span>{tool.label}</span>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      aria-pressed={focusMode}
+                      onClick={() => setFocusMode((v) => !v)}
+                      className={`inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-bold cursor-pointer ${
+                        focusMode
+                          ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
+                          : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                      }`}
+                    >
+                      {focusMode ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      <span>Focus</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SMC & Market Structure Layers */}
+                <div className="space-y-1">
+                  <span className="block text-[9.5px] font-bold uppercase tracking-wider text-[var(--vp-muted)]">
+                    Chart Layers &amp; Views
+                  </span>
+                  {[
+                    {
+                      id: 'smc',
+                      label: 'SMC Zones',
+                      sub: 'OB, FVG & BOS/CHoCH',
+                      enabled: smcZonesOn,
+                      onToggle: () => {
+                        const next = !smcZonesOn;
+                        setShowBosChoch(next);
+                        if (!next) setShowSwingLabels(false);
+                      },
+                    },
+                    {
+                      id: 'trendlines',
+                      label: 'Auto S/R & Patterns',
+                      sub: 'Support, Resistance & Touches',
+                      enabled: autoTrendlinesOn,
+                      onToggle: () => {
+                        const next = !autoTrendlinesOn;
+                        setShowPatterns(next);
+                        setShowSupportResistance(next);
+                      },
+                    },
+                    {
+                      id: 'keylevels',
+                      label: 'Key Levels',
+                      sub: 'PDH/PDL, VWAP, Asia H/L',
+                      enabled: showKeyLevels,
+                      onToggle: () => setShowKeyLevels((v) => !v),
+                    },
+                    {
+                      id: 'liquidity',
+                      label: 'Liquidity Heatmap',
+                      sub: 'BSL/SSL Pools & Sweeps',
+                      enabled: showLiquidityPools,
+                      onToggle: () => setShowLiquidityPools((v) => !v),
+                    },
+                  ].map((layer) => (
+                    <button
+                      key={layer.id}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={layer.enabled}
+                      onClick={layer.onToggle}
+                      className="w-full flex items-center justify-between gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:border-[#F59E0B] px-2 py-1 text-left cursor-pointer transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <span className="block text-[10.5px] font-bold text-[var(--vp-text)] leading-tight">
+                          {layer.label}
+                        </span>
+                        <span className="block text-[9px] text-[var(--vp-muted)] truncate">
+                          {layer.sub}
+                        </span>
+                      </div>
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[9px] font-mono-tabular font-bold shrink-0"
+                        style={{
+                          backgroundColor: layer.enabled ? '#10B981' : 'rgba(255,255,255,0.08)',
+                          color: '#FFFFFF',
+                        }}
+                      >
+                        {layer.enabled ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+                  ))}
+
+                  {!isFullScreen && (
+                    <div className="grid grid-cols-2 gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        aria-pressed={splitScreen}
+                        onClick={() => setSplitScreen((v) => !v)}
+                        className={`inline-flex items-center justify-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold cursor-pointer ${
+                          splitScreen
+                            ? 'border-[#10B981] bg-[#10B981]/20 text-[#10B981]'
+                            : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                        }`}
+                      >
+                        <Columns2 className="h-3 w-3" />
+                        <span>Split Chart</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={showMtfMatrix}
+                        onClick={() => setShowMtfMatrix((v) => !v)}
+                        className={`rounded-md border px-2 py-1 text-[10px] font-bold cursor-pointer ${
+                          showMtfMatrix
+                            ? 'border-[#F59E0B] bg-[#F59E0B]/20 text-[#F59E0B]'
+                            : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)]'
+                        }`}
+                      >
+                        MTF Matrix
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Compact AI Signal Chip on Chart (positioned below top-left order pill) */}
+            {/* Compact AI Signal Chip on Chart (positioned below slim top-left mini pill) */}
             {showAiSignals && aiAnalysis?.actionable && (
               <div
-                className="pointer-events-none absolute top-9 left-2 z-[26] inline-flex items-center gap-1 rounded border border-[var(--vp-border)] bg-[var(--vp-surface)]/92 px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold shadow-sm"
+                className="pointer-events-none absolute top-10 left-1.5 z-[26] inline-flex items-center gap-1 rounded border border-[var(--vp-border)] bg-[var(--vp-surface)]/92 px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold shadow-sm"
                 style={{
                   borderColor: aiAnalysis.direction === 'BUY' ? 'rgba(8,153,129,0.5)' : 'rgba(242,54,69,0.5)',
                   color: aiAnalysis.direction === 'BUY' ? '#089981' : '#F23645',
@@ -3747,7 +3883,7 @@ const ProSmcTerminalInner: React.FC<ProSmcTerminalProps> = ({
                 <button
                   type="button"
                   onClick={() => setReloadNonce((n) => n + 1)}
-                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-semibold text-[#131722] cursor-pointer"
+                  className="vp-pill-btn bg-[#F59E0B] px-3.5 py-1.5 font-extrabold text-[#060911] cursor-pointer"
                 >
                   Retry Chart
                 </button>
@@ -4847,7 +4983,7 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
 
             if (h.kind === 'entry') {
               const isProfit = h.pnl > 0;
-              const accentColor = h.pnl >= 0 ? '#089981' : '#F23645';
+              const accentColor = h.pnl >= 0 ? '#10B981' : '#F43F5E';
               const hasTp = pos.tp !== undefined || (dragPreview?.positionId === pos.id && dragPreview.kind === 'tp');
               const hasSl = pos.sl !== undefined || (dragPreview?.positionId === pos.id && dragPreview.kind === 'sl');
               const isAtBreakeven =
@@ -4861,8 +4997,8 @@ const TradeLinesOverlay: React.FC<TradeLinesOverlayProps> = memo(
                 <div
                   key={h.key}
                   style={{
-                    transform: `translate3d(0, ${Math.round(h.y - 7.5)}px, 0)`,
-                    right: `${scaleWidth + 2}px`,
+                    transform: `translate3d(8px, ${Math.round(h.y - 7.5)}px, 0)`,
+                    left: 0,
                   }}
                   className="pointer-events-auto absolute top-0 flex items-center gap-0.5 select-none"
                 >

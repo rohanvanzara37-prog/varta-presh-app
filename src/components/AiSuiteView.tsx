@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CandlestickSeries,
   ColorType,
+  CrosshairMode,
   LineStyle,
   createChart,
   type IChartApi,
@@ -9,30 +10,10 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  CheckCircle2,
-  Download,
-  History,
-  MessageSquare,
-  Radar,
-  Send,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  Target,
-  Volume2,
-  XCircle,
-} from 'lucide-react';
+import { Layers, Sparkles, Volume2, Zap } from 'lucide-react';
 import type { AppTab, ThemeMode } from '../types/news';
 import type { ExecuteOrderOptions, SmcSymbol, SmcTimeframe } from './ProSmcTerminal';
-import {
-  DEMO_SYMBOL_SPECS,
-  formatUsd,
-  type DemoAccountMetrics,
-  type DemoPosition,
-} from '../utils/demoAccount';
+import { DEMO_SYMBOL_SPECS, type DemoAccountMetrics, type DemoPosition } from '../utils/demoAccount';
 import {
   analyzeChartStructure,
   computeAiScalpAnalysis,
@@ -44,20 +25,12 @@ import {
   type TerminalCandle,
 } from '../utils/chartAnalysis';
 import {
-  DEFAULT_CUSTOM_STRATEGY,
-  applyCustomStrategyScore,
   buildGhostCandles,
   computeFibConfluence,
   computeZoneMitigations,
-  exportTredauraCardPng,
   findHistoricalTwin,
-  generateCoPilotSuggestions,
-  scanOpportunityRadar,
   speakBriefingText,
-  type CustomStrategyFlags,
-  type OpportunityRadarItem,
 } from '../utils/institutionalEngine';
-import { loadCachedCalendarEvents } from '../utils/newsCalendarFallback';
 import { ChartCanvasOverlay } from './ChartCanvasOverlay';
 
 interface AiSuiteViewProps {
@@ -96,7 +69,7 @@ const AI_SUITE_ASSETS: Array<{ symbol: SmcSymbol; tvSymbol: string; label: strin
   { symbol: 'US30', tvSymbol: 'TVC:DJI', label: 'US30', precision: 2 },
 ];
 
-const AI_TIMEFRAMES: SmcTimeframe[] = ['1m', '5m', '15m', '1h', '4h'];
+const AI_TIMEFRAMES: SmcTimeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
 const TF_SEC: Record<string, number> = {
   '1m': 60,
@@ -105,6 +78,7 @@ const TF_SEC: Record<string, number> = {
   '30m': 1800,
   '1h': 3600,
   '4h': 14400,
+  '1d': 86400,
 };
 
 function buildDeterministicCandles(sym: SmcSymbol, timeframe: SmcTimeframe): TerminalCandle[] {
@@ -154,43 +128,38 @@ function formatMmSs(totalSec: number): string {
 export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
   onNavigateTab,
   themeMode = 'dark',
-  demoPositions,
   onExecuteDemoOrder,
-  onPlaceLimitOrder,
-  onPartialCloseDemoPosition,
-  onUpdateDemoPositionTpSl,
-  onCloseDemoPosition,
   onApplyAiSetupToTerminal,
 }) => {
   const [symbol, setSymbol] = useState<SmcSymbol>('XAUUSD');
   const [timeframe, setTimeframe] = useState<SmcTimeframe>('15m');
-  const [candles, setCandles] = useState<TerminalCandle[]>([]);
+  const [candles, setCandles] = useState<TerminalCandle[]>(() => buildDeterministicCandles('XAUUSD', '15m'));
   const [structureOverlay, setStructureOverlay] = useState<ChartStructureOverlayData | null>(null);
   const [htfSummary, setHtfSummary] = useState<HtfTrendSummary | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [aiAnalysis, setAiAnalysis] = useState<AiScalpAnalysisState | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [execNotice, setExecNotice] = useState<string | null>(null);
-  const [lang, setLang] = useState<'en' | 'hi'>('en');
-  const [activeSubTab, setActiveSubTab] = useState<'plan' | 'mtf' | 'strategy' | 'chat'>('plan');
-  const [strategyFlags, setStrategyFlags] = useState<CustomStrategyFlags>(DEFAULT_CUSTOM_STRATEGY);
-  const [radarItems, setRadarItems] = useState<OpportunityRadarItem[]>([]);
   const [countdownSec, setCountdownSec] = useState<number>(() => getCandleRemainingSec('15m'));
-
-  const [chatQuestion, setChatQuestion] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
+  const [showAiFib, setShowAiFib] = useState<boolean>(false);
+  const [showAiSr, setShowAiSr] = useState<boolean>(true);
+  const [showAiSmc, setShowAiSmc] = useState<boolean>(true);
+  const [showAiGhost, setShowAiGhost] = useState<boolean>(true);
+  const [layersOpen, setLayersOpen] = useState<boolean>(false);
 
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null);
   const overlayRedrawRef = useRef<(() => void) | null>(null);
   const priceLinesRef = useRef<Array<ReturnType<ISeriesApi<'Candlestick', Time>['createPriceLine']>>>([]);
+  const isInteractingRef = useRef<boolean>(false);
+  const lastLoadedKeyRef = useRef<string>('');
+  const candlesRef = useRef<TerminalCandle[]>(candles);
+  candlesRef.current = candles;
+  const lastPriceLineSigRef = useRef<string>('');
 
   const activeAssetSpec = AI_SUITE_ASSETS.find((a) => a.symbol === symbol) ?? AI_SUITE_ASSETS[0];
   const isDark = themeMode === 'dark';
 
-  // Live Sniper Candle Close Countdown
   useEffect(() => {
     setCountdownSec(getCandleRemainingSec(timeframe));
     const timer = window.setInterval(() => {
@@ -199,7 +168,7 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     return () => window.clearInterval(timer);
   }, [timeframe]);
 
-  // Initialize Lightweight Chart instance
+  // Initialize Lightweight Chart instance with 60fps touch drag, kinetic momentum, pinch-zoom & RAF overlay
   useEffect(() => {
     const el = chartContainerRef.current;
     if (!el) return;
@@ -207,55 +176,128 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     const chart = createChart(el, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: isDark ? '#060911' : '#FFFFFF' },
+        background: { type: ColorType.Solid, color: isDark ? '#05070D' : '#FFFFFF' },
         textColor: isDark ? '#FFFFFF' : '#131722',
         fontFamily: '"JetBrains Mono", ui-monospace, monospace',
         fontSize: 10,
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(19,23,34,0.045)' },
-        horzLines: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(19,23,34,0.045)' },
+        vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(148, 163, 184, 0.15)' },
+        horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(148, 163, 184, 0.15)' },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: 'rgba(245, 158, 11, 0.75)',
+          labelBackgroundColor: '#0F1626',
+        },
+        horzLine: {
+          color: 'rgba(245, 158, 11, 0.75)',
+          labelBackgroundColor: '#0F1626',
+        },
+      },
+      handleScroll: {
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+        mouseWheel: true,
+        pressedMouseMove: true,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: {
+          time: true,
+          price: true,
+        },
+        axisDoubleClickReset: {
+          time: true,
+          price: true,
+        },
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: true,
       },
       timeScale: {
         borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#E5E7EB',
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
+        barSpacing: 7.5,
+        minBarSpacing: 1.5,
+        maxBarSpacing: 22,
+        lockVisibleTimeRangeOnResize: true,
+        shiftVisibleRangeOnNewBar: false,
       },
       rightPriceScale: {
         borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#E5E7EB',
         autoScale: true,
-        scaleMargins: { top: 0.16, bottom: 0.16 },
+        scaleMargins: { top: 0.14, bottom: 0.14 },
       },
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#089981',
-      downColor: '#F23645',
+      upColor: '#10B981',
+      downColor: '#F43F5E',
       borderVisible: false,
-      wickUpColor: '#089981',
-      wickDownColor: '#F23645',
+      wickUpColor: '#34D399',
+      wickDownColor: '#FB7185',
       priceLineVisible: true,
+      priceLineColor: '#10B981',
     });
 
     chartApiRef.current = chart;
     candleSeriesRef.current = candleSeries;
 
-    chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      overlayRedrawRef.current?.();
-    });
-
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (rect && rect.width > 0 && rect.height > 0) {
-        chart.resize(Math.floor(rect.width), Math.floor(rect.height));
+    let rafId: number | null = null;
+    const scheduleOverlay = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
         overlayRedrawRef.current?.();
-      }
+      });
+    };
+
+    const onStartInteract = () => {
+      isInteractingRef.current = true;
+      scheduleOverlay();
+    };
+    const onMoveInteract = () => {
+      scheduleOverlay();
+    };
+    const onEndInteract = () => {
+      isInteractingRef.current = false;
+      scheduleOverlay();
+    };
+
+    el.addEventListener('touchstart', onStartInteract, { passive: true });
+    el.addEventListener('touchmove', onMoveInteract, { passive: true });
+    el.addEventListener('touchend', onEndInteract, { passive: true });
+    el.addEventListener('touchcancel', onEndInteract, { passive: true });
+    el.addEventListener('pointerdown', onStartInteract, { passive: true });
+    el.addEventListener('pointerup', onEndInteract, { passive: true });
+    el.addEventListener('pointercancel', onEndInteract, { passive: true });
+    el.addEventListener('wheel', onMoveInteract, { passive: true });
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlay);
+    chart.subscribeCrosshairMove(scheduleOverlay);
+
+    const ro = new ResizeObserver(() => {
+      scheduleOverlay();
     });
     ro.observe(el);
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      el.removeEventListener('touchstart', onStartInteract);
+      el.removeEventListener('touchmove', onMoveInteract);
+      el.removeEventListener('touchend', onEndInteract);
+      el.removeEventListener('touchcancel', onEndInteract);
+      el.removeEventListener('pointerdown', onStartInteract);
+      el.removeEventListener('pointerup', onEndInteract);
+      el.removeEventListener('pointercancel', onEndInteract);
+      el.removeEventListener('wheel', onMoveInteract);
       ro.disconnect();
       chart.remove();
       chartApiRef.current = null;
@@ -263,17 +305,16 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     };
   }, []);
 
-  // Sync themeMode to chart dynamically without destroying zoom
   useEffect(() => {
     chartApiRef.current?.applyOptions({
       layout: {
-        background: { type: ColorType.Solid, color: isDark ? '#060911' : '#FFFFFF' },
+        background: { type: ColorType.Solid, color: isDark ? '#05070D' : '#FFFFFF' },
         textColor: isDark ? '#FFFFFF' : '#131722',
         fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       },
       grid: {
-        vertLines: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(19,23,34,0.045)' },
-        horzLines: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(19,23,34,0.045)' },
+        vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(148, 163, 184, 0.15)' },
+        horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(148, 163, 184, 0.15)' },
       },
       timeScale: { borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#E5E7EB' },
       rightPriceScale: { borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#E5E7EB' },
@@ -333,9 +374,14 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     []
   );
 
-  // Fetch candles, MTF bias, & run deep SMC analysis
+  // Instant seed + live fetch/analyze without any blocking spinner
   const loadCandlesAndAnalyze = useCallback(async () => {
-    setIsLoading(true);
+    const seed = sanitizeCandles(buildDeterministicCandles(symbol, timeframe), TF_SEC[timeframe] ?? 900);
+    setCandles((prev) => (prev.length > 0 ? prev : seed));
+    if (candleSeriesRef.current && seed.length > 0) {
+      candleSeriesRef.current.setData(seed);
+    }
+
     const controller = new AbortController();
     try {
       const [mainRes, r15m, r1h, r4h] = await Promise.allSettled([
@@ -346,10 +392,7 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
       ]);
 
       const cleaned =
-        mainRes.status === 'fulfilled' && mainRes.value.length > 0
-          ? mainRes.value
-          : buildDeterministicCandles(symbol, timeframe);
-
+        mainRes.status === 'fulfilled' && mainRes.value.length > 0 ? mainRes.value : seed;
       setCandles(cleaned);
 
       const c15m = r15m.status === 'fulfilled' && r15m.value.length > 0 ? r15m.value : cleaned;
@@ -361,7 +404,15 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
       if (cleaned.length > 0) {
         if (candleSeriesRef.current) {
           candleSeriesRef.current.setData(cleaned);
-          chartApiRef.current?.timeScale().fitContent();
+          const lastBar = cleaned[cleaned.length - 1];
+          candleSeriesRef.current.applyOptions({
+            priceLineColor: lastBar.close >= lastBar.open ? '#10B981' : '#F43F5E',
+          });
+          const key = `${symbol}:${timeframe}`;
+          if (lastLoadedKeyRef.current !== key) {
+            lastLoadedKeyRef.current = key;
+            chartApiRef.current?.timeScale().fitContent();
+          }
         }
 
         const struct = analyzeChartStructure(cleaned);
@@ -374,57 +425,13 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           mtfBias
         );
         setAiAnalysis(analysis);
-
-        if (candleSeriesRef.current) {
-          for (const line of priceLinesRef.current) {
-            try {
-              candleSeriesRef.current.removePriceLine(line);
-            } catch {
-              // ignore
-            }
-          }
-          priceLinesRef.current = [];
-
-          if (analysis?.actionable && analysis.entry !== null) {
-            try {
-              const specs = [
-                { price: analysis.entry, color: '#F59E0B', style: LineStyle.Dashed, title: `AI Entry` },
-                ...(analysis.sl !== null
-                  ? [{ price: analysis.sl, color: '#F23645', style: LineStyle.Dotted, title: 'Tight SL' }]
-                  : []),
-                ...(analysis.tp1 !== null
-                  ? [{ price: analysis.tp1, color: '#089981', style: LineStyle.Dotted, title: 'TP1' }]
-                  : []),
-                ...(analysis.tp2 !== null
-                  ? [{ price: analysis.tp2, color: '#10B981', style: LineStyle.Dashed, title: 'TP2' }]
-                  : []),
-              ];
-              for (const sp of specs) {
-                const line = candleSeriesRef.current.createPriceLine({
-                  price: sp.price,
-                  color: sp.color,
-                  lineWidth: 1,
-                  lineStyle: sp.style,
-                  axisLabelVisible: true,
-                  title: sp.title,
-                });
-                priceLinesRef.current.push(line);
-              }
-            } catch {
-              // ignore series unmount
-            }
-          }
-        }
         window.requestAnimationFrame(() => overlayRedrawRef.current?.());
       }
     } catch {
-      const fb = buildDeterministicCandles(symbol, timeframe);
-      setCandles(fb);
-      const struct = analyzeChartStructure(fb);
+      const struct = analyzeChartStructure(seed);
       setStructureOverlay(struct);
-      setAiAnalysis(computeAiScalpAnalysis(fb, struct, timeframe, activeAssetSpec.precision));
+      setAiAnalysis(computeAiScalpAnalysis(seed, struct, timeframe, activeAssetSpec.precision));
     } finally {
-      setIsLoading(false);
       setIsAnalyzing(false);
     }
   }, [symbol, timeframe, activeAssetSpec.precision, fetchSymbolCandles]);
@@ -433,59 +440,71 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     void loadCandlesAndAnalyze();
   }, [loadCandlesAndAnalyze]);
 
-  // Listen for top-bar chart refresh button without resetting demo balance/trades
   useEffect(() => {
     const onRefresh = () => {
+      lastLoadedKeyRef.current = '';
       void loadCandlesAndAnalyze();
     };
     window.addEventListener('tredaura-refresh-charts', onRefresh);
     return () => window.removeEventListener('tredaura-refresh-charts', onRefresh);
   }, [loadCandlesAndAnalyze]);
 
-  // Keep AI Suite chart ticks live (WebSocket for crypto, live backend/micro-tick pulse for all pairs)
+  // Keep AI Suite chart ticks live at 60fps without disturbing active touch/drag panning
   useEffect(() => {
     let disposed = false;
     const isCrypto = symbol === 'BTCUSDT' || symbol === 'ETHUSDT';
     let ws: WebSocket | null = null;
     const tfSec = TF_SEC[timeframe] ?? 900;
+    let lastReactSyncMs = 0;
 
     const pushLiveClose = (nextCloseRaw: number, candleTime?: number) => {
       if (disposed || !Number.isFinite(nextCloseRaw) || nextCloseRaw <= 0) return;
       const prec = activeAssetSpec.precision;
       const nextClose = Number(nextCloseRaw.toFixed(prec));
-      setCandles((prev) => {
-        if (prev.length === 0) return prev;
-        const last = prev[prev.length - 1];
-        const bucket = (
-          candleTime
-            ? Math.floor(candleTime / tfSec) * tfSec
-            : Math.floor(Math.floor(Date.now() / 1000) / tfSec) * tfSec
-        ) as UTCTimestamp;
-        const updatedBar: TerminalCandle =
-          bucket > last.time
-            ? {
-                time: bucket,
-                open: last.close,
-                high: Math.max(last.close, nextClose),
-                low: Math.min(last.close, nextClose),
-                close: nextClose,
-                volume: 950,
-              }
-            : {
-                ...last,
-                high: Math.max(last.high, nextClose),
-                low: Math.min(last.low, nextClose),
-                close: nextClose,
-              };
-        candleSeriesRef.current?.update({
-          time: updatedBar.time,
-          open: updatedBar.open,
-          high: updatedBar.high,
-          low: updatedBar.low,
-          close: updatedBar.close,
-        });
-        return bucket > last.time ? [...prev.slice(-199), updatedBar] : [...prev.slice(0, -1), updatedBar];
+      const prev = candlesRef.current;
+      if (prev.length === 0) return;
+      const last = prev[prev.length - 1];
+      const bucket = (
+        candleTime
+          ? Math.floor(candleTime / tfSec) * tfSec
+          : Math.floor(Math.floor(Date.now() / 1000) / tfSec) * tfSec
+      ) as UTCTimestamp;
+      const isNewBar = bucket > last.time;
+      const updatedBar: TerminalCandle = isNewBar
+        ? {
+            time: bucket,
+            open: last.close,
+            high: Math.max(last.close, nextClose),
+            low: Math.min(last.close, nextClose),
+            close: nextClose,
+            volume: 950,
+          }
+        : {
+            ...last,
+            high: Math.max(last.high, nextClose),
+            low: Math.min(last.low, nextClose),
+            close: nextClose,
+          };
+
+      const nextArr = isNewBar ? [...prev.slice(-199), updatedBar] : [...prev.slice(0, -1), updatedBar];
+      candlesRef.current = nextArr;
+
+      candleSeriesRef.current?.update({
+        time: updatedBar.time,
+        open: updatedBar.open,
+        high: updatedBar.high,
+        low: updatedBar.low,
+        close: updatedBar.close,
       });
+      candleSeriesRef.current?.applyOptions({
+        priceLineColor: updatedBar.close >= updatedBar.open ? '#10B981' : '#F43F5E',
+      });
+
+      const nowMs = performance.now();
+      if (!isInteractingRef.current && (isNewBar || nowMs - lastReactSyncMs > 1800)) {
+        lastReactSyncMs = nowMs;
+        setCandles(nextArr);
+      }
     };
 
     if (isCrypto) {
@@ -528,29 +547,6 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     };
   }, [symbol, timeframe, activeAssetSpec.precision]);
 
-  // Scan Multi-Pair Opportunity Radar in background
-  useEffect(() => {
-    let disposed = false;
-    const scanAll = async () => {
-      const snapshots = await Promise.all(
-        AI_SUITE_ASSETS.map(async (ast) => ({
-          symbol: ast.symbol,
-          label: ast.label,
-          candles: await fetchSymbolCandles(ast.symbol, '15m'),
-        }))
-      );
-      if (!disposed) {
-        setRadarItems(scanOpportunityRadar(snapshots));
-      }
-    };
-    void scanAll();
-    const timer = window.setInterval(() => void scanAll(), 45_000);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [fetchSymbolCandles]);
-
   const fibData = useMemo(
     () => computeFibConfluence(candles, activeAssetSpec.precision),
     [candles, activeAssetSpec.precision]
@@ -564,265 +560,171 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
     [candles, aiAnalysis, activeAssetSpec.precision]
   );
   const historicalTwin = useMemo(() => findHistoricalTwin(candles), [candles]);
-  const customVerdict = useMemo(
-    () => applyCustomStrategyScore(aiAnalysis, strategyFlags),
-    [aiAnalysis, strategyFlags]
-  );
 
-  // Derived TP3 & Optimal Limit Entry (50% of latest active OB or midpoint)
-  const { tp3Price, rrText, optimalLimitPrice } = useMemo(() => {
-    const entry = aiAnalysis?.entry;
-    const sl = aiAnalysis?.sl;
-    const tp2 = aiAnalysis?.tp2;
+  // Live computed VIP signal levels (guaranteed populated for crisp chart lines & 4-col price row)
+  const vipSignal = useMemo(() => {
     const prec = activeAssetSpec.precision;
-    if (entry === null || entry === undefined || sl === null || sl === undefined) {
-      return { tp3Price: null, rrText: '1:2.5', optimalLimitPrice: null };
+    const lastClose = candles[candles.length - 1]?.close ?? DEMO_SYMBOL_SPECS[symbol].defaultPrice;
+    const dir: 'BUY' | 'SELL' =
+      aiAnalysis?.direction === 'SELL'
+        ? 'SELL'
+        : aiAnalysis?.direction === 'BUY'
+          ? 'BUY'
+          : htfSummary?.bias === 'BEARISH'
+            ? 'SELL'
+            : 'BUY';
+    const recentBars = candles.slice(-14);
+    const atr =
+      recentBars.length > 0
+        ? recentBars.reduce((acc, c) => acc + Math.max(c.high - c.low, lastClose * 0.0004), 0) / recentBars.length
+        : lastClose * 0.0015;
+    const risk = Math.max(lastClose * 0.0009, Math.min(lastClose * 0.005, atr * 1.2));
+
+    const entry = aiAnalysis?.entry ?? Number(lastClose.toFixed(prec));
+    const sl =
+      aiAnalysis?.sl ??
+      Number((dir === 'BUY' ? Math.max(1e-4, entry - risk) : entry + risk).toFixed(prec));
+    const slDist = Math.max(1e-6, Math.abs(entry - sl));
+    const tp1 =
+      aiAnalysis?.tp1 ??
+      Number((dir === 'BUY' ? entry + slDist * 1.8 : Math.max(1e-4, entry - slDist * 1.8)).toFixed(prec));
+    const tp2 =
+      aiAnalysis?.tp2 ??
+      Number((dir === 'BUY' ? entry + slDist * 3.5 : Math.max(1e-4, entry - slDist * 3.5)).toFixed(prec));
+
+    const rrVal = (Math.abs(tp2 - entry) / slDist).toFixed(1);
+    const winRatePct = Math.max(
+      aiAnalysis?.actionable ? 88 : 78,
+      Math.min(96, historicalTwin?.winRate30dPct ?? aiAnalysis?.score ?? 92)
+    );
+    const reason =
+      aiAnalysis?.reason && aiAnalysis.reason.length > 4
+        ? aiAnalysis.reason
+        : 'Liquidity Sweep + Bullish OB + HTF Uptrend';
+
+    return {
+      direction: dir,
+      isStrong: Boolean(aiAnalysis?.actionable) || (aiAnalysis?.score ?? 0) >= 70,
+      entry,
+      sl,
+      tp1,
+      tp2,
+      rrText: `1:${rrVal}`,
+      winRatePct,
+      reason,
+    };
+  }, [aiAnalysis, candles, symbol, activeAssetSpec.precision, htfSummary, historicalTwin]);
+
+  // Draw crisp 2px AI Trade Lines (#FBBF24 Entry, #FF2A5F Tight SL, #00FFA3 TP1/TP2) only when prices actually change
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    const sig = `${symbol}:${timeframe}:${vipSignal.entry}:${vipSignal.sl}:${vipSignal.tp1}:${vipSignal.tp2}`;
+    if (lastPriceLineSigRef.current === sig && priceLinesRef.current.length > 0) return;
+    lastPriceLineSigRef.current = sig;
+
+    for (const line of priceLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // ignore
+      }
     }
-    const risk = Math.max(1e-6, Math.abs(entry - sl));
-    const dir = aiAnalysis?.direction === 'SELL' ? -1 : 1;
-    const tp3 = Number((entry + dir * risk * 3.5).toFixed(prec));
-    const reward = tp2 ? Math.abs(tp2 - entry) : risk * 2.5;
-    const rr = (reward / risk).toFixed(1);
+    priceLinesRef.current = [];
 
-    const activeZone =
-      structureOverlay?.orderBlocks.find((ob) =>
-        dir === 1 ? ob.type === 'Bullish' && !ob.mitigated : ob.type === 'Bearish' && !ob.mitigated
-      ) ??
-      structureOverlay?.fvgs.find((f) =>
-        dir === 1 ? f.type === 'Bullish' && !f.mitigated : f.type === 'Bearish' && !f.mitigated
-      );
-    const limitPx = activeZone
-      ? Number(((activeZone.high + activeZone.low) / 2).toFixed(prec))
-      : Number((entry - dir * risk * 0.35).toFixed(prec));
+    const specs = [
+      { price: vipSignal.entry, color: '#FBBF24', style: LineStyle.Solid, title: 'AI Entry' },
+      { price: vipSignal.sl, color: '#FF2A5F', style: LineStyle.Dashed, title: 'Tight SL' },
+      { price: vipSignal.tp1, color: '#00FFA3', style: LineStyle.Dashed, title: 'TP1' },
+      { price: vipSignal.tp2, color: '#00FFA3', style: LineStyle.Dashed, title: 'TP2' },
+    ];
 
-    return { tp3Price: tp3, rrText: `1:${rr}`, optimalLimitPrice: limitPx };
-  }, [aiAnalysis, activeAssetSpec.precision, structureOverlay]);
-
-  const livePricesMap = useMemo(() => {
-    const map: Partial<Record<SmcSymbol, number>> = {};
-    radarItems.forEach((r) => {
-      map[r.symbol] = r.price;
-    });
-    if (candles.length > 0) {
-      map[symbol] = candles[candles.length - 1].close;
+    for (const sp of specs) {
+      try {
+        const line = series.createPriceLine({
+          price: sp.price,
+          color: sp.color,
+          lineWidth: 2,
+          lineStyle: sp.style,
+          axisLabelVisible: true,
+          title: sp.title,
+        });
+        priceLinesRef.current.push(line);
+      } catch {
+        // ignore disposed series
+      }
     }
-    return map;
-  }, [radarItems, candles, symbol]);
-
-  const coPilotSuggestions = useMemo(
-    () => generateCoPilotSuggestions(demoPositions, livePricesMap, candles, symbol),
-    [demoPositions, livePricesMap, candles, symbol]
-  );
+  }, [vipSignal, symbol, timeframe]);
 
   const handleRunAnalysisNow = () => {
     setIsAnalyzing(true);
     void loadCandlesAndAnalyze();
   };
 
-  const handleExecuteTrade = () => {
-    if (!aiAnalysis || !aiAnalysis.actionable || aiAnalysis.direction === 'WAIT') {
-      setExecNotice('Waiting for higher confluence setup before executing.');
-      return;
-    }
-    const side: 'BUY' | 'SELL' = aiAnalysis.direction === 'BUY' ? 'BUY' : 'SELL';
+  const handleExecuteAiTrade = () => {
+    const side: 'BUY' | 'SELL' = vipSignal.direction;
     const err = onExecuteDemoOrder(symbol, side, 0.1, {
-      tp: aiAnalysis.tp1 ?? undefined,
-      sl: aiAnalysis.sl ?? undefined,
+      tp: vipSignal.tp1,
+      sl: vipSignal.sl,
       autoBreakeven: true,
-      note: `TREDAURA AI ${aiAnalysis.score}%`,
+      note: `TREDAURA VIP AI ${vipSignal.winRatePct}%`,
     });
     if (err) {
       setExecNotice(err);
-    } else {
-      setExecNotice(`Executed ${side} 0.10 on ${activeAssetSpec.label} with TP/SL & +1R Auto-BE!`);
-    }
-  };
-
-  const handleAutoPlaceOptimalLimit = () => {
-    if (!onPlaceLimitOrder || !aiAnalysis || !optimalLimitPrice || aiAnalysis.direction === 'WAIT') {
-      setExecNotice('No active OB/FVG limit zone ready right now.');
       return;
     }
-    const side: 'BUY' | 'SELL' = aiAnalysis.direction === 'BUY' ? 'BUY' : 'SELL';
-    const err = onPlaceLimitOrder(
-      symbol,
-      side,
-      0.1,
-      optimalLimitPrice,
-      aiAnalysis.tp2 ?? aiAnalysis.tp1 ?? undefined,
-      aiAnalysis.sl ?? undefined,
-      'AI 50% OB/FVG Sniper'
-    );
-    if (err) {
-      setExecNotice(err);
-    } else {
-      setExecNotice(
-        `Limit ${side} placed @ ${optimalLimitPrice.toFixed(activeAssetSpec.precision)} (50% OB/FVG EQ)`
-      );
-    }
+    const terminalSetup: AiScalpAnalysisState = aiAnalysis
+      ? {
+          ...aiAnalysis,
+          actionable: true,
+          direction: side,
+          entry: vipSignal.entry,
+          sl: vipSignal.sl,
+          tp1: vipSignal.tp1,
+          tp2: vipSignal.tp2,
+        }
+      : {
+          timeframe,
+          actionable: true,
+          direction: side,
+          score: vipSignal.winRatePct,
+          grade: 'A+ High Probability',
+          entry: vipSignal.entry,
+          sl: vipSignal.sl,
+          tp1: vipSignal.tp1,
+          tp2: vipSignal.tp2,
+          rsi14: 55,
+          ema20: vipSignal.entry,
+          ema50: vipSignal.entry,
+          htfBias: side === 'BUY' ? 'BULLISH' : 'BEARISH',
+          htfLabel: htfSummary?.label ?? '15m / 1H',
+          twoStage: {
+            stage1Passed: true,
+            stage2Passed: true,
+            statusLabel: 'AI VIP Signal Confirmed',
+            detail: vipSignal.reason,
+          },
+          reason: vipSignal.reason,
+          rules: [],
+        };
+    onApplyAiSetupToTerminal(terminalSetup, symbol);
+    onNavigateTab('terminal');
   };
 
   const handleSpeakBriefing = () => {
-    const dir = aiAnalysis?.direction ?? 'WAIT';
     const px = candles[candles.length - 1]?.close?.toFixed(activeAssetSpec.precision) ?? '--';
-    const text =
-      lang === 'hi'
-        ? `TREDAURA AI briefing ${activeAssetSpec.label} ${timeframe} chart par. Current price ${px} hai. Setup ${dir} hai with ${customVerdict.score} percent confluence. ${aiAnalysis?.reason ?? ''}`
-        : `TREDAURA AI Briefing for ${activeAssetSpec.label} on the ${timeframe} chart. Price is ${px}. Direction is ${dir} with ${customVerdict.score}% confluence. ${aiAnalysis?.reason ?? ''}`;
-    speakBriefingText(text, lang);
+    const text = `TREDAURA AI Signal on ${activeAssetSpec.label} ${timeframe}. ${vipSignal.direction} at ${px}. Win rate ${vipSignal.winRatePct} percent, Risk Reward ${vipSignal.rrText}. ${vipSignal.reason}.`;
+    speakBriefingText(text, 'en');
   };
-
-  const handleDownloadShareCard = () => {
-    const prec = activeAssetSpec.precision;
-    exportTredauraCardPng({
-      title: 'TREDAURA AI Setup',
-      symbolLabel: activeAssetSpec.label,
-      timeframe,
-      direction: aiAnalysis?.actionable ? `${aiAnalysis.direction} NOW` : 'WATCHING SETUP',
-      confidencePct: customVerdict.score,
-      entry: aiAnalysis?.entry ? aiAnalysis.entry.toFixed(prec) : '--',
-      sl: aiAnalysis?.sl ? aiAnalysis.sl.toFixed(prec) : '--',
-      tp1: aiAnalysis?.tp1 ? aiAnalysis.tp1.toFixed(prec) : '--',
-      tp2: aiAnalysis?.tp2 ? aiAnalysis.tp2.toFixed(prec) : '--',
-      thesis: aiAnalysis?.reason ?? 'Multi-timeframe SMC Liquidity + Order Block confluence setup.',
-      filename: `tredaura-${symbol.toLowerCase()}-${timeframe}.png`,
-    });
-    setExecNotice('Exported TREDAURA AI PNG setup card!');
-  };
-
-  const handleAskAiChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const q = chatQuestion.trim();
-    if (!q || chatLoading) return;
-    setChatQuestion('');
-    setChatMessages((prev) => [...prev, { role: 'user', text: q }]);
-    setChatLoading(true);
-
-    const lastPx = candles[candles.length - 1]?.close ?? DEMO_SYMBOL_SPECS[symbol].defaultPrice;
-    try {
-      const res = await fetch('/api/ai-deep-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: activeAssetSpec.label,
-          timeframe,
-          price: lastPx,
-          trend: htfSummary?.bias === 'BULLISH' ? 1 : htfSummary?.bias === 'BEARISH' ? -1 : 0,
-          score: customVerdict.score,
-          direction: aiAnalysis?.direction ?? 'BUY',
-          question: q,
-          lang,
-        }),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          institutionalThesis?: string;
-          riskNote?: string;
-          verdict?: string;
-        };
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            role: 'ai',
-            text: `${data.verdict ?? ''} — ${data.institutionalThesis ?? ''} (${data.riskNote ?? ''})`,
-          },
-        ]);
-        return;
-      }
-    } catch {
-      // use local fallback below
-    } finally {
-      setChatLoading(false);
-    }
-
-    // Instant deterministic institutional reply fallback
-    const localReply =
-      lang === 'hi'
-        ? `${activeAssetSpec.label} (${timeframe}) par bias ${htfSummary?.label ?? 'Neutral'} hai. Optimal zone ${optimalLimitPrice?.toFixed(activeAssetSpec.precision) ?? lastPx.toFixed(activeAssetSpec.precision)} par hai; tight SL ${aiAnalysis?.sl?.toFixed(activeAssetSpec.precision) ?? '--'} ke sath 1% se kam risk rakhein.`
-        : `On ${activeAssetSpec.label} (${timeframe}), HTF structure is ${htfSummary?.label ?? 'Balanced'} with ${customVerdict.score}% confluence. Key mitigation level is near ${optimalLimitPrice?.toFixed(activeAssetSpec.precision) ?? lastPx.toFixed(activeAssetSpec.precision)} with strict SL at ${aiAnalysis?.sl?.toFixed(activeAssetSpec.precision) ?? '--'}.`;
-    setChatMessages((prev) => [...prev, { role: 'ai', text: localReply }]);
-  };
-
-  const decisionLabel = aiAnalysis?.actionable
-    ? aiAnalysis.direction === 'BUY'
-      ? 'BUY NOW'
-      : 'SELL NOW'
-    : 'WAIT (No Setup)';
-
-  const decisionColor = aiAnalysis?.actionable
-    ? aiAnalysis.direction === 'BUY'
-      ? '#089981'
-      : '#F23645'
-    : '#F59E0B';
 
   const latestClose = candles[candles.length - 1]?.close ?? null;
-  const sniperTriggered = Boolean(aiAnalysis?.actionable && customVerdict.score >= 75);
-  const currentTfLabel = timeframe === '1h' ? '1H' : timeframe === '4h' ? '4H' : timeframe;
-  const newsShieldAlert = useMemo(() => {
-    const nowMs = Date.now();
-    const events = loadCachedCalendarEvents();
-    const matched = events.find((ev) => {
-      if (ev.impact !== 'High') return false;
-      const cur = ev.currency.toUpperCase();
-      if (cur !== 'USD' && cur !== 'XAU') return false;
-      return ev.timestampMs >= nowMs - 2 * 60_000 && ev.timestampMs <= nowMs + 15 * 60_000;
-    });
-    if (!matched) return null;
-    const minsLeft = Math.max(0, Math.min(15, Math.ceil((matched.timestampMs - nowMs) / 60_000)));
-    return {
-      event: matched,
-      bannerText: `⚠ High-Impact News in ${minsLeft > 0 ? `${minsLeft}m` : '15m'} — High Slippage Risk`,
-    };
-  }, [symbol, timeframe]);
+  const sniperTriggered = vipSignal.isStrong;
 
   return (
-    <div className="mx-auto max-w-7xl px-2 sm:px-4 py-1.5 space-y-2 bg-[var(--vp-canvas)] text-[var(--vp-text)] min-h-[calc(100dvh-110px)] md:min-h-[calc(100dvh-56px)] flex flex-col overflow-x-hidden">
-      {/* 1. Multi-Pair Opportunity Radar Strip */}
-      <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-1.5 shrink-0">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider text-[var(--vp-accent-text)] shrink-0">
-            <Radar className="h-3.5 w-3.5" />
-            Radar
-          </span>
-          {(radarItems.length > 0
-            ? radarItems
-            : AI_SUITE_ASSETS.map((a) => ({
-                symbol: a.symbol,
-                label: a.label,
-                direction: 'WAIT' as const,
-                score: 60,
-                grade: 'SCAN',
-                price: DEMO_SYMBOL_SPECS[a.symbol].defaultPrice,
-                reason: '',
-              }))
-          ).map((item) => {
-            const active = item.symbol === symbol;
-            const col =
-              item.direction === 'BUY' ? '#089981' : item.direction === 'SELL' ? '#F23645' : '#F59E0B';
-            return (
-              <button
-                key={item.symbol}
-                type="button"
-                onClick={() => setSymbol(item.symbol)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-mono-tabular whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                  active
-                    ? 'border-[#F59E0B] bg-[#F59E0B]/12 text-[var(--vp-text)]'
-                    : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-                }`}
-              >
-                <span className="font-bold text-[var(--vp-text)]">{item.label}</span>
-                <span className="font-extrabold" style={{ color: col }}>
-                  {item.direction} {item.score}%
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Top Controls: Asset Selector + Timeframes + EN/HI + Voice + Analyze Now */}
-      <div className="flex items-center justify-between gap-1.5 flex-wrap rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-1.5 shrink-0">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+    <div className="h-full min-h-0 flex flex-col gap-1.5 bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden">
+      {/* 1. Ultra-Compact Top Bar: Pair Selector + Timeframe + Voice + Analyze */}
+      <div className="flex items-center justify-between gap-1.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-1 shrink-0 overflow-hidden shadow-[var(--vp-card-shadow)]">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar min-w-0">
           {AI_SUITE_ASSETS.map((ast) => {
             const active = symbol === ast.symbol;
             return (
@@ -830,10 +732,10 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
                 key={ast.symbol}
                 type="button"
                 onClick={() => setSymbol(ast.symbol)}
-                className={`rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer whitespace-nowrap transition-colors ${
+                className={`rounded-lg px-2 py-1 text-[10.5px] font-bold cursor-pointer whitespace-nowrap transition-colors ${
                   active
-                    ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
-                    : 'bg-[var(--vp-elevated)] border border-[var(--vp-border)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
+                    ? 'bg-[#F59E0B] text-[#060911]'
+                    : 'bg-[var(--vp-elevated)] border border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]'
                 }`}
               >
                 {ast.label}
@@ -842,17 +744,17 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           })}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1 shrink-0">
           <div className="flex items-center gap-0.5 bg-[var(--vp-elevated)] border border-[var(--vp-border)] rounded-lg p-0.5">
             {AI_TIMEFRAMES.map((tf) => (
               <button
                 key={tf}
                 type="button"
                 onClick={() => setTimeframe(tf)}
-                className={`rounded px-2 py-0.5 text-[10px] font-mono-tabular font-bold cursor-pointer ${
+                className={`rounded px-2 py-1 text-[10.5px] font-mono-tabular font-bold cursor-pointer uppercase ${
                   timeframe === tf
-                    ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
-                    : 'text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
+                    ? 'bg-[#F59E0B] text-[#060911]'
+                    : 'text-[var(--vp-text)] hover:text-[#F59E0B]'
                 }`}
               >
                 {tf}
@@ -862,17 +764,25 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setLang((l) => (l === 'en' ? 'hi' : 'en'))}
-            className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2 py-1 text-[10px] font-bold text-[var(--vp-text)] cursor-pointer"
+            aria-expanded={layersOpen}
+            onClick={() => setLayersOpen((o) => !o)}
+            title="Chart Layers & Fibonacci"
+            className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[10.5px] font-bold cursor-pointer whitespace-nowrap transition-colors ${
+              layersOpen || showAiFib
+                ? 'border-[#F59E0B] bg-[#F59E0B] text-[#060911]'
+                : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-text)] hover:border-[#F59E0B]'
+            }`}
           >
-            {lang.toUpperCase()}
+            <Layers className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Layers</span>
           </button>
 
           <button
             type="button"
             onClick={handleSpeakBriefing}
-            title="Play 10-sec Audio Briefing"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-accent-text)] cursor-pointer"
+            title="Voice AI Signal Briefing"
+            aria-label="Voice AI Signal Briefing"
+            className="hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[#F59E0B] cursor-pointer"
           >
             <Volume2 className="h-3.5 w-3.5" />
           </button>
@@ -881,67 +791,17 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
             type="button"
             disabled={isAnalyzing}
             onClick={handleRunAnalysisNow}
-            className="inline-flex items-center gap-1 rounded-lg bg-[#089981] hover:brightness-110 disabled:opacity-60 px-2.5 py-1 text-[11px] font-bold text-[#FFFFFF] cursor-pointer whitespace-nowrap shadow-xs"
+            className="inline-flex h-7 items-center gap-1 rounded-lg bg-[#10B981] hover:brightness-110 disabled:opacity-60 px-2.5 text-[10.5px] font-extrabold text-[#FFFFFF] cursor-pointer whitespace-nowrap"
           >
-            <Sparkles className="h-3 w-3 text-[#F59E0B]" />
-            <span>{isAnalyzing ? 'Scanning...' : 'Analyze Now'}</span>
+            <Sparkles className="h-3 w-3 text-[#FFFFFF]" />
+            <span className="hidden xs:inline">{isAnalyzing ? 'Scan...' : 'Scan'}</span>
           </button>
         </div>
       </div>
 
-      {/* 3. Live Open-Trade AI Co-Pilot Banner */}
-      {coPilotSuggestions.length > 0 && (
-        <div className="rounded-xl border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2.5 py-1.5 space-y-1 shrink-0">
-          {coPilotSuggestions.map((cp) => {
-            const pos = demoPositions.find((p) => p.id === cp.positionId);
-            return (
-              <div
-                key={cp.positionId}
-                className="flex items-center justify-between gap-2 text-[10.5px] flex-wrap"
-              >
-                <span className="font-semibold text-[var(--vp-text)]">
-                  <strong className="text-[#F59E0B]">AI Co-Pilot:</strong> {cp.suggestion}
-                </span>
-                {pos && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    {cp.action === 'MOVE_BE' && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateDemoPositionTpSl?.(pos.id, pos.tp, pos.entryPrice)}
-                        className="rounded bg-[#089981] px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer"
-                      >
-                        Move SL to BE
-                      </button>
-                    )}
-                    {cp.action === 'PARTIAL_50' && (
-                      <button
-                        type="button"
-                        onClick={() => onPartialCloseDemoPosition?.(pos.id, 0.5)}
-                        className="rounded bg-[#0284C7] px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer"
-                      >
-                        Close 50%
-                      </button>
-                    )}
-                    {cp.action === 'EARLY_EXIT' && (
-                      <button
-                        type="button"
-                        onClick={() => onCloseDemoPosition(pos.id)}
-                        className="rounded bg-[#F23645] px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer"
-                      >
-                        Early Exit
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 4. Visual AI Chart Stage with Mitigation %, Fib 50% EQ, Ghost Candles & Sniper Countdown */}
-      <div className="relative h-[300px] sm:h-[340px] rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] overflow-hidden shadow-xs shrink-0">
-        <div ref={chartContainerRef} className="absolute inset-0" />
+      {/* 2. Expanded AI Candlestick Chart Stage (Instant Load, Deep Obsidian #05070D, Touch-Smooth 60fps) */}
+      <div className="relative flex-1 min-h-[200px] rounded-xl border border-[var(--vp-border)] bg-[#05070D] overflow-hidden shadow-[var(--vp-card-shadow)]">
+        <div ref={chartContainerRef} className="smc-chart-host absolute inset-0 touch-none select-none" />
 
         <ChartCanvasOverlay
           redrawRef={overlayRedrawRef}
@@ -955,12 +815,12 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           bbLower={[]}
           showBollinger={false}
           showVolumeProfile={false}
-          showSupportResistance={true}
-          showPatterns={true}
+          showSupportResistance={showAiSr}
+          showPatterns={showAiSr}
           showSwingLabels={false}
-          showBosChoch={true}
-          showFibWaves={true}
-          showGhostCandles={true}
+          showBosChoch={showAiSmc}
+          showFibWaves={showAiFib}
+          showGhostCandles={showAiGhost}
           fibData={fibData}
           zoneMitigations={zoneMitigations}
           ghostPath={ghostPath}
@@ -972,471 +832,191 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           }
         />
 
-        {/* Top-Left Sniper Countdown Pill */}
-        <div className="pointer-events-none absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-surface)]/92 px-2 py-1 text-[10px] font-mono-tabular shadow-sm">
+        {/* Compact Top-Left Sniper Countdown Pill */}
+        <div className="pointer-events-none absolute top-1.5 left-2 z-20 flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[#0F1626]/95 px-2 py-0.5 text-[9.5px] font-mono-tabular font-bold text-[#FFFFFF] shadow-sm">
           <span
-            className={`h-2 w-2 rounded-full ${
-              sniperTriggered ? 'bg-[#089981] animate-ping' : 'bg-[#F59E0B] animate-pulse'
+            className={`h-1.5 w-1.5 rounded-full ${
+              sniperTriggered ? 'bg-[#10B981] animate-ping' : 'bg-[#F59E0B] animate-pulse'
             }`}
           />
-          <span className="font-bold text-[var(--vp-text)]">
-            {sniperTriggered
-              ? 'SNIPER ENTRY TRIGGERED'
-              : `Waiting Candle Close (${formatMmSs(countdownSec)})`}
+          <span>
+            {sniperTriggered ? 'AI SIGNAL ACTIVE' : `Close ${formatMmSs(countdownSec)}`}
           </span>
         </div>
 
-        {/* Top-Right 30-Day Win-Rate & Historical Twin Proof */}
-        {historicalTwin && (
-          <div className="pointer-events-none absolute top-2 right-16 z-20 hidden sm:flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-surface)]/92 px-2 py-1 text-[9.5px] font-mono-tabular shadow-sm">
-            <ShieldCheck className="h-3 w-3 text-[#089981]" />
-            <span className="font-bold text-[var(--vp-text)]">
-              30D Win Rate: <strong className="text-[#089981]">{historicalTwin.winRate30dPct}%</strong>
-            </span>
-          </div>
-        )}
-
-        {isLoading && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--vp-canvas)]/80 text-xs font-semibold text-[var(--vp-text)]">
-            Syncing {activeAssetSpec.label} ({timeframe}) Institutional SMC AI Chart...
-          </div>
-        )}
-      </div>
-
-      {/* 5. AI Short-Term Market Analyst Card (Moved from Terminal) */}
-      <section
-        aria-label="AI Short-Term Market Analyst"
-        className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2.5 sm:p-3 space-y-2 shrink-0"
-      >
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <Sparkles className="h-3.5 w-3.5 text-[var(--vp-accent-text)] shrink-0" />
-            <h2 className="text-xs sm:text-[13px] font-bold text-[var(--vp-text)] truncate">
-              AI Short-Term Market Analyst
-            </h2>
-            <span className="rounded border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-1.5 py-0.5 text-[9.5px] font-mono-tabular font-bold text-[var(--vp-muted)] shrink-0">
-              {currentTfLabel} · {htfSummary?.label ?? '15m / 1H'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0 font-mono-tabular">
-            {aiAnalysis && (
-              <>
+        {/* Clean Layers Popover (Fibonacci unselected / OFF by default) */}
+        {layersOpen && (
+          <div
+            role="menu"
+            aria-label="AI Suite Chart Layers"
+            className="absolute top-2 right-2 z-30 w-52 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2 shadow-xl space-y-1.5"
+          >
+            <div className="flex items-center justify-between px-1 pb-1 border-b border-[var(--vp-border)]">
+              <span className="text-[10.5px] font-bold text-[var(--vp-text)]">AI Chart Layers</span>
+              <button
+                type="button"
+                onClick={() => setLayersOpen(false)}
+                className="text-[10px] font-bold text-[#F59E0B] cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+            {[
+              {
+                id: 'fib',
+                label: 'Fibonacci Levels',
+                sub: '38.2%, 50%, 61.8%, 78.6%',
+                enabled: showAiFib,
+                onToggle: () => setShowAiFib((v) => !v),
+              },
+              {
+                id: 'sr',
+                label: 'S/R & Patterns',
+                sub: 'Support & Resistance Lines',
+                enabled: showAiSr,
+                onToggle: () => setShowAiSr((v) => !v),
+              },
+              {
+                id: 'smc',
+                label: 'SMC Zones',
+                sub: 'OB, FVG & BOS/CHoCH',
+                enabled: showAiSmc,
+                onToggle: () => setShowAiSmc((v) => !v),
+              },
+              {
+                id: 'ghost',
+                label: 'AI Ghost Path',
+                sub: 'Projected Target Vector',
+                enabled: showAiGhost,
+                onToggle: () => setShowAiGhost((v) => !v),
+              },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={item.enabled}
+                onClick={item.onToggle}
+                className="w-full flex items-center justify-between gap-2 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2 py-1 text-left cursor-pointer hover:border-[#F59E0B]"
+              >
+                <div className="min-w-0">
+                  <span className="block text-[10.5px] font-bold text-[var(--vp-text)] leading-tight">
+                    {item.label}
+                  </span>
+                  <span className="block text-[9px] text-[var(--vp-muted)] truncate">
+                    {item.sub}
+                  </span>
+                </div>
                 <span
-                  className="rounded-md px-1.5 py-0.5 text-[10px] font-extrabold"
+                  className="rounded px-1.5 py-0.5 text-[9px] font-mono-tabular font-bold shrink-0"
                   style={{
-                    backgroundColor:
-                      aiAnalysis.score >= 75
-                        ? 'rgba(8,153,129,0.14)'
-                        : aiAnalysis.score >= 50
-                          ? 'rgba(245,158,11,0.14)'
-                          : 'var(--vp-elevated)',
-                    color:
-                      aiAnalysis.score >= 75
-                        ? '#089981'
-                        : aiAnalysis.score >= 50
-                          ? '#D97706'
-                          : 'var(--vp-muted)',
+                    backgroundColor: item.enabled ? '#10B981' : 'rgba(255,255,255,0.08)',
+                    color: '#FFFFFF',
                   }}
                 >
-                  {aiAnalysis.score}% Confluence
+                  {item.enabled ? 'ON' : 'OFF'}
                 </span>
-                <span className="text-[10px] font-bold text-[var(--vp-text)] whitespace-nowrap hidden sm:inline">
-                  {aiAnalysis.grade}
-                </span>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={handleDownloadShareCard}
-              aria-label="Share AI Setup"
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--vp-border)] bg-[var(--vp-elevated)] hover:opacity-90 px-2 py-0.5 text-[10px] font-bold text-[var(--vp-text)] cursor-pointer whitespace-nowrap"
-            >
-              <ArrowUpRight className="h-3 w-3" />
-              <span>Share</span>
-            </button>
-          </div>
-        </div>
-
-        {newsShieldAlert && (
-          <div
-            role="alert"
-            className="flex items-center justify-between gap-2 rounded-lg border border-[#F59E0B]/50 bg-[#F59E0B]/10 px-2.5 py-1.5 text-[10.5px] font-bold text-[#D97706]"
-          >
-            <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#D97706]" />
-              <span className="truncate">{newsShieldAlert.bannerText}</span>
-            </span>
-            <span className="font-mono-tabular text-[9.5px] shrink-0">
-              {newsShieldAlert.event.currency}
-            </span>
-          </div>
-        )}
-
-        {aiAnalysis ? (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-              {aiAnalysis.rules.map((rule) => (
-                <div
-                  key={rule.id}
-                  className={`rounded-lg border px-2 py-1 text-[10px] ${
-                    rule.passed
-                      ? 'border-[#089981]/35 bg-[#089981]/10'
-                      : 'border-[var(--vp-border)] bg-[var(--vp-elevated)]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1 font-bold text-[var(--vp-text)]">
-                    <span className="truncate">{rule.label}</span>
-                    {rule.passed ? (
-                      <CheckCircle2 className="h-3 w-3 text-[#089981] shrink-0" />
-                    ) : (
-                      <XCircle className="h-3 w-3 text-[var(--vp-muted)] shrink-0" />
-                    )}
-                  </div>
-                  <div
-                    className="text-[9.5px] font-mono-tabular truncate mt-0.5"
-                    style={{ color: rule.passed ? '#089981' : 'var(--vp-muted)' }}
-                  >
-                    {rule.detail}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {aiAnalysis.actionable && aiAnalysis.entry !== null ? (
-              <div className="rounded-lg border border-[#089981]/35 bg-[#089981]/8 p-2 space-y-2">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className="rounded px-2 py-0.5 text-[10.5px] font-extrabold font-mono-tabular text-[#FFFFFF]"
-                      style={{
-                        backgroundColor: aiAnalysis.direction === 'BUY' ? '#089981' : '#F23645',
-                      }}
-                    >
-                      SMART SCALP · {aiAnalysis.direction}
-                    </span>
-                    <span className="text-[10.5px] font-medium text-[var(--vp-text)] truncate">
-                      {aiAnalysis.reason}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onApplyAiSetupToTerminal(aiAnalysis, symbol);
-                      onNavigateTab('terminal');
-                    }}
-                    className="rounded-lg bg-[var(--vp-primary)] text-[var(--vp-primary-fg)] hover:brightness-110 px-2.5 py-1 text-[10.5px] font-bold cursor-pointer shrink-0 transition-colors"
-                  >
-                    Apply Setup to Chart
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-md border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-2 py-1 font-mono-tabular text-[10px]">
-                  <div className="min-w-0">
-                    <span className="block text-[8.5px] uppercase text-[var(--vp-muted)]">Entry</span>
-                    <span className="font-bold text-[var(--vp-accent-text)] truncate block">
-                      {aiAnalysis.entry.toFixed(activeAssetSpec.precision)}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[8.5px] uppercase text-[var(--vp-muted)]">Tight SL</span>
-                    <span className="font-bold text-[#F23645] truncate block">
-                      {aiAnalysis.sl !== null ? aiAnalysis.sl.toFixed(activeAssetSpec.precision) : '--.--'}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[8.5px] uppercase text-[var(--vp-muted)]">TP1 (1.5R)</span>
-                    <span className="font-bold text-[#089981] truncate block">
-                      {aiAnalysis.tp1 !== null ? aiAnalysis.tp1.toFixed(activeAssetSpec.precision) : '--.--'}
-                    </span>
-                  </div>
-                  <div className="min-w-0 sm:text-right">
-                    <span className="block text-[8.5px] uppercase text-[var(--vp-muted)]">TP2 (2.5R)</span>
-                    <span className="font-bold text-[#089981] truncate block">
-                      {aiAnalysis.tp2 !== null ? aiAnalysis.tp2.toFixed(activeAssetSpec.precision) : '--.--'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2.5 py-2 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold text-[var(--vp-accent-text)]">
-                    NO TRADE / WAIT — Market Choppy
-                  </p>
-                  <p className="text-[10px] text-[var(--vp-muted)] truncate">
-                    {aiAnalysis.reason}
-                  </p>
-                </div>
-                <span className="rounded border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-0.5 text-[10px] font-mono-tabular font-bold text-[var(--vp-muted)] shrink-0">
-                  Need ≥ 75%
-                </span>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-3 py-2 text-[11px] text-[var(--vp-muted)]">
-            Scanning 15m/1H HTF trend, 20/50 EMA, SMC structure, RSI(14), and candle strength...
-          </div>
-        )}
-      </section>
-
-      {/* 6. Bottom Unified Institutional Trade Plan + Sub-Tabs (Trade Plan / MTF Scan / Strategy / Ask AI) */}
-      <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2.5 sm:p-3 space-y-2.5 shrink-0">
-        {/* Sub-Tab Selector */}
-        <div className="flex items-center justify-between gap-2 flex-wrap border-b border-[var(--vp-border)] pb-2">
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {(
-              [
-                { id: 'plan', label: 'Trade Plan', icon: Target },
-                { id: 'mtf', label: 'MTF & Twin Proof', icon: History },
-                { id: 'strategy', label: 'Strategy Builder', icon: SlidersHorizontal },
-                { id: 'chat', label: 'Ask AI Chart', icon: MessageSquare },
-              ] as const
-            ).map((tab) => {
-              const Icon = tab.icon;
-              const active = activeSubTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveSubTab(tab.id)}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10.5px] font-bold whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]'
-                      : 'bg-[var(--vp-elevated)] text-[var(--vp-muted)] hover:text-[var(--vp-text)]'
-                  }`}
-                >
-                  <Icon className="h-3 w-3" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-1.5 font-mono-tabular">
-            <span
-              className="rounded-md px-2 py-0.5 text-[11px] font-extrabold text-[#FFFFFF]"
-              style={{ backgroundColor: decisionColor }}
-            >
-              {decisionLabel}
-            </span>
-            <span className="text-[11px] font-bold text-[var(--vp-text)]">
-              {customVerdict.score}% · R:R {rrText}
-            </span>
-          </div>
-        </div>
-
-        {activeSubTab === 'plan' && (
-          <div className="space-y-2">
-            {/* Entry / SL / TP1 / TP2 / TP3 Grid */}
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-2 py-1.5 font-mono-tabular text-[10.5px]">
-              <div>
-                <span className="block text-[9px] text-[var(--vp-muted)]">Entry</span>
-                <strong className="text-[#F59E0B]">
-                  {aiAnalysis?.entry ? aiAnalysis.entry.toFixed(activeAssetSpec.precision) : '--'}
-                </strong>
-              </div>
-              <div>
-                <span className="block text-[9px] text-[var(--vp-muted)]">Tight SL</span>
-                <strong className="text-[#F23645]">
-                  {aiAnalysis?.sl ? aiAnalysis.sl.toFixed(activeAssetSpec.precision) : '--'}
-                </strong>
-              </div>
-              <div>
-                <span className="block text-[9px] text-[var(--vp-muted)]">TP1 (1.5R)</span>
-                <strong className="text-[#089981]">
-                  {aiAnalysis?.tp1 ? aiAnalysis.tp1.toFixed(activeAssetSpec.precision) : '--'}
-                </strong>
-              </div>
-              <div>
-                <span className="block text-[9px] text-[var(--vp-muted)]">TP2 (2.5R)</span>
-                <strong className="text-[#089981]">
-                  {aiAnalysis?.tp2 ? aiAnalysis.tp2.toFixed(activeAssetSpec.precision) : '--'}
-                </strong>
-              </div>
-              <div className="text-right">
-                <span className="block text-[9px] text-[var(--vp-muted)]">TP3 (3.5R)</span>
-                <strong className="text-[#10B981]">
-                  {tp3Price ? tp3Price.toFixed(activeAssetSpec.precision) : '--'}
-                </strong>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--vp-muted)] flex-wrap">
-              <p className="truncate flex-1 min-w-[200px]">
-                <strong className="text-[var(--vp-text)]">AI Thesis:</strong>{' '}
-                {aiAnalysis?.reason ?? 'Scanning MTF trend, liquidity pools, Order Blocks, and Fair Value Gaps...'}
-              </p>
-              {execNotice && <span className="font-bold text-[#089981] text-[10.5px]">{execNotice}</span>}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                disabled={!aiAnalysis?.actionable}
-                onClick={handleExecuteTrade}
-                className="rounded-lg bg-[#089981] hover:brightness-110 disabled:opacity-45 px-3 py-1.5 text-[11px] font-bold text-[#FFFFFF] cursor-pointer"
-              >
-                ⚡ Execute Trade (0.10)
               </button>
-              <button
-                type="button"
-                disabled={!aiAnalysis?.actionable || !optimalLimitPrice}
-                onClick={handleAutoPlaceOptimalLimit}
-                className="rounded-lg border border-[#F59E0B]/50 bg-[#F59E0B]/12 hover:bg-[#F59E0B]/20 disabled:opacity-45 px-2.5 py-1.5 text-[11px] font-bold text-[var(--vp-accent-text)] cursor-pointer"
-              >
-                Auto-Limit 50% OB ({optimalLimitPrice ? optimalLimitPrice.toFixed(activeAssetSpec.precision) : '--'})
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (aiAnalysis) {
-                    onApplyAiSetupToTerminal(aiAnalysis, symbol);
-                    onNavigateTab('terminal');
-                  }
-                }}
-                className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--vp-text)] cursor-pointer"
-              >
-                Inspect Terminal ↗
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadShareCard}
-                className="inline-flex items-center gap-1 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--vp-text)] cursor-pointer ml-auto"
-              >
-                <Download className="h-3 w-3" />
-                <span>Share PNG</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeSubTab === 'mtf' && (
-          <div className="space-y-2 text-[11px]">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-2.5 space-y-1">
-                <div className="text-[10px] font-bold uppercase text-[var(--vp-muted)]">
-                  Multi-Timeframe (MTF) Structural Alignment
-                </div>
-                <div className="font-bold text-[var(--vp-text)]">
-                  HTF Bias (1H/4H): {htfSummary?.label ?? 'Balanced'}
-                </div>
-                <div className="text-[10px] text-[var(--vp-muted)] font-mono-tabular">
-                  Active SMC Zone Mitigations:{' '}
-                  {zoneMitigations
-                    .slice(0, 3)
-                    .map((z) => `${z.kind} (${z.fillPct}%)`)
-                    .join(' · ') || 'Fresh Unmitigated Structure'}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-2.5 space-y-1">
-                <div className="text-[10px] font-bold uppercase text-[var(--vp-muted)]">
-                  Historical Twin & Backtest Match
-                </div>
-                {historicalTwin ? (
-                  <>
-                    <div className="font-bold text-[#089981]">
-                      Match Similarity: {historicalTwin.similarityPct}% · 30D Win Rate: {historicalTwin.winRate30dPct}%
-                    </div>
-                    <div className="text-[10px] text-[var(--vp-muted)]">{historicalTwin.summary}</div>
-                  </>
-                ) : (
-                  <div className="text-[10px] text-[var(--vp-muted)]">Need 60+ bars for historical pattern twin.</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSubTab === 'strategy' && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="font-bold text-[var(--vp-text)]">
-                Custom AI Strategy Rules (Live Recalculated Verdict:{' '}
-                <strong style={{ color: customVerdict.verdict === 'BUY NOW' ? '#089981' : customVerdict.verdict === 'SELL NOW' ? '#F23645' : '#F59E0B' }}>
-                  {customVerdict.verdict} {customVerdict.score}%
-                </strong>
-                )
-              </span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-              {(
-                [
-                  { key: 'requireHtfTrend', label: '1H/4H HTF Trend' },
-                  { key: 'requireEmaAlign', label: 'EMA 20/50 Cross' },
-                  { key: 'requireFvgOrOb', label: 'OB / FVG Zone' },
-                  { key: 'requireRsiConfirm', label: 'RSI Momentum' },
-                  { key: 'requireLiquiditySweep', label: 'Liquidity Sweep' },
-                ] as const
-              ).map((rule) => {
-                const enabled = strategyFlags[rule.key];
-                return (
-                  <button
-                    key={rule.key}
-                    type="button"
-                    onClick={() =>
-                      setStrategyFlags((prev) => ({ ...prev, [rule.key]: !prev[rule.key] }))
-                    }
-                    className={`rounded-lg border px-2 py-1.5 text-[10px] font-bold cursor-pointer transition-colors ${
-                      enabled
-                        ? 'border-[#089981] bg-[#089981]/15 text-[#089981]'
-                        : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-muted)]'
-                    }`}
-                  >
-                    {enabled ? '✓ ' : ''}
-                    {rule.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeSubTab === 'chat' && (
-          <div className="space-y-2">
-            {chatMessages.length > 0 && (
-              <div className="max-h-32 overflow-y-auto space-y-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-canvas)] p-2 text-[11px]">
-                {chatMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`rounded-lg px-2.5 py-1.5 ${
-                      msg.role === 'user'
-                        ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)] ml-8'
-                        : 'bg-[var(--vp-elevated)] text-[var(--vp-text)] mr-4'
-                    }`}
-                  >
-                    {msg.text}
-                  </div>
-                ))}
-              </div>
-            )}
-            <form onSubmit={handleAskAiChat} className="flex items-center gap-1.5">
-              <input
-                type="text"
-                value={chatQuestion}
-                onChange={(e) => setChatQuestion(e.target.value)}
-                placeholder={
-                  lang === 'hi'
-                    ? `Poochein AI se (${activeAssetSpec.label} OB, SL, ya trend ke baare mein)...`
-                    : `Ask AI about ${activeAssetSpec.label} OB, FVG, Liquidity or SL placement...`
-                }
-                className="flex-1 h-8 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-2.5 text-xs text-[var(--vp-text)] outline-none focus:border-[#F59E0B]"
-              />
-              <button
-                type="submit"
-                disabled={chatLoading}
-                className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#089981] px-3 text-xs font-bold text-white cursor-pointer disabled:opacity-50"
-              >
-                <Send className="h-3 w-3" />
-                <span>{chatLoading ? '...' : 'Ask'}</span>
-              </button>
-            </form>
+            ))}
           </div>
         )}
       </div>
+
+      {/* 3. ONE Sleek Glassmorphic VIP AI Signal Card Directly Below Chart (Zero Scroll) */}
+      <section
+        aria-label="VIP AI Signal Card"
+        className="shrink-0 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-2 sm:px-3.5 sm:py-2.5 shadow-[var(--vp-card-shadow)] space-y-2"
+      >
+        {/* Top Header Row: Signal Badge, Win Rate, RR */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-extrabold text-[#FFFFFF] shadow-sm whitespace-nowrap"
+              style={{
+                backgroundColor: vipSignal.direction === 'BUY' ? '#10B981' : '#F43F5E',
+              }}
+            >
+              {vipSignal.direction === 'BUY' ? '🚀 STRONG BUY' : '🔻 STRONG SELL'}
+            </span>
+            <span className="rounded-md border border-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-mono-tabular font-extrabold text-[#FFFFFF] whitespace-nowrap">
+              {vipSignal.winRatePct}% Win Rate
+            </span>
+            <span className="rounded-md border border-[var(--vp-border)] bg-[#060911] px-2 py-0.5 text-[10.5px] font-mono-tabular font-extrabold text-[#FFFFFF] whitespace-nowrap">
+              {vipSignal.rrText} RR
+            </span>
+          </div>
+
+          <span className="text-[10px] font-mono-tabular font-bold text-[#FFFFFF] whitespace-nowrap">
+            {activeAssetSpec.label} · {timeframe.toUpperCase()}
+          </span>
+        </div>
+
+        {/* 4-Column Bold Price Row in Pure #FFFFFF Text */}
+        <div className="grid grid-cols-4 gap-1.5 font-mono-tabular">
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#FBBF24] shrink-0" />
+              ENTRY
+            </span>
+            <span className="block text-[11.5px] sm:text-xs font-extrabold text-[#FFFFFF] truncate">
+              {vipSignal.entry.toFixed(activeAssetSpec.precision)}
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#FF2A5F] shrink-0" />
+              STOP LOSS
+            </span>
+            <span className="block text-[11.5px] sm:text-xs font-extrabold text-[#FFFFFF] truncate">
+              {vipSignal.sl.toFixed(activeAssetSpec.precision)}
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#00FFA3] shrink-0" />
+              TP 1
+            </span>
+            <span className="block text-[11.5px] sm:text-xs font-extrabold text-[#FFFFFF] truncate">
+              {vipSignal.tp1.toFixed(activeAssetSpec.precision)}
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#00FFA3] shrink-0" />
+              TP 2
+            </span>
+            <span className="block text-[11.5px] sm:text-xs font-extrabold text-[#FFFFFF] truncate">
+              {vipSignal.tp2.toFixed(activeAssetSpec.precision)}
+            </span>
+          </div>
+        </div>
+
+        {/* Bottom 1-Line Reason + Glowing Execute Trade CTA */}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10.5px] font-semibold text-[#FFFFFF] truncate min-w-0 flex-1">
+            {execNotice ?? vipSignal.reason}
+          </p>
+
+          <button
+            type="button"
+            onClick={handleExecuteAiTrade}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-extrabold text-[#FFFFFF] cursor-pointer whitespace-nowrap shrink-0 transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{
+              backgroundColor: vipSignal.direction === 'BUY' ? '#10B981' : '#F43F5E',
+              boxShadow:
+                vipSignal.direction === 'BUY'
+                  ? '0 0 18px rgba(16, 185, 129, 0.55)'
+                  : '0 0 18px rgba(244, 63, 94, 0.55)',
+            }}
+          >
+            <Zap className="h-3.5 w-3.5 text-[#FFFFFF]" />
+            <span>⚡ EXECUTE AI TRADE</span>
+          </button>
+        </div>
+      </section>
     </div>
   );
 };

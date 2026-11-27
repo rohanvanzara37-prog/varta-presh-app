@@ -263,7 +263,7 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
       ctx.roundRect(x1, y1, boxW, boxH, 4);
       ctx.fillStyle = bg;
       ctx.fill();
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.25;
       ctx.strokeStyle = border;
       ctx.stroke();
 
@@ -514,30 +514,38 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
         }
       }
 
-      // 2E. Fibonacci 50% Equilibrium + Time Zones + Elliott Waves + Harmonics
+      // 2E. Fibonacci Levels (38.2%, 50%, 61.8% Golden Zone, 78.6%) — crisp 2px lines + high-contrast badges
       if (showFibWaves && fibData) {
         for (const lvl of fibData.levels) {
           const y = toY(lvl.price);
           if (y === null || y < 8 || y > height - 8) continue;
-          const color = lvl.isEquilibrium ? '#F59E0B' : '#A855F7';
+          const isGolden = Math.abs(lvl.ratio - 0.618) < 0.005;
+          const isHalf = Math.abs(lvl.ratio - 0.5) < 0.005;
+          const color = isGolden ? '#F59E0B' : '#C084FC';
+          const badgeText = isGolden
+            ? `61.8% Golden • ${lvl.price.toFixed(precision)}`
+            : isHalf
+              ? `50.0% • ${lvl.price.toFixed(precision)}`
+              : `${(lvl.ratio * 100).toFixed(1)}% • ${lvl.price.toFixed(precision)}`;
           ctx.save();
+          ctx.globalAlpha = 1;
           ctx.strokeStyle = color;
-          ctx.lineWidth = lvl.isEquilibrium ? 1.4 : 0.8;
-          ctx.setLineDash(lvl.isEquilibrium ? [5, 3] : [2, 3]);
+          ctx.lineWidth = 2;
+          ctx.setLineDash(isGolden ? [] : [8, 4]);
           ctx.beginPath();
-          ctx.moveTo(width * 0.35, y);
-          ctx.lineTo(plotRight, y);
+          ctx.moveTo(10, Math.round(y) + 0.5);
+          ctx.lineTo(plotRight, Math.round(y) + 0.5);
           ctx.stroke();
           ctx.restore();
 
           drawPillLabel(
-            `Fib ${lvl.label}`,
-            width * 0.36,
+            badgeText,
+            10,
             y,
-            isLight ? 'rgba(255,255,255,0.92)' : 'rgba(13,17,23,0.90)',
+            isLight ? 'rgba(255,255,255,0.96)' : '#0F1626',
             color,
-            color,
-            { align: 'left', fontSize: 8.5 }
+            isLight ? '#131722' : '#FFFFFF',
+            { align: 'left', fontSize: 9, checkCollision: false }
           );
         }
 
@@ -678,35 +686,33 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           }
         }
 
-        // 4. Support & Resistance Horizontal Levels + Touch-Count Strength Badge
+        // 4. Support (#00E5FF) & Resistance (#FF4D6D) Horizontal 2px Solid Levels + Crisp Dark Pill White Text
         if (showSupportResistance) {
           for (let i = 0; i < structure.srLevels.length; i += 1) {
             const sr = structure.srLevels[i];
             const y = toY(sr.price);
             if (y === null || y < 4 || y > height - 4) continue;
             const xStart = Math.max(0, toX(sr.startTime) ?? 0);
-            const isPrimary = sr.label === 'S1' || sr.label === 'R1';
+            const lineColor = sr.kind === 'support' ? '#00E5FF' : '#FF4D6D';
 
             ctx.save();
-            ctx.strokeStyle = sr.color;
-            ctx.lineWidth = isPrimary ? 1.5 : 1;
-            if (!isPrimary) ctx.setLineDash([5, 4]);
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(xStart, y);
             ctx.lineTo(plotRight, y);
             ctx.stroke();
             ctx.restore();
 
-            const tagX = canPlaceRightTag(y, 20) ? plotRight - 6 : plotRight - 96;
+            const tagX = canPlaceRightTag(y, 20) ? plotRight - 6 : plotRight - 104;
             if (tagX === plotRight - 6) usedRightYs.push(y);
-            const touchStr = sr.touches >= 2 ? `(${sr.touches}x) ` : '';
             drawPillLabel(
-              `${sr.label} ${touchStr}${sr.price.toFixed(precision)}`,
+              `${sr.label} • ${sr.price.toFixed(precision)}`,
               tagX,
               y,
-              isLight ? 'rgba(255,255,255,0.96)' : 'rgba(13,17,23,0.92)',
-              sr.color,
-              sr.kind === 'support' ? '#059669' : '#DC2626',
+              isLight ? 'rgba(255,255,255,0.96)' : '#0F1626',
+              lineColor,
+              isLight ? lineColor : '#FFFFFF',
               { align: 'right', fontSize: 9 }
             );
           }
@@ -724,8 +730,9 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
               if (pts.length < 2) continue;
               ctx.save();
               ctx.strokeStyle = dt.color;
-              ctx.lineWidth = 1.4;
-              ctx.setLineDash([4, 3]);
+              ctx.lineWidth = 2.2;
+              ctx.shadowColor = dt.color;
+              ctx.shadowBlur = 4;
               ctx.beginPath();
               ctx.moveTo(pts[0].x, pts[0].y);
               for (let j = 1; j < pts.length; j += 1) ctx.lineTo(pts[j].x, pts[j].y);
@@ -904,20 +911,47 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
         }
       }
 
-      // 7C. Ghost Candles What-If Projected Path
+      // 7C. Ghost Candles What-If Projected Path (2.5px Glowing Cyan/Gold Vector + Directional Arrowhead)
       if (showGhostCandles && ghostPath && ghostPath.primary.length >= 2) {
         const pPts = ghostPath.primary
           .map((p) => ({ x: toX(p.time), y: toY(p.price) }))
           .filter((p): p is { x: number; y: number } => p.x !== null && p.y !== null);
         if (pPts.length >= 2) {
+          const firstPt = pPts[0];
+          const lastPt = pPts[pPts.length - 1];
+          const prevPt = pPts[pPts.length - 2];
           ctx.save();
-          ctx.strokeStyle = '#089981';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5, 4]);
+          const vecGrad = ctx.createLinearGradient(firstPt.x, firstPt.y, lastPt.x, lastPt.y);
+          vecGrad.addColorStop(0, '#00E5FF');
+          vecGrad.addColorStop(1, '#F59E0B');
+          ctx.strokeStyle = vecGrad;
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.shadowColor = 'rgba(0, 229, 255, 0.75)';
+          ctx.shadowBlur = 8;
           ctx.beginPath();
-          ctx.moveTo(pPts[0].x, pPts[0].y);
+          ctx.moveTo(firstPt.x, firstPt.y);
           for (let i = 1; i < pPts.length; i += 1) ctx.lineTo(pPts[i].x, pPts[i].y);
           ctx.stroke();
+
+          // Crisp Directional Arrowhead at tip
+          const angle = Math.atan2(lastPt.y - prevPt.y, lastPt.x - prevPt.x);
+          const headLen = 9;
+          ctx.fillStyle = '#F59E0B';
+          ctx.shadowColor = 'rgba(245, 158, 11, 0.85)';
+          ctx.beginPath();
+          ctx.moveTo(lastPt.x, lastPt.y);
+          ctx.lineTo(
+            lastPt.x - headLen * Math.cos(angle - Math.PI / 6),
+            lastPt.y - headLen * Math.sin(angle - Math.PI / 6)
+          );
+          ctx.lineTo(
+            lastPt.x - headLen * Math.cos(angle + Math.PI / 6),
+            lastPt.y - headLen * Math.sin(angle + Math.PI / 6)
+          );
+          ctx.closePath();
+          ctx.fill();
           ctx.restore();
         }
         const iPts = ghostPath.invalidation
@@ -925,9 +959,9 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           .filter((p): p is { x: number; y: number } => p.x !== null && p.y !== null);
         if (iPts.length >= 2) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(242, 54, 69, 0.65)';
-          ctx.lineWidth = 1.4;
-          ctx.setLineDash([3, 4]);
+          ctx.strokeStyle = '#FF2A5F';
+          ctx.lineWidth = 1.6;
+          ctx.setLineDash([4, 4]);
           ctx.beginPath();
           ctx.moveTo(iPts[0].x, iPts[0].y);
           for (let i = 1; i < iPts.length; i += 1) ctx.lineTo(iPts[i].x, iPts[i].y);
@@ -1145,12 +1179,21 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
   }, []);
 
   useEffect(() => {
+    let rafHandle: number | null = null;
+    const scheduleDraw = () => {
+      if (rafHandle !== null) return;
+      rafHandle = window.requestAnimationFrame(() => {
+        rafHandle = null;
+        drawFrame();
+      });
+    };
     if (redrawRef) {
-      redrawRef.current = drawFrame;
+      redrawRef.current = scheduleDraw;
     }
-    drawFrame();
+    scheduleDraw();
     return () => {
-      if (redrawRef && redrawRef.current === drawFrame) {
+      if (rafHandle !== null) window.cancelAnimationFrame(rafHandle);
+      if (redrawRef && redrawRef.current === scheduleDraw) {
         redrawRef.current = null;
       }
     };

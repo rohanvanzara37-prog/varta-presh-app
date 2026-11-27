@@ -72,7 +72,6 @@ interface DemoAccountDrawerProps {
   onSetCustomBalance: (balance: number) => void;
 }
 
-const LEVERAGES: DemoLeverage[] = [50, 100, 200, 500, 1000];
 const LOT_PRESETS = [0.01, 0.05, 0.1, 0.5, 1.0];
 const EMOTION_TAGS: TradeEmotionTag[] = ['Plan', 'Disciplined', 'FOMO', 'Revenge', 'Greed'];
 
@@ -439,20 +438,10 @@ export const DemoAccountDrawer: React.FC<DemoAccountDrawerProps> = ({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold text-[var(--vp-muted)]">Leverage</span>
-              <div className="flex items-center gap-1 rounded-lg bg-[var(--vp-elevated)] p-0.5">
-                {LEVERAGES.map((lev) => (
-                  <button
-                    key={lev}
-                    type="button"
-                    onClick={() => onChangeLeverage(lev)}
-                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-mono-tabular font-bold cursor-pointer ${
-                      account.leverage === lev ? 'bg-[var(--vp-primary)] text-[var(--vp-primary-fg)]' : 'text-[var(--vp-muted)]'
-                    }`}
-                  >
-                    1:{lev}
-                  </button>
-                ))}
+              <span className="text-[11px] font-bold text-[var(--vp-muted)]">Leverage (Default)</span>
+              <div className="inline-flex items-center gap-1.5 rounded-lg border border-[#F59E0B]/40 bg-[#F59E0B]/15 px-2.5 py-1 text-[10.5px] font-mono-tabular font-extrabold text-[var(--vp-text)]">
+                <Lock className="h-3 w-3 text-[#F59E0B]" />
+                <span>1:1000 Locked</span>
               </div>
             </div>
           </div>

@@ -715,7 +715,7 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     startTime: s1.startTime,
     endTime: latestBar.time,
     touches: s1.touches,
-    color: '#089981',
+    color: '#00E5FF',
   });
 
   const s2 =
@@ -736,7 +736,7 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
       startTime: s2.startTime,
       endTime: latestBar.time,
       touches: s2.touches,
-      color: 'rgba(5, 150, 105, 0.78)',
+      color: '#00E5FF',
     });
   }
 
@@ -753,7 +753,7 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
     startTime: r1.startTime,
     endTime: latestBar.time,
     touches: r1.touches,
-    color: '#F23645',
+    color: '#FF4D6D',
   });
 
   const r2 = resClusters.find((c) => Math.abs(c.price - r1.price) > tol * 1.3);
@@ -765,7 +765,7 @@ export function analyzeChartStructure(rawCandles: TerminalCandle[]): ChartStruct
       startTime: r2.startTime,
       endTime: latestBar.time,
       touches: r2.touches,
-      color: 'rgba(242, 54, 69, 0.72)',
+      color: '#FF4D6D',
     });
   }
 
