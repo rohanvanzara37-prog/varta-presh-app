@@ -117,7 +117,7 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
     return marketsCache.payload;
   }
 
-  const [xauRes, xagRes, sqXau, sqEur, cgRes, btcCbRes, xauYQuote, xagYQuote, eurYQuote, sp500Quote, oilQuote] =
+  const [xauRes, xagRes, sqXau, sqEur, cgRes, btcCbRes, xauYQuote, xagYQuote, eurYQuote, sp500Quote, us30Quote, oilQuote] =
     await Promise.all([
       fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAU'),
       fetchJsonWithTimeout<{ price?: number }>('https://api.gold-api.com/price/XAG'),
@@ -133,6 +133,7 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
       fetchYahooQuote('SI=F'),
       fetchYahooQuote('EURUSD=X', 4),
       fetchYahooQuote('^GSPC'),
+      fetchYahooQuote('^DJI'),
       fetchYahooQuote('CL=F'),
     ]);
 
@@ -160,6 +161,7 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
   const bnbUsd = Number((cgRes?.binancecoin?.usd ?? 624.8).toFixed(2));
   const xrpUsd = Number((cgRes?.ripple?.usd ?? 1.12).toFixed(4));
   const sp500Val = sp500Quote?.price ?? 5980.0;
+  const us30Val = us30Quote?.price ?? 44250.0;
   const oilVal = oilQuote?.price ?? 71.25;
 
   const anyLive = Boolean(
@@ -226,6 +228,16 @@ async function getLiveMarketsPayload(): Promise<LiveMarketsPayload> {
         livePrice: sp500Val,
         changePct24h: sp500Quote?.changePct ?? 0.45,
         provider: sp500Quote ? 'US Market Live' : 'Index Snapshot',
+      },
+      {
+        id: 'us30',
+        tvSymbol: 'TVC:DJI',
+        displayPair: 'US30',
+        name: 'Dow Jones 30 (US30)',
+        category: 'Indices',
+        livePrice: us30Val,
+        changePct24h: us30Quote?.changePct ?? 0.38,
+        provider: us30Quote ? 'US Market Live' : 'Index Snapshot',
       },
       {
         id: 'usoil',
@@ -1276,7 +1288,7 @@ async function startServer() {
       source: 'yahoo' | 'binance' | 'spot-cfd';
       ticker: string;
       dailyTicker?: string;
-      spotAnchor?: 'XAU' | 'XAG' | 'US500' | 'EURUSD';
+      spotAnchor?: 'XAU' | 'XAG' | 'US500' | 'US30' | 'EURUSD';
       precision: number;
       inceptionLabel: string;
     }
@@ -1310,6 +1322,14 @@ async function startServer() {
       spotAnchor: 'US500',
       precision: 2,
       inceptionLabel: 'Dec 1927',
+    },
+    US30: {
+      source: 'yahoo',
+      ticker: 'YM=F',
+      dailyTicker: '^DJI',
+      spotAnchor: 'US30',
+      precision: 2,
+      inceptionLabel: 'Jan 1985',
     },
     USOIL: {
       source: 'yahoo',
@@ -1975,6 +1995,10 @@ async function startServer() {
       const q = await fetchYahooQuote('^GSPC');
       return q?.price ?? null;
     }
+    if (spec.spotAnchor === 'US30') {
+      const q = await fetchYahooQuote('^DJI');
+      return q?.price ?? null;
+    }
     if (rawSym === 'USOIL') {
       const q = await fetchYahooQuote('CL=F');
       return q?.price ?? null;
@@ -2153,7 +2177,9 @@ async function startServer() {
                   ? 33.2
                   : rawSym === 'US500'
                     ? 6010.0
-                    : 72.5;
+                    : rawSym === 'US30'
+                      ? 44250.0
+                      : 72.5;
           const ivSec = INTERVAL_SECONDS[rawIv] ?? 900;
           const nowBucket = Math.floor(Math.floor(Date.now() / 1000) / ivSec) * ivSec;
           const totalSynth = 120;
@@ -2525,14 +2551,20 @@ async function startServer() {
       trend?: number;
       score?: number;
       direction?: string;
+      question?: string;
+      lang?: 'en' | 'hi';
     };
 
+    const langLabel = body.lang === 'hi' ? 'Hindi (simple Roman or Devanagari)' : 'English';
     const prompt =
+      `Response Language: ${langLabel}\n` +
       `Market Symbol: ${String(body.symbol ?? 'XAU/USD')}\n` +
       `Timeframe: ${String(body.timeframe ?? '15m')}\n` +
       `Current Price: ${body.price ?? 3500}\n` +
       `Technical Bias: ${body.direction ?? 'BUY'} (Confluence Score: ${body.score ?? 80}%)\n` +
-      `Perform an institutional Smart Price Action & Order Block analysis. Provide Entry, Tight Stop Loss, TP1 (1.5R), TP2 (2.5R), Institutional Thesis, and Risk Note.`;
+      (body.question
+        ? `User Question on Chart: ${String(body.question).slice(0, 260)}\nAnswer this chart question directly inside institutionalThesis while providing clean Entry, Tight SL, TP1, TP2, and Risk Note.`
+        : `Perform an institutional Smart Price Action & Order Block analysis. Provide Entry, Tight Stop Loss, TP1 (1.5R), TP2 (2.5R), Institutional Thesis, and Risk Note.`);
 
     try {
       const ai = new GoogleGenAI({

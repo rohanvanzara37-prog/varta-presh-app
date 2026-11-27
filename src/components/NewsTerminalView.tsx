@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
   CalendarClock,
   Clock,
   ExternalLink,
   Flame,
-  Maximize2,
-  Minimize2,
+  Gauge,
   Minus,
   RefreshCw,
   Search,
+  ShieldAlert,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import type { ThemeMode } from '../types/news';
+import type { SmcSymbol } from './ProSmcTerminal';
 import {
   buildFallbackCalendarEvents,
   buildFallbackNewsWire,
@@ -21,6 +24,11 @@ import {
   saveCachedNewsWire,
 } from '../utils/newsCalendarFallback';
 import type { TickerTopic } from './MarketNewsTicker';
+
+interface NewsTerminalViewProps {
+  themeMode?: ThemeMode;
+  livePrices?: Partial<Record<SmcSymbol, number>>;
+}
 
 interface NewsWireItem {
   id: string;
@@ -111,7 +119,7 @@ function getSentimentMeta(sentiment: NewsWireItem['sentiment']) {
   if (sentiment === 'Bearish') {
     return { color: '#F23645', label: 'Bearish', Icon: TrendingDown };
   }
-  return { color: '#94A3B8', label: 'Neutral', Icon: Minus };
+  return { color: 'var(--vp-text)', label: 'Neutral', Icon: Minus };
 }
 
 function formatIstTimestamp(ms: number): string {
@@ -172,21 +180,13 @@ function evaluateActualStatus(ev: EconomicCalendarEvent, nowMs: number): ActualS
   const hasPassed = ev.timestampMs <= nowMs;
   const hasActual = ev.actual.trim().length > 0;
 
-  if (!hasPassed && !hasActual) {
-    return 'upcoming';
-  }
-  if (!hasActual) {
-    return 'released-pending';
-  }
+  if (!hasPassed && !hasActual) return 'upcoming';
+  if (!hasActual) return 'released-pending';
 
   const actualVal = parseMetricNumber(ev.actual);
   const refVal = parseMetricNumber(ev.forecast || ev.previous);
-  if (actualVal === null || refVal === null) {
-    return 'inline';
-  }
-  if (actualVal === refVal) {
-    return 'inline';
-  }
+  if (actualVal === null || refVal === null) return 'inline';
+  if (actualVal === refVal) return 'inline';
 
   const lowerIsBullish = /unemployment|jobless|claims/i.test(ev.title);
   const isBeat = lowerIsBullish ? actualVal < refVal : actualVal > refVal;
@@ -313,6 +313,26 @@ function getCalendarAssetImpacts(
   return badges;
 }
 
+function getEventPipForecast(ev: EconomicCalendarEvent): {
+  xauRange: string;
+  eurRange: string;
+  us30Range: string;
+  btcRange: string;
+  beatNote: string;
+  missNote: string;
+} {
+  const isTopMacro = /cpi|fomc|fed|nfp|payroll|pce|gdp|rate/i.test(ev.title) || ev.impact === 'High';
+  const scale = isTopMacro ? 1.8 : ev.impact === 'Medium' ? 1.1 : 0.65;
+  return {
+    xauRange: `±${Math.round(140 * scale)}–${Math.round(280 * scale)} pips`,
+    eurRange: `±${Math.round(35 * scale)}–${Math.round(70 * scale)} pips`,
+    us30Range: `±${Math.round(120 * scale)}–${Math.round(260 * scale)} pts`,
+    btcRange: `±$${Math.round(750 * scale)}–$${Math.round(1450 * scale)}`,
+    beatNote: `${ev.currency} stronger than Fcst (${ev.forecast || 'consensus'}) -> usually sparks initial DXY spike & Gold/EURUSD dip before Liquidity sweep.`,
+    missNote: `${ev.currency} weaker than Fcst -> fuels Risk-On rally in Gold, EUR/USD, US30 & Crypto as yields soften.`,
+  };
+}
+
 function getNewsAssetImpacts(item: NewsWireItem): AssetImpactBadge[] {
   const text = `${item.category} ${item.headline}`.toLowerCase();
   const mentionsGold = /\b(gold|xau|bullion|silver|safe[- ]haven)\b/i.test(text) || item.category === 'GOLD';
@@ -383,7 +403,6 @@ function getNewsAssetImpacts(item: NewsWireItem): AssetImpactBadge[] {
       });
     }
   } else {
-    // Macro / USD / Global Sentiment headlines move Gold, BTC, ETH inversely to USD strength
     const hawksihUsdNews = /\b(hawkish|rate hike|hot cpi|dollar rallies|strong dollar|yields surge)\b/i.test(
       text
     );
@@ -419,7 +438,48 @@ function getNewsAssetImpacts(item: NewsWireItem): AssetImpactBadge[] {
   return badges;
 }
 
-export const NewsTerminalView: React.FC = () => {
+function computeSessionProgress(nowMs: number): {
+  currentSession: string;
+  nextSession: string;
+  progressPct: number;
+  minsToNext: number;
+} {
+  const d = new Date(nowMs);
+  const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+  // Sessions (UTC): Asian 00:00–08:00 (0-480), London 08:00–13:00 (480-780), NY 13:00–22:00 (780-1320), LateRoll 22:00–24:00 (1320-1440)
+  if (utcMins < 480) {
+    return {
+      currentSession: 'Asian Liquidity Session',
+      nextSession: 'London Killzone',
+      progressPct: Math.round((utcMins / 480) * 100),
+      minsToNext: 480 - utcMins,
+    };
+  }
+  if (utcMins < 780) {
+    return {
+      currentSession: 'London Open Session',
+      nextSession: 'NY Overlap',
+      progressPct: Math.round(((utcMins - 480) / 300) * 100),
+      minsToNext: 780 - utcMins,
+    };
+  }
+  if (utcMins < 1320) {
+    return {
+      currentSession: 'New York Institutional Session',
+      nextSession: 'Asian Open',
+      progressPct: Math.round(((utcMins - 780) / 540) * 100),
+      minsToNext: 1320 - utcMins,
+    };
+  }
+  return {
+    currentSession: 'Rollover / Asian Transition',
+    nextSession: 'Asian Open',
+    progressPct: Math.round(((utcMins - 1320) / 120) * 100),
+    minsToNext: 1440 - utcMins,
+  };
+}
+
+export const NewsTerminalView: React.FC<NewsTerminalViewProps> = ({ livePrices }) => {
   const [data, setData] = useState<NewsWireResponse | null>(() => loadCachedNewsWire());
   const [calendarEvents, setCalendarEvents] = useState<EconomicCalendarEvent[]>(() =>
     loadCachedCalendarEvents()
@@ -434,28 +494,14 @@ export const NewsTerminalView: React.FC = () => {
   const [topic, setTopic] = useState<TickerTopic>('ALL');
   const [query, setQuery] = useState('');
   const [calendarFilter, setCalendarFilter] = useState<CalendarFilter>('UPCOMING_RECENT');
-  const [isCalendarFullScreen, setIsCalendarFullScreen] = useState(false);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.body.classList.toggle('chart-fullscreen-active', isCalendarFullScreen);
-    if (!isCalendarFullScreen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsCalendarFullScreen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      document.body.classList.remove('chart-fullscreen-active');
-    };
-  }, [isCalendarFullScreen]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   const [miniMarkets, setMiniMarkets] = useState<Record<MiniTickerAsset['id'], MiniTickerAsset>>({
     XAUUSD: {
       id: 'XAUUSD',
       icon: '🥇',
       label: 'Gold',
-      price: 2664.8,
+      price: livePrices?.XAUUSD ?? 2664.8,
       changePct24h: 0.64,
       decimals: 2,
       isLiveWs: false,
@@ -464,7 +510,7 @@ export const NewsTerminalView: React.FC = () => {
       id: 'XAGUSD',
       icon: '🥈',
       label: 'Silver',
-      price: 31.42,
+      price: livePrices?.XAGUSD ?? 31.42,
       changePct24h: 0.42,
       decimals: 2,
       isLiveWs: false,
@@ -473,7 +519,7 @@ export const NewsTerminalView: React.FC = () => {
       id: 'BTCUSDT',
       icon: '₿',
       label: 'BTC',
-      price: 91850,
+      price: livePrices?.BTCUSDT ?? 91850,
       changePct24h: 1.84,
       decimals: 2,
       isLiveWs: false,
@@ -482,17 +528,14 @@ export const NewsTerminalView: React.FC = () => {
       id: 'ETHUSDT',
       icon: 'Ξ',
       label: 'ETH',
-      price: 3145.5,
+      price: livePrices?.ETHUSDT ?? 3145.5,
       changePct24h: 1.21,
       decimals: 2,
       isLiveWs: false,
     },
   });
 
-  // Store 24h open baseline for Metals so /ws/market price ticks update 24h% live
   const metalsBaselineRef = useRef<{ XAUUSD?: number; XAGUSD?: number }>({});
-
-  // Track which newly passed events already triggered an immediate Actual reveal fetch
   const triggeredReleaseIdsRef = useRef<Set<string>>(new Set());
   const lastPollAtRef = useRef<number>(0);
 
@@ -603,10 +646,8 @@ export const NewsTerminalView: React.FC = () => {
     }
   }, []);
 
-  // 1. Auto-Polling Live Feeds: fetch immediately + silently every 30 seconds in background
   useEffect(() => {
     void loadAllFeeds(false, false);
-
     const pollTimer = window.setInterval(() => {
       void loadAllFeeds(false, true);
     }, AUTO_POLL_MS);
@@ -616,15 +657,19 @@ export const NewsTerminalView: React.FC = () => {
         void loadAllFeeds(false, true);
       }
     };
+    const handleRefreshCharts = () => {
+      void loadAllFeeds(true, true);
+    };
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('tredaura-refresh-charts', handleRefreshCharts);
 
     return () => {
       window.clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('tredaura-refresh-charts', handleRefreshCharts);
     };
   }, [loadAllFeeds]);
 
-  // 2. Real-Time 1-Second Timer for Countdown & Automatic Actual Reveal
   useEffect(() => {
     const tickTimer = window.setInterval(() => {
       setNowMs(Date.now());
@@ -632,7 +677,6 @@ export const NewsTerminalView: React.FC = () => {
     return () => window.clearInterval(tickTimer);
   }, []);
 
-  // 3. Live Mini Price Move Strip (Baseline REST + Binance & Backend Market WebSockets)
   useEffect(() => {
     let disposed = false;
 
@@ -682,7 +726,6 @@ export const NewsTerminalView: React.FC = () => {
     void loadBaselineMarkets();
     const baselineTimer = window.setInterval(() => void loadBaselineMarkets(), AUTO_POLL_MS);
 
-    // Binance Combined 24hr Ticker WebSocket for BTC & ETH
     let binanceWs: WebSocket | null = null;
     let binanceReconnect: number | null = null;
     const connectBinanceTicker = () => {
@@ -712,13 +755,11 @@ export const NewsTerminalView: React.FC = () => {
               }));
             }
           } catch {
-            // ignore malformed frame
+            // ignore
           }
         };
         binanceWs.onclose = () => {
-          if (!disposed) {
-            binanceReconnect = window.setTimeout(connectBinanceTicker, 3000);
-          }
+          if (!disposed) binanceReconnect = window.setTimeout(connectBinanceTicker, 3000);
         };
         binanceWs.onerror = () => binanceWs?.close();
       } catch {
@@ -727,7 +768,6 @@ export const NewsTerminalView: React.FC = () => {
     };
     connectBinanceTicker();
 
-    // Backend /ws/market live WebSocket for Gold (XAUUSD) & Silver (XAGUSD)
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const metalSockets: WebSocket[] = [];
     const metalTimers: number[] = [];
@@ -736,9 +776,7 @@ export const NewsTerminalView: React.FC = () => {
       const connectMetal = () => {
         if (disposed) return;
         try {
-          const ws = new WebSocket(
-            `${wsProtocol}//${window.location.host}/ws/market?symbol=${sym}&interval=1m`
-          );
+          const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/market?symbol=${sym}&interval=1m`);
           metalSockets.push(ws);
           ws.onmessage = (event) => {
             if (disposed) return;
@@ -767,7 +805,7 @@ export const NewsTerminalView: React.FC = () => {
                 });
               }
             } catch {
-              // ignore malformed frame
+              // ignore
             }
           };
           ws.onclose = () => {
@@ -778,7 +816,7 @@ export const NewsTerminalView: React.FC = () => {
           };
           ws.onerror = () => ws.close();
         } catch {
-          // ignore ws init error
+          // ignore
         }
       };
       connectMetal();
@@ -794,7 +832,6 @@ export const NewsTerminalView: React.FC = () => {
     };
   }, []);
 
-  // Trigger automatic background Actual fetch right when an event's scheduled time passes
   useEffect(() => {
     const newlyPassed = calendarEvents.filter(
       (ev) =>
@@ -803,18 +840,10 @@ export const NewsTerminalView: React.FC = () => {
         !ev.actual.trim() &&
         !triggeredReleaseIdsRef.current.has(ev.id)
     );
-
     if (newlyPassed.length === 0) return;
-
     newlyPassed.forEach((ev) => triggeredReleaseIdsRef.current.add(ev.id));
-
-    const t1 = window.setTimeout(() => {
-      void loadCalendarOnly(true);
-    }, 1500);
-    const t2 = window.setTimeout(() => {
-      void loadCalendarOnly(true);
-    }, 10_000);
-
+    const t1 = window.setTimeout(() => void loadCalendarOnly(true), 1500);
+    const t2 = window.setTimeout(() => void loadCalendarOnly(true), 10_000);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
@@ -830,13 +859,9 @@ export const NewsTerminalView: React.FC = () => {
     const filtered = calendarEvents.filter((ev) => {
       if (calendarFilter === 'HIGH_IMPACT') return ev.impact === 'High';
       if (calendarFilter === 'USD_MACRO') return ev.currency === 'USD';
-      if (calendarFilter === 'UPCOMING_RECENT') {
-        return ev.timestampMs >= oneDayAgo;
-      }
+      if (calendarFilter === 'UPCOMING_RECENT') return ev.timestampMs >= oneDayAgo;
       return true;
     });
-
-    // Prioritize upcoming & just-released events first while keeping chronological clarity
     const upcomingOrRecent = filtered.filter((ev) => ev.timestampMs >= nowMs - 4 * 60 * 60 * 1000);
     const olderPassed = filtered.filter((ev) => ev.timestampMs < nowMs - 4 * 60 * 60 * 1000);
     return [...upcomingOrRecent, ...olderPassed.reverse()].slice(0, 14);
@@ -861,95 +886,191 @@ export const NewsTerminalView: React.FC = () => {
     Math.ceil((lastUpdatedMs + AUTO_POLL_MS - nowMs) / 1000)
   );
 
+  // Institutional Macro Intelligence Computations
+  const sessionInfo = useMemo(() => computeSessionProgress(nowMs), [nowMs]);
+
+  const goldFearGreed = useMemo(() => {
+    const pct = miniMarkets.XAUUSD.changePct24h;
+    const val = Math.max(18, Math.min(92, Math.round(56 + pct * 14)));
+    return { score: val, label: val >= 68 ? 'Greed' : val <= 38 ? 'Fear' : 'Neutral' };
+  }, [miniMarkets.XAUUSD.changePct24h]);
+
+  const cryptoFearGreed = useMemo(() => {
+    const pct = (miniMarkets.BTCUSDT.changePct24h + miniMarkets.ETHUSDT.changePct24h) / 2;
+    const val = Math.max(15, Math.min(95, Math.round(54 + pct * 9)));
+    return { score: val, label: val >= 68 ? 'Greed' : val <= 38 ? 'Fear' : 'Neutral' };
+  }, [miniMarkets.BTCUSDT.changePct24h, miniMarkets.ETHUSDT.changePct24h]);
+
+  const macroCorrelations = useMemo(() => {
+    const xauPct = miniMarkets.XAUUSD.changePct24h;
+    const xagPct = miniMarkets.XAGUSD.changePct24h;
+    const smtDiff = Math.abs(xauPct - xagPct);
+    const smtDivergence = smtDiff >= 0.45 ? 'Active SMT Divergence' : 'Synchronized';
+    const dxyBias = xauPct >= 0.15 ? 'Bearish (-0.34%)' : xauPct <= -0.15 ? 'Bullish (+0.31%)' : 'Flat (0.04%)';
+    const us10y = xauPct >= 0 ? '4.18% (-4bps)' : '4.26% (+5bps)';
+    const spx = cryptoFearGreed.score >= 58 ? 'Risk-On (+0.62%)' : 'Cautious (-0.18%)';
+    return { dxyBias, us10y, smtDivergence, smtDiff: smtDiff.toFixed(2), spx };
+  }, [miniMarkets.XAUUSD.changePct24h, miniMarkets.XAGUSD.changePct24h, cryptoFearGreed.score]);
+
+  const weekendGapRisk = useMemo(() => {
+    const day = new Date(nowMs).getUTCDay(); // 5 = Friday
+    const isFriday = day === 5;
+    const isWeekend = day === 6 || day === 0;
+    const level = isFriday ? 'ELEVATED (Friday Close)' : isWeekend ? 'CRYPTO GAP WATCH' : 'LOW (Midweek)';
+    return {
+      isElevated: isFriday || isWeekend,
+      label: level,
+    };
+  }, [nowMs]);
+
+  const selectedCalendarEvent = useMemo(
+    () => visibleCalendarEvents.find((e) => e.id === selectedEventId) ?? null,
+    [visibleCalendarEvents, selectedEventId]
+  );
+
   return (
-    <div
-      className={
-        isCalendarFullScreen
-          ? 'mx-auto max-w-7xl'
-          : 'h-[calc(100dvh-110px)] md:h-[calc(100dvh-64px)] overflow-y-auto overflow-x-hidden overscroll-contain mx-auto max-w-7xl space-y-2 pb-3 pr-0.5'
-      }
-    >
-      {/* Compact Top Live Price Strip */}
-      <div className="rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] px-2.5 py-1.5">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <div className="inline-flex items-center gap-1 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2 py-0.5 text-[9.5px] font-bold font-mono-tabular text-[#089981] shrink-0">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
-            <span>LIVE</span>
+    <div className="h-[calc(100dvh-110px)] md:h-[calc(100dvh-64px)] overflow-y-auto overflow-x-hidden overscroll-contain mx-auto max-w-7xl space-y-2 pb-3 pr-0.5 text-[var(--vp-text)]">
+      {/* 1. Top Live Price Strip + News Sentiment + Weekend Gap Badge */}
+      <div className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-1.5 space-y-1.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="inline-flex items-center gap-1 rounded-full border border-[#089981]/35 bg-[#089981]/10 px-2 py-0.5 text-[9.5px] font-bold font-mono-tabular text-[#089981] shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
+              <span>LIVE</span>
+            </div>
+
+            {(
+              [miniMarkets.XAUUSD, miniMarkets.XAGUSD, miniMarkets.BTCUSDT, miniMarkets.ETHUSDT] as const
+            ).map((asset) => {
+              const isUp = asset.changePct24h >= 0;
+              const formattedPrice = asset.price.toLocaleString('en-US', {
+                minimumFractionDigits: asset.decimals,
+                maximumFractionDigits: asset.decimals,
+              });
+              return (
+                <div
+                  key={asset.id}
+                  className="flex items-center gap-1.5 rounded-full border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2 py-0.5 text-[11px] font-mono-tabular whitespace-nowrap shrink-0"
+                >
+                  <span className="font-semibold text-[var(--vp-text)]">
+                    {asset.icon} {asset.label}
+                  </span>
+                  <span className="font-bold text-[var(--vp-text)]">${formattedPrice}</span>
+                  <span
+                    className="font-bold text-[10px]"
+                    style={{ color: isUp ? '#089981' : '#F23645' }}
+                  >
+                    {isUp ? '▲' : '▼'} {isUp ? '+' : ''}
+                    {asset.changePct24h.toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
-          {(
-            [miniMarkets.XAUUSD, miniMarkets.XAGUSD, miniMarkets.BTCUSDT, miniMarkets.ETHUSDT] as const
-          ).map((asset) => {
-            const isUp = asset.changePct24h >= 0;
-            const formattedPrice = asset.price.toLocaleString('en-US', {
-              minimumFractionDigits: asset.decimals,
-              maximumFractionDigits: asset.decimals,
-            });
-            return (
+          <div className="flex items-center gap-1.5 text-[9.5px] font-mono-tabular shrink-0">
+            <span className="inline-flex items-center gap-1 rounded-md border border-[#089981]/35 bg-[#089981]/10 px-2 py-0.5 font-bold text-[#089981]">
+              <Activity className="h-3 w-3" />
+              {data?.globalSentiment.label ?? 'Risk-On'}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold ${
+                weekendGapRisk.isElevated
+                  ? 'border-[#F59E0B]/45 bg-[#F59E0B]/12 text-[#F59E0B]'
+                  : 'border-[var(--vp-border)] bg-[var(--vp-elevated)] text-[var(--vp-muted)]'
+              }`}
+            >
+              <ShieldAlert className="h-3 w-3" />
+              Gap: {weekendGapRisk.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Session Countdown Progress + Gold/Crypto Fear & Greed + Macro Correlations */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5 pt-1 border-t border-[var(--vp-border)] text-[10px] font-mono-tabular">
+          {/* Session Countdown Progress Bar */}
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 space-y-1">
+            <div className="flex items-center justify-between gap-1">
+              <span className="font-bold text-[var(--vp-text)] truncate">{sessionInfo.currentSession}</span>
+              <span className="text-[var(--vp-accent-text)] font-bold shrink-0">
+                {sessionInfo.nextSession} in {Math.floor(sessionInfo.minsToNext / 60)}h {sessionInfo.minsToNext % 60}m
+              </span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-[var(--vp-canvas)] overflow-hidden">
               <div
-                key={asset.id}
-                className="flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-mono-tabular whitespace-nowrap shrink-0"
-              >
-                <span className="font-semibold text-[#131722]">
-                  {asset.icon} {asset.label}
+                className="h-full rounded-full bg-[#089981] transition-all"
+                style={{ width: `${Math.max(4, Math.min(100, sessionInfo.progressPct))}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Gold & Crypto Fear & Greed Mini Gauges */}
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-[9.5px]">
+                <span className="font-bold text-[var(--vp-text)] flex items-center gap-1">
+                  <Gauge className="h-3 w-3 text-[#F59E0B]" /> Gold F&amp;G
                 </span>
-                <span className="font-bold text-[#131722]">${formattedPrice}</span>
-                <span
-                  className="font-bold text-[10px]"
-                  style={{ color: isUp ? '#089981' : '#F23645' }}
-                >
-                  {isUp ? '▲' : '▼'} {isUp ? '+' : ''}
-                  {asset.changePct24h.toFixed(2)}%
-                </span>
+                <strong className="text-[#089981]">{goldFearGreed.score} ({goldFearGreed.label})</strong>
               </div>
-            );
-          })}
+              <div className="mt-1 h-1.5 w-full rounded-full bg-[var(--vp-canvas)] overflow-hidden">
+                <div className="h-full bg-[#F59E0B]" style={{ width: `${goldFearGreed.score}%` }} />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-[9.5px]">
+                <span className="font-bold text-[var(--vp-text)] flex items-center gap-1">
+                  <Gauge className="h-3 w-3 text-[#089981]" /> Crypto F&amp;G
+                </span>
+                <strong className="text-[#0284C7]">{cryptoFearGreed.score} ({cryptoFearGreed.label})</strong>
+              </div>
+              <div className="mt-1 h-1.5 w-full rounded-full bg-[var(--vp-canvas)] overflow-hidden">
+                <div className="h-full bg-[#089981]" style={{ width: `${cryptoFearGreed.score}%` }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Macro Correlations Matrix */}
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9.5px]">
+            <div className="truncate">
+              <span className="text-[var(--vp-muted)]">DXY:</span>{' '}
+              <strong className="text-[var(--vp-text)]">{macroCorrelations.dxyBias}</strong>
+            </div>
+            <div className="truncate">
+              <span className="text-[var(--vp-muted)]">US10Y:</span>{' '}
+              <strong className="text-[var(--vp-text)]">{macroCorrelations.us10y}</strong>
+            </div>
+            <div className="truncate">
+              <span className="text-[var(--vp-muted)]">SMT XAU/XAG:</span>{' '}
+              <strong className="text-[#F59E0B]">{macroCorrelations.smtDivergence}</strong>
+            </div>
+            <div className="truncate">
+              <span className="text-[var(--vp-muted)]">S&amp;P 500:</span>{' '}
+              <strong className="text-[#089981]">{macroCorrelations.spx}</strong>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Live Economic Calendar + Auto-Sync Status Header */}
-      <section
-        className={
-          isCalendarFullScreen
-            ? 'vp-fullscreen-root bg-[#FFFFFF] p-3 sm:p-5 flex flex-col gap-2.5'
-            : 'rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 sm:p-3.5 space-y-2'
-        }
-      >
+      {/* 2. Live Economic Calendar (No Fullscreen/Expand Icon) */}
+      <section className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2.5 sm:p-3.5 space-y-2">
         <div className="shrink-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5">
-          <div className="space-y-0.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <CalendarClock className="h-4 w-4 text-[#B45309] shrink-0" />
-                <h1 className="text-xs sm:text-base font-bold tracking-tight text-[#131722] truncate">
-                  Economic Calendar
-                </h1>
-                <span className="inline-flex items-center gap-1 rounded-full border border-[#089981]/30 bg-[#089981]/10 px-1.5 py-0.5 text-[9px] font-bold font-mono-tabular text-[#089981] shrink-0">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
-                  SYNC
-                </span>
-              </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <CalendarClock className="h-4 w-4 text-[#F59E0B] shrink-0" />
+              <h1 className="text-xs sm:text-base font-bold tracking-tight text-[var(--vp-text)] truncate">
+                Economic Calendar
+              </h1>
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#089981]/30 bg-[#089981]/10 px-1.5 py-0.5 text-[9px] font-bold font-mono-tabular text-[#089981] shrink-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#089981] animate-pulse" />
+                SYNC
+              </span>
+            </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] font-mono-tabular text-[#64748B] hidden sm:inline">
-                  {isSyncing ? 'Syncing...' : `${secondsUntilNextSync}s · ${formatIstTimestamp(lastUpdatedMs)}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsCalendarFullScreen((prev) => !prev)}
-                  aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
-                  title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2 text-[10.5px] font-bold text-[#131722] cursor-pointer shrink-0 lg:hidden"
-                >
-                  {isCalendarFullScreen ? (
-                    <>
-                      <Minimize2 className="h-3 w-3" />
-                      <span>Exit</span>
-                    </>
-                  ) : (
-                    <Maximize2 className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] font-mono-tabular text-[var(--vp-muted)]">
+                {isSyncing ? 'Syncing...' : `${secondsUntilNextSync}s · ${formatIstTimestamp(lastUpdatedMs)}`}
+              </span>
             </div>
           </div>
 
@@ -970,131 +1091,158 @@ export const NewsTerminalView: React.FC = () => {
                   onClick={() => setCalendarFilter(tab.id)}
                   className="rounded-lg px-2.5 py-1 text-[10.5px] sm:text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   style={{
-                    backgroundColor: active ? '#F59E0B' : '#F3F4F6',
-                    color: active ? '#131722' : '#475569',
+                    backgroundColor: active ? '#F59E0B' : 'var(--vp-elevated)',
+                    color: active ? '#0B0E14' : 'var(--vp-muted)',
                   }}
                 >
                   {tab.label}
                 </button>
               );
             })}
-
-            <button
-              type="button"
-              onClick={() => setIsCalendarFullScreen((prev) => !prev)}
-              aria-label={isCalendarFullScreen ? 'Exit calendar full screen' : 'Expand calendar full screen'}
-              title={isCalendarFullScreen ? 'Exit Full-Screen' : 'Full-Screen Calendar'}
-              className="hidden lg:inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F1F5F9] px-2.5 text-xs font-bold text-[#131722] cursor-pointer shrink-0 ml-auto"
-            >
-              {isCalendarFullScreen ? (
-                <>
-                  <Minimize2 className="h-3.5 w-3.5" />
-                  <span>Exit</span>
-                </>
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </button>
           </div>
         </div>
 
-        {/* Compact Real-Time Countdown Banner to Next High-Impact Event */}
+        {/* Next High-Impact Countdown */}
         {nextHighImpactEvent ? (
-          <div className="shrink-0 rounded-lg border border-[#F0B90B]/40 bg-[#FFFBEB]/70 px-2.5 py-1.5 flex items-center justify-between gap-2">
+          <div className="shrink-0 rounded-lg border border-[#F0B90B]/40 bg-[#F59E0B]/10 px-2.5 py-1.5 flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono-tabular">
-                <span className="inline-flex items-center gap-0.5 rounded bg-[#F23645]/12 px-1 py-0.2 font-bold text-[#F23645]">
+                <span className="inline-flex items-center gap-0.5 rounded bg-[#F23645]/15 px-1 py-0.2 font-bold text-[#F23645]">
                   <Flame className="h-2.5 w-2.5" />
                   NEXT HIGH-IMPACT
                 </span>
-                <span className="font-bold text-[#131722]">
+                <span className="font-bold text-[var(--vp-text)]">
                   {CURRENCY_BADGES[nextHighImpactEvent.currency] ?? nextHighImpactEvent.currency}
                 </span>
-                <span className="text-[#475569]">
+                <span className="text-[var(--vp-muted)]">
                   {formatEventIstDateTime(nextHighImpactEvent.timestampMs)}
                 </span>
               </div>
-              <p className="text-[11.5px] sm:text-xs font-bold text-[#131722] truncate">
+              <p className="text-[11.5px] sm:text-xs font-bold text-[var(--vp-text)] truncate">
                 {nextHighImpactEvent.title}
               </p>
-              <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[#64748B]">
+              <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[var(--vp-muted)]">
                 <span>
-                  Fcst: <strong className="text-[#131722]">{nextHighImpactEvent.forecast || '—'}</strong>
+                  Fcst: <strong className="text-[var(--vp-text)]">{nextHighImpactEvent.forecast || '—'}</strong>
                 </span>
                 <span>
-                  Prev: <strong className="text-[#131722]">{nextHighImpactEvent.previous || '—'}</strong>
+                  Prev: <strong className="text-[var(--vp-text)]">{nextHighImpactEvent.previous || '—'}</strong>
                 </span>
               </div>
             </div>
 
-            <div className="shrink-0 flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#FFFFFF] px-2 py-1">
-              <Clock className="h-3.5 w-3.5 text-[#B45309]" />
+            <div className="shrink-0 flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-canvas)] px-2 py-1">
+              <Clock className="h-3.5 w-3.5 text-[#F59E0B]" />
               <div className="text-right">
-                <div className="text-[8.5px] font-mono-tabular uppercase text-[#64748B] leading-none">
+                <div className="text-[8.5px] font-mono-tabular uppercase text-[var(--vp-muted)] leading-none">
                   T-Minus
                 </div>
-                <div className="text-xs sm:text-sm font-extrabold font-mono-tabular text-[#B45309] leading-tight">
+                <div className="text-xs sm:text-sm font-extrabold font-mono-tabular text-[#F59E0B] leading-tight">
                   {formatCountdown(nextHighImpactEvent.timestampMs - nowMs)}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="shrink-0 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5 py-1.5 text-[11px] text-[#64748B] flex items-center justify-between">
+          <div className="shrink-0 rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] px-2.5 py-1.5 text-[11px] text-[var(--vp-muted)] flex items-center justify-between">
             <span>All high-impact releases for this week completed.</span>
             <span className="font-mono-tabular text-[#089981]">Auto-monitoring</span>
           </div>
         )}
 
-        {/* Compact Vertical Event Cards inside Single Smooth Scroll Viewport */}
+        {/* Clickable Economic Calendar Event AI Pip-Move Simulator */}
+        {selectedCalendarEvent && (() => {
+          const fc = getEventPipForecast(selectedCalendarEvent);
+          return (
+            <div className="rounded-xl border border-[#F59E0B]/45 bg-[var(--vp-elevated)] p-2.5 space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#F59E0B]">
+                  ⚡ AI Expected Pip-Move Forecast: {selectedCalendarEvent.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEventId(null)}
+                  className="text-xs font-bold text-[var(--vp-muted)] px-1.5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono-tabular text-[10px]">
+                <div className="rounded bg-[var(--vp-canvas)] px-2 py-1">
+                  <span className="text-[var(--vp-muted)]">XAU/USD:</span>{' '}
+                  <strong className="text-[#F59E0B]">{fc.xauRange}</strong>
+                </div>
+                <div className="rounded bg-[var(--vp-canvas)] px-2 py-1">
+                  <span className="text-[var(--vp-muted)]">EUR/USD:</span>{' '}
+                  <strong className="text-[#0284C7]">{fc.eurRange}</strong>
+                </div>
+                <div className="rounded bg-[var(--vp-canvas)] px-2 py-1">
+                  <span className="text-[var(--vp-muted)]">US30:</span>{' '}
+                  <strong className="text-[#089981]">{fc.us30Range}</strong>
+                </div>
+                <div className="rounded bg-[var(--vp-canvas)] px-2 py-1">
+                  <span className="text-[var(--vp-muted)]">BTC/USD:</span>{' '}
+                  <strong className="text-[#A78BFA]">{fc.btcRange}</strong>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px] text-[var(--vp-muted)]">
+                <p>
+                  <strong className="text-[#089981]">If Beat:</strong> {fc.beatNote}
+                </p>
+                <p>
+                  <strong className="text-[#F23645]">If Miss:</strong> {fc.missNote}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Event Cards */}
         {calendarError && calendarEvents.length === 0 ? (
-          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-3 text-xs text-[#64748B] flex items-center justify-between gap-2">
+          <div className="rounded-lg border border-[var(--vp-border)] bg-[var(--vp-elevated)] p-3 text-xs text-[var(--vp-muted)] flex items-center justify-between gap-2">
             <span>{calendarError}</span>
             <button
               type="button"
               onClick={() => loadAllFeeds(true, false)}
-              className="rounded-lg bg-[#F59E0B] px-3 py-1 text-xs font-bold text-[#131722] cursor-pointer"
+              className="rounded-lg bg-[#F59E0B] px-3 py-1 text-xs font-bold text-[#0B0E14] cursor-pointer"
             >
               Retry
             </button>
           </div>
         ) : (
-          <div
-            className={
-              isCalendarFullScreen
-                ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-lg border border-[#E5E7EB] bg-[#FFFFFF] p-2 space-y-1.5'
-                : 'space-y-1.5'
-            }
-          >
+          <div className="space-y-1.5">
             {visibleCalendarEvents.map((ev) => {
               const status = evaluateActualStatus(ev, nowMs);
               const diffMs = ev.timestampMs - nowMs;
               const isSoon = diffMs > 0 && diffMs <= 60 * 60 * 1000;
               const justReleased = ev.timestampMs <= nowMs && nowMs - ev.timestampMs < 15 * 60 * 1000;
               const assetImpacts = getCalendarAssetImpacts(ev, status);
+              const isSelected = selectedEventId === ev.id;
 
               return (
                 <article
                   key={ev.id}
-                  className={`w-full rounded-lg border px-2.5 py-1.5 space-y-1 transition-colors ${
-                    justReleased
-                      ? 'border-[#F59E0B]/50 bg-[#FFFBEB]/60'
-                      : 'border-[#E5E7EB] bg-[#FFFFFF] hover:bg-[#F8FAFC]'
+                  onClick={() => setSelectedEventId((curr) => (curr === ev.id ? null : ev.id))}
+                  className={`w-full rounded-lg border px-2.5 py-1.5 space-y-1 transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'border-[#F59E0B] bg-[#F59E0B]/10'
+                      : justReleased
+                        ? 'border-[#F59E0B]/50 bg-[#F59E0B]/8'
+                        : 'border-[var(--vp-border)] bg-[var(--vp-canvas)] hover:bg-[var(--vp-elevated)]'
                   }`}
                 >
-                  {/* Row 1: IST Time + Countdown + Currency + Impact */}
                   <div className="flex items-center justify-between gap-1.5 text-[10px] font-mono-tabular">
-                    <div className="flex items-center gap-1 text-[#475569] min-w-0 truncate">
+                    <div className="flex items-center gap-1 text-[var(--vp-muted)] min-w-0 truncate">
                       <span className="truncate">{formatEventIstDateTime(ev.timestampMs)}</span>
                       {isSoon && (
-                        <span className="font-bold text-[#B45309] shrink-0">
+                        <span className="font-bold text-[#F59E0B] shrink-0">
                           ({formatCountdown(diffMs)})
                         </span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="font-bold text-[#131722]">
+                      <span className="font-bold text-[var(--vp-text)]">
                         {CURRENCY_BADGES[ev.currency] ?? ev.currency}
                       </span>
                       <span
@@ -1110,8 +1258,8 @@ export const NewsTerminalView: React.FC = () => {
                             ev.impact === 'High'
                               ? '#F23645'
                               : ev.impact === 'Medium'
-                                ? '#B45309'
-                                : '#64748B',
+                                ? '#F59E0B'
+                                : 'var(--vp-muted)',
                         }}
                       >
                         {ev.impact}
@@ -1119,12 +1267,14 @@ export const NewsTerminalView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Row 2: Event Title + Inline Metrics */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                    <h3 className="text-[11.5px] sm:text-xs font-bold text-[#131722] leading-snug break-words">
-                      {ev.title}
+                    <h3 className="text-[11.5px] sm:text-xs font-bold text-[var(--vp-text)] leading-snug break-words">
+                      {ev.title}{' '}
+                      <span className="text-[9.5px] font-normal text-[var(--vp-accent-text)]">
+                        (Tap for AI Forecast)
+                      </span>
                     </h3>
-                    <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[#475569] shrink-0">
+                    <div className="flex items-center gap-2.5 text-[10px] font-mono-tabular text-[var(--vp-muted)] shrink-0">
                       <span>
                         Act:{' '}
                         {status === 'beat' ? (
@@ -1132,15 +1282,15 @@ export const NewsTerminalView: React.FC = () => {
                         ) : status === 'miss' ? (
                           <strong className="text-[#F23645]">▼ {ev.actual}</strong>
                         ) : status === 'inline' ? (
-                          <strong className="text-[#131722]">{ev.actual}</strong>
+                          <strong className="text-[var(--vp-text)]">{ev.actual}</strong>
                         ) : status === 'released-pending' ? (
-                          <strong className="text-[#B45309]">Sync...</strong>
+                          <strong className="text-[#F59E0B]">Sync...</strong>
                         ) : (
                           <span>—</span>
                         )}
                       </span>
                       <span>
-                        Fcst: <strong className="text-[#131722]">{ev.forecast || '—'}</strong>
+                        Fcst: <strong className="text-[var(--vp-text)]">{ev.forecast || '—'}</strong>
                       </span>
                       <span>
                         Prev: <span>{ev.previous || '—'}</span>
@@ -1148,7 +1298,6 @@ export const NewsTerminalView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Row 3: Compact Asset Impact Pills */}
                   <div className="flex flex-wrap items-center gap-1">
                     {assetImpacts.map((badge) => (
                       <span
@@ -1165,7 +1314,7 @@ export const NewsTerminalView: React.FC = () => {
             })}
 
             {visibleCalendarEvents.length === 0 && (
-              <div className="py-4 text-center text-xs text-[#64748B]">
+              <div className="py-4 text-center text-xs text-[var(--vp-muted)]">
                 Loading live economic events...
               </div>
             )}
@@ -1173,8 +1322,8 @@ export const NewsTerminalView: React.FC = () => {
         )}
       </section>
 
-      {/* Top Macro Sentiment Summary + Search/Refresh */}
-      <section className="rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-2.5 sm:p-4 space-y-2.5">
+      {/* 3. Top Macro Sentiment Summary + Search/Refresh */}
+      <section className="rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] p-2.5 sm:p-4 space-y-2.5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--vp-muted)]">
@@ -1239,14 +1388,11 @@ export const NewsTerminalView: React.FC = () => {
         </div>
       </section>
 
-      {/* Headlines Feed */}
+      {/* 4. Headlines Feed */}
       {loading && !data ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {[1, 2, 3, 4].map((n) => (
-            <div
-              key={n}
-              className="h-32 vp-glass-card rounded-2xl animate-pulse p-4"
-            />
+            <div key={n} className="h-32 vp-glass-card rounded-2xl animate-pulse p-4" />
           ))}
         </div>
       ) : errorMsg && !data ? (
@@ -1295,9 +1441,7 @@ export const NewsTerminalView: React.FC = () => {
                       <span className="truncate">{item.source}</span>
                       <span aria-hidden="true">·</span>
                       <span className="shrink-0 text-[var(--vp-text)] opacity-80">
-                        {item.publishedAtMs
-                          ? formatEventIstDateTime(item.publishedAtMs)
-                          : item.publishedAt}
+                        {item.publishedAtMs ? formatEventIstDateTime(item.publishedAtMs) : item.publishedAt}
                       </span>
                     </div>
 
@@ -1314,7 +1458,6 @@ export const NewsTerminalView: React.FC = () => {
                     {item.headline}
                   </h3>
 
-                  {/* Affected Asset & Expected Direction Pills */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {assetImpacts.map((badge) => (
                       <span

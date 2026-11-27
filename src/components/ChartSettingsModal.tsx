@@ -23,6 +23,16 @@ export interface ChartSettingsOverlays {
   onToggleRsi: () => void;
   showVolumeProfile: boolean;
   onToggleVolumeProfile: () => void;
+  showKeyLevels?: boolean;
+  onToggleKeyLevels?: () => void;
+  showLiquidityPools?: boolean;
+  onToggleLiquidityPools?: () => void;
+  showFibWaves?: boolean;
+  onToggleFibWaves?: () => void;
+  showGhostCandles?: boolean;
+  onToggleGhostCandles?: () => void;
+  showGrid?: boolean;
+  onToggleGrid?: () => void;
 }
 
 interface ChartSettingsModalProps {
@@ -58,11 +68,12 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
     ? [
         {
           label: 'Support / Resistance Lines',
+          description: 'Includes touch-count strength badges',
           checked: overlays.showSupportResistance,
           onToggle: overlays.onToggleSupportResistance,
         },
         {
-          label: 'Auto Chart Patterns',
+          label: 'Auto Chart Patterns & Harmonics',
           checked: overlays.showPatterns,
           onToggle: overlays.onTogglePatterns,
         },
@@ -72,10 +83,59 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
           onToggle: overlays.onToggleSwingLabels,
         },
         {
-          label: 'BOS / CHoCH Structure',
+          label: 'BOS / CHoCH & OB/FVG Mitigation',
           checked: overlays.showBosChoch,
           onToggle: overlays.onToggleBosChoch,
         },
+        ...(overlays.onToggleKeyLevels
+          ? [
+              {
+                label: 'Key Levels (PDH/PDL/Asian/VWAP/ORB)',
+                description: 'Previous Day High/Low, Weekly Open, Session VWAP',
+                checked: Boolean(overlays.showKeyLevels),
+                onToggle: overlays.onToggleKeyLevels,
+              },
+            ]
+          : []),
+        ...(overlays.onToggleLiquidityPools
+          ? [
+              {
+                label: 'Liquidity Heatmap & Stop-Hunt Pools',
+                description: 'BSL/SSL equal highs/lows & Volume Spikes',
+                checked: Boolean(overlays.showLiquidityPools),
+                onToggle: overlays.onToggleLiquidityPools,
+              },
+            ]
+          : []),
+        ...(overlays.onToggleFibWaves
+          ? [
+              {
+                label: 'Fibonacci 50% EQ, Time Zones & Elliott',
+                description: 'Premium/Discount zones, (1)-(5) waves & Wyckoff',
+                checked: Boolean(overlays.showFibWaves),
+                onToggle: overlays.onToggleFibWaves,
+              },
+            ]
+          : []),
+        ...(overlays.onToggleGhostCandles
+          ? [
+              {
+                label: 'AI Ghost Candles (What-If Path)',
+                description: 'Projected primary target & invalidation curve',
+                checked: Boolean(overlays.showGhostCandles),
+                onToggle: overlays.onToggleGhostCandles,
+              },
+            ]
+          : []),
+        ...(overlays.onToggleGrid
+          ? [
+              {
+                label: 'Chart Grid Lines',
+                checked: overlays.showGrid !== false,
+                onToggle: overlays.onToggleGrid,
+              },
+            ]
+          : []),
         {
           label: 'EMA 20',
           checked: overlays.showEma20,
@@ -102,7 +162,7 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({
           onToggle: overlays.onToggleRsi,
         },
         {
-          label: 'Volume Profile (Histogram)',
+          label: 'Volume Profile (VPVR + POC)',
           description: 'Side volume profile & POC for active timeframe',
           checked: overlays.showVolumeProfile,
           onToggle: overlays.onToggleVolumeProfile,

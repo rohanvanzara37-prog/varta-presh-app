@@ -8,6 +8,7 @@ export interface AcademyCandle {
 
 export type AcademyPatternType = 'BOS' | 'OB' | 'FVG';
 export type AcademyDirection = 'BUY' | 'SELL';
+export type AcademyDifficulty = 'Beginner' | 'Intermediate' | 'Advanced';
 
 export interface AcademyScenario {
   id: string;
@@ -15,6 +16,7 @@ export interface AcademyScenario {
   symbol: string;
   tvSymbol: string;
   timeframe: string;
+  difficulty: AcademyDifficulty;
   title: string;
   decimals: number;
   candles: AcademyCandle[];
@@ -28,5 +30,6 @@ export interface AcademyScenario {
     pointsGain: number;
     pointsLoss: number;
     explanation: string;
+    mentorAnnotation: string;
   };
 }

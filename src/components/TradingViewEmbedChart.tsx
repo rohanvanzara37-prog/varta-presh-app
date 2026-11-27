@@ -30,7 +30,7 @@ function buildWidgetConfig(params: {
   showTopToolbar: boolean;
 }) {
   const isDark = params.themeMode === 'dark';
-  const bg = isDark ? '#0B0E14' : '#FFFFFF';
+  const bg = isDark ? '#060911' : '#FFFFFF';
   const grid = isDark ? 'rgba(255, 255, 255, 0.035)' : 'rgba(15, 23, 42, 0.05)';
 
   return {
@@ -175,7 +175,7 @@ export const TradingViewEmbedChart: React.FC<TradingViewEmbedChartProps> = ({
         height: resolvedHeight,
         width: '100%',
         touchAction: 'pan-y',
-        backgroundColor: themeMode === 'dark' ? '#0B0E14' : 'var(--vp-surface)',
+        backgroundColor: themeMode === 'dark' ? '#060911' : 'var(--vp-surface)',
       }}
     >
       {/* Slim Mobile Page-Scroll Grip + Toolbar Toggles — hidden in Full Screen */}

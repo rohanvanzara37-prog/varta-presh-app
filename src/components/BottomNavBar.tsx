@@ -27,10 +27,10 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   return (
     <nav
       aria-label="Primary bottom navigation"
-      className={`${alwaysVisible ? '' : 'md:hidden '}fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-xl pb-[env(safe-area-inset-bottom)] transition-colors duration-200`}
+      className={`${alwaysVisible ? '' : 'md:hidden '}fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-xl pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(0,0,0,0.65)] transition-colors duration-200`}
       style={{
-        backgroundColor: '#FFFFFF',
-        borderColor: '#E2E8F0',
+        backgroundColor: 'var(--vp-surface)',
+        borderColor: 'var(--vp-border)',
       }}
     >
       <div className="grid grid-cols-4 h-16 items-center">
@@ -44,18 +44,18 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               aria-current={isActive ? 'page' : undefined}
               className="relative min-h-[48px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all duration-200 active:scale-95"
               style={{
-                color: isActive ? 'var(--vp-accent-text)' : 'var(--vp-muted)',
+                color: isActive ? '#F59E0B' : 'var(--vp-text)',
               }}
             >
               {isActive && (
                 <span
                   aria-hidden="true"
-                  className="absolute top-0 h-[2px] w-10 rounded-b-full shadow-[0_0_10px_rgba(245,158,11,0.6)]"
-                  style={{ backgroundColor: 'var(--vp-primary)' }}
+                  className="absolute top-0 h-[2.5px] w-10 rounded-b-full shadow-[0_0_12px_rgba(245,158,11,0.75)]"
+                  style={{ backgroundColor: '#F59E0B' }}
                 />
               )}
               <Icon className="h-[22px] w-[22px]" />
-              <span className="text-[11px] font-semibold tracking-tight whitespace-nowrap leading-none">
+              <span className="text-[11px] font-bold tracking-tight whitespace-nowrap leading-none">
                 {label}
               </span>
             </button>

@@ -1,25 +1,18 @@
 import React from 'react';
-import { Bell, BellOff, ChevronDown, LogIn, LogOut } from 'lucide-react';
-import type { User } from 'firebase/auth';
+import { ChevronDown, RefreshCw } from 'lucide-react';
 import type { AppTab, TypographySettings } from '../types/news';
 import { formatUsd } from '../utils/demoAccount';
-import type { PushPermissionState } from '../utils/pushNotifications';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderNavProps {
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   typography?: TypographySettings;
-  pushPermission: PushPermissionState;
-  pushEnabled: boolean;
-  onTogglePush: () => void;
-  firebaseUser: User | null;
-  isSigningIn?: boolean;
-  onSignIn: () => void;
-  onSignOut: () => void;
   demoEquity: number;
   demoFloatingPnl: number;
+  openPositionsCount?: number;
   onOpenDemoDrawer: () => void;
+  onRefreshCharts?: () => void;
+  isRefreshingCharts?: boolean;
 }
 
 const NAV_ITEMS: { id: AppTab; label: string }[] = [
@@ -41,38 +34,33 @@ export const TredauraMark: React.FC<{ className?: string }> = ({ className = 'h-
 export const HeaderNav: React.FC<HeaderNavProps> = ({
   activeTab,
   onSelectTab,
-  pushPermission,
-  pushEnabled,
-  onTogglePush,
-  firebaseUser,
-  isSigningIn = false,
-  onSignIn,
-  onSignOut,
   demoEquity,
   demoFloatingPnl,
+  openPositionsCount = 0,
   onOpenDemoDrawer,
+  onRefreshCharts,
+  isRefreshingCharts = false,
 }) => {
-  const alertsActive = pushPermission === 'granted' && pushEnabled;
   const pnlColor =
-    demoFloatingPnl > 0.005 ? '#089981' : demoFloatingPnl < -0.005 ? '#F23645' : '#131722';
+    demoFloatingPnl > 0.005 ? '#10B981' : demoFloatingPnl < -0.005 ? '#F43F5E' : 'var(--vp-text)';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FFFFFF]/95 backdrop-blur-xl transition-colors duration-200">
-      <div className="mx-auto flex h-[50px] md:h-[56px] max-w-7xl items-center justify-between gap-2 lg:gap-6 px-2.5 sm:px-6">
-        {/* Zone 1: TREDAURA Brand Logo + Geometric Gold-Emerald Bull-Bar Icon */}
+    <header className="sticky top-0 z-30 border-b border-[var(--vp-border)] bg-[var(--vp-surface)] shadow-[var(--vp-card-shadow)] backdrop-blur-xl transition-colors duration-200">
+      <div className="mx-auto flex h-[50px] md:h-[56px] max-w-7xl items-center justify-between gap-1.5 lg:gap-6 px-2 sm:px-6 overflow-hidden">
+        {/* Zone 1: TREDAURA Brand Logo */}
         <button
           type="button"
           onClick={() => onSelectTab('terminal')}
-          className="inline-flex items-center gap-2 text-sm sm:text-base md:text-lg font-extrabold tracking-tight text-[#131722] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F59E0B] focus-visible:outline-offset-4 rounded-md transition-colors"
+          className="inline-flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base md:text-lg font-extrabold tracking-tight text-[var(--vp-text)] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#F59E0B] focus-visible:outline-offset-4 rounded-md transition-colors"
         >
           <TredauraMark className="h-6 w-6 sm:h-7 sm:w-7 shrink-0" />
-          <span className="tracking-[-0.02em]">TREDAURA</span>
+          <span className="font-display font-extrabold tracking-wide text-[#F59E0B]">TREDAURA</span>
         </button>
 
         {/* Zone 2: Clean Single-Line Desktop Navigation Links */}
         <nav
           aria-label="Primary navigation"
-          className="hidden md:flex items-center gap-7 text-sm font-semibold"
+          className="hidden md:flex items-center gap-7 text-sm font-bold"
         >
           {NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
@@ -82,16 +70,16 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 type="button"
                 onClick={() => onSelectTab(item.id)}
                 aria-current={isActive ? 'page' : undefined}
-                className="relative py-2 whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer hover:text-[#131722]"
+                className="relative py-2 whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer hover:text-[#F59E0B]"
                 style={{
-                  color: isActive ? '#131722' : '#64748B',
+                  color: isActive ? '#F59E0B' : 'var(--vp-text)',
                 }}
               >
                 {item.label}
                 {isActive && (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full bg-[#089981]"
+                    className="absolute inset-x-0 -bottom-[11px] h-[2px] rounded-full bg-[#F59E0B]"
                   />
                 )}
               </button>
@@ -99,77 +87,64 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           })}
         </nav>
 
-        {/* Zone 3: Top-Right Demo Pill + Compact Utility Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Paper Demo Account Pill (100% TREDAURA original, zero third-party logos) */}
+        {/* Zone 3: Clean Header Utility Bar — Live PnL Pill, Demo Balance Pill, Chart Refresh Icon ONLY */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0">
+          {/* Live PnL Pill */}
+          <button
+            type="button"
+            onClick={onOpenDemoDrawer}
+            title={`Open Trades: ${openPositionsCount} · Floating PnL`}
+            className="inline-flex min-h-[28px] sm:min-h-[30px] items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:text-[11px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition-colors shadow-sm"
+            style={{
+              borderColor:
+                demoFloatingPnl > 0.005
+                  ? 'rgba(16,185,129,0.7)'
+                  : demoFloatingPnl < -0.005
+                    ? 'rgba(244,63,94,0.7)'
+                    : 'var(--vp-border)',
+              backgroundColor:
+                demoFloatingPnl > 0.005
+                  ? 'rgba(16,185,129,0.16)'
+                  : demoFloatingPnl < -0.005
+                    ? 'rgba(244,63,94,0.16)'
+                    : 'var(--vp-surface)',
+              color: pnlColor,
+            }}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: openPositionsCount > 0 ? pnlColor : 'var(--vp-text)' }}
+            />
+            <span>{openPositionsCount > 0 ? `${openPositionsCount}T` : 'PnL'}</span>
+            <span className="font-mono-tabular font-bold">{formatUsd(demoFloatingPnl, true)}</span>
+          </button>
+
+          {/* Paper Demo Balance Pill (Opens Account Dropdown/Drawer) */}
           <button
             type="button"
             onClick={onOpenDemoDrawer}
             aria-label={`Open Demo Account Panel (${formatUsd(demoEquity)})`}
-            className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-[#FFFFFF] hover:bg-[#F8FAFC] px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold shadow-xs cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            className="inline-flex min-h-[30px] sm:min-h-[32px] items-center gap-1 rounded-full border border-[var(--vp-border)] bg-[var(--vp-surface)] hover:border-[#F59E0B] px-2 sm:px-3 text-[10.5px] sm:text-xs font-bold shadow-sm cursor-pointer whitespace-nowrap shrink-0 transition-colors"
           >
-            <span className="rounded bg-[#ECFDF5] border border-[#089981]/30 px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-wide text-[#089981]">
+            <span className="hidden xs:inline rounded bg-[#F59E0B]/15 border border-[#F59E0B]/55 px-1 py-0.5 text-[9px] font-extrabold tracking-wide text-[#F59E0B]">
               DEMO
-            </span>
-            <span className="text-[#E5E7EB]" aria-hidden="true">
-              |
             </span>
             <span className="font-mono-tabular font-bold" style={{ color: pnlColor }}>
               {formatUsd(demoEquity)}
             </span>
-            <ChevronDown className="h-3 w-3 text-[#64748B]" />
+            <ChevronDown className="h-3 w-3 text-[var(--vp-text)]" />
           </button>
 
-          <button
-            type="button"
-            onClick={onTogglePush}
-            aria-label={alertsActive ? 'Disable push price alerts' : 'Enable push price alerts'}
-            title={alertsActive ? 'Alerts On' : 'Enable Alerts'}
-            className="vp-pill-btn hidden xs:inline-flex sm:inline-flex min-h-[32px] items-center gap-1.5 border px-2 sm:px-3 text-xs font-semibold cursor-pointer whitespace-nowrap"
-            style={{
-              backgroundColor: alertsActive ? 'rgba(245, 158, 11, 0.12)' : '#F8FAFC',
-              borderColor: alertsActive ? '#F59E0B' : '#E5E7EB',
-              color: alertsActive ? '#B45309' : '#131722',
-            }}
-          >
-            {alertsActive ? (
-              <>
-                <Bell className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">Alerts On</span>
-              </>
-            ) : (
-              <>
-                <BellOff className="h-3.5 w-3.5 text-[#64748B]" />
-                <span className="hidden lg:inline">Alerts</span>
-              </>
-            )}
-          </button>
-
-          <div className="hidden sm:block">
-            <PWAInstallButton />
-          </div>
-
-          {firebaseUser ? (
+          {/* Chart Data Refresh Icon ONLY (Never resets demo balance or closes trades) */}
+          {onRefreshCharts && (
             <button
               type="button"
-              onClick={onSignOut}
-              title={`Signed in as ${firebaseUser.email ?? 'User'} — Sign out`}
-              className="vp-pill-btn inline-flex min-h-[32px] items-center gap-1.5 border border-[#E5E7EB] bg-[#F8FAFC] px-2 sm:px-3 text-xs font-semibold text-[#131722] cursor-pointer whitespace-nowrap"
+              onClick={onRefreshCharts}
+              title="Reload live chart data"
+              aria-label="Reload live chart data"
+              className="inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--vp-border)] bg-[var(--vp-surface)] hover:border-[#F59E0B] text-[var(--vp-text)] cursor-pointer shadow-sm transition-colors shrink-0"
             >
-              <LogOut className="h-3.5 w-3.5 text-[#64748B]" />
-              <span className="hidden md:inline max-w-[80px] truncate">
-                {firebaseUser.displayName?.split(' ')[0] ?? 'Synced'}
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={isSigningIn}
-              onClick={onSignIn}
-              className="vp-pill-btn inline-flex min-h-[32px] items-center gap-1 bg-[#131722] hover:bg-[#1E293B] disabled:opacity-60 px-2.5 sm:px-3.5 text-xs font-bold text-[#FFFFFF] shadow-xs cursor-pointer whitespace-nowrap"
-            >
-              <LogIn className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{isSigningIn ? 'Signing in...' : 'Sync'}</span>
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingCharts ? 'animate-spin text-[#F59E0B]' : ''}`} />
             </button>
           )}
         </div>

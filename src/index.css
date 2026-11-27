@@ -30,28 +30,28 @@
 
 .dark {
   --vp-primary: #F59E0B;
-  --vp-primary-fg: #0B0E14;
-  --vp-secondary: #1E2433;
-  --vp-secondary-fg: #F1F5F9;
+  --vp-primary-fg: #060911;
+  --vp-secondary: #141D33;
+  --vp-secondary-fg: #FFFFFF;
   --vp-accent: #F59E0B;
-  --vp-accent-fg: #0B0E14;
+  --vp-accent-fg: #060911;
   --vp-accent-text: #F59E0B;
-  --vp-canvas: #0B0E14;
-  --vp-surface: #131722;
-  --vp-surface-glass: rgba(19, 23, 34, 0.86);
-  --vp-header: #0F131D;
-  --vp-elevated: #181D2B;
-  --vp-control: #1E2433;
-  --vp-text: #F1F5F9;
-  --vp-muted: #8B95A5;
-  --vp-border: #1E2433;
-  --vp-bull: #089981;
-  --vp-bear: #F23645;
-  --vp-card-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --vp-canvas: #060911;
+  --vp-surface: #0F1626;
+  --vp-surface-glass: rgba(15, 22, 38, 0.94);
+  --vp-header: #0F1626;
+  --vp-elevated: #0F1626;
+  --vp-control: #162138;
+  --vp-text: #FFFFFF;
+  --vp-muted: #FFFFFF;
+  --vp-border: rgba(255, 255, 255, 0.25);
+  --vp-bull: #10B981;
+  --vp-bear: #F43F5E;
+  --vp-card-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --vp-msg-self-bg: #F59E0B;
-  --vp-msg-self-fg: #0B0E14;
-  --vp-msg-other-bg: #181D2B;
-  --vp-msg-other-fg: #F1F5F9;
+  --vp-msg-self-fg: #060911;
+  --vp-msg-other-bg: #0F1626;
+  --vp-msg-other-fg: #FFFFFF;
 }
 
 .light {
@@ -84,10 +84,19 @@
     -webkit-touch-callout: default;
   }
 
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
   html,
   body {
     background-color: var(--vp-canvas);
     color: var(--vp-text);
+    overflow-x: hidden;
+    max-width: 100%;
     font-family: "Inter", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -99,12 +108,12 @@
 }
 
 .font-display {
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
 }
 
 .font-mono-tabular {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "zero" 1;
 }
@@ -225,7 +234,7 @@
   touch-action: none !important;
   overscroll-behavior: none;
   contain: layout style;
-  background-color: #FFFFFF !important;
+  background-color: var(--vp-canvas);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -234,7 +243,7 @@
   touch-action: none !important;
 }
 
-/* CSS Fixed Full-Screen Overlay (replaces native browser fullscreen black backdrop) */
+/* CSS Fixed Full-Screen Overlay */
 .vp-fullscreen-root {
   position: fixed !important;
   inset: 0 !important;
@@ -249,14 +258,14 @@
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
-  background: #FFFFFF !important;
-  background-color: #FFFFFF !important;
-  color: #131722 !important;
+  background: var(--vp-canvas) !important;
+  background-color: var(--vp-canvas) !important;
+  color: var(--vp-text) !important;
 }
 
 /* Hide app headers and bottom navigation in Full-Screen chart mode */
 body.chart-fullscreen-active {
-  background-color: #FFFFFF !important;
+  background-color: var(--vp-canvas) !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }

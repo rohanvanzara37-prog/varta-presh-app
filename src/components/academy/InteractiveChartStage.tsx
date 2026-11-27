@@ -40,13 +40,16 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
   tp,
   sl,
   outcomeStatus,
+  themeMode = 'dark',
 }) => {
-  const canvasBg = '#FFFFFF';
-  const gridColor = '#F1F5F9';
-  const axisTextColor = '#475569';
+  const isDark = themeMode === 'dark';
+  const canvasBg = isDark ? '#060911' : '#FFFFFF';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9';
+  const axisTextColor = isDark ? '#FFFFFF' : '#475569';
   const bullColor = '#089981';
   const bearColor = '#F23645';
   const goldColor = '#F59E0B';
+  const badgeDark = isDark ? '#0F1626' : '#131722';
 
   const decisionIdx = Math.max(0, initialCount - 1);
 
@@ -73,9 +76,8 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
     return PAD_T + PLOT_H * (1 - ratio);
   };
 
-  // Reserve total horizontal slots after submit so replay candles march smoothly rightwards
   const totalSlots = decisionSubmitted
-    ? Math.max(initialCount + 10, visibleCandles.length)
+    ? Math.max(initialCount + 8, visibleCandles.length)
     : Math.max(initialCount + 3, visibleCandles.length);
   const colW = PLOT_W / totalSlots;
   const indexToX = (idx: number) => PAD_L + (idx + 0.5) * colW;
@@ -87,7 +89,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
   const slY = priceToY(sl);
 
   return (
-    <div className="flex-1 min-h-0 w-full rounded-xl border border-[#E5E7EB] bg-[#FFFFFF] p-1.5 flex items-center justify-center overflow-hidden relative">
+    <div className="flex-1 min-h-0 w-full rounded-xl border border-[var(--vp-border)] bg-[var(--vp-canvas)] p-1.5 flex items-center justify-center overflow-hidden relative">
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         className="w-full h-full max-h-full select-none rounded-lg"
@@ -151,11 +153,11 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               x={decisionX + colW * 0.62 + 46}
               y={PAD_T + 15.5}
               textAnchor="middle"
-              fill="#B45309"
+              fill={goldColor}
               fontSize="8"
               fontWeight="800"
             >
-              10 BARS HIDDEN
+              FUTURE HIDDEN
             </text>
           </g>
         )}
@@ -163,7 +165,6 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
         {/* Entry / TP / SL Horizontal Lines ONLY after decision submitted */}
         {decisionSubmitted && (
           <g>
-            {/* TP Line */}
             <line
               x1={decisionX + colW * 0.52}
               y1={tpY}
@@ -173,14 +174,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               strokeWidth={1.25}
               strokeDasharray="4 3"
             />
-            <rect
-              x={PAD_L + PLOT_W + 2}
-              y={tpY - 7.5}
-              width={56}
-              height={15}
-              rx={3}
-              fill={bullColor}
-            />
+            <rect x={PAD_L + PLOT_W + 2} y={tpY - 7.5} width={56} height={15} rx={3} fill={bullColor} />
             <text
               x={PAD_L + PLOT_W + 30}
               y={tpY + 3}
@@ -193,7 +187,6 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               TP {formatPrice(tp, decimals)}
             </text>
 
-            {/* Entry Line */}
             <line
               x1={decisionX + colW * 0.52}
               y1={entryY}
@@ -209,7 +202,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               width={56}
               height={15}
               rx={3}
-              fill="#FEF3C7"
+              fill={isDark ? '#1E2433' : '#FEF3C7'}
               stroke="#F59E0B"
               strokeWidth={0.8}
             />
@@ -217,7 +210,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               x={PAD_L + PLOT_W + 30}
               y={entryY + 3}
               textAnchor="middle"
-              fill="#92400E"
+              fill={isDark ? '#F59E0B' : '#92400E'}
               fontSize="7.8"
               fontWeight="800"
               className="font-mono-tabular"
@@ -225,7 +218,6 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               {chosenDirection ?? 'IN'} {formatPrice(entry, decimals)}
             </text>
 
-            {/* SL Line */}
             <line
               x1={decisionX + colW * 0.52}
               y1={slY}
@@ -235,14 +227,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
               strokeWidth={1.25}
               strokeDasharray="4 3"
             />
-            <rect
-              x={PAD_L + PLOT_W + 2}
-              y={slY - 7.5}
-              width={56}
-              height={15}
-              rx={3}
-              fill={bearColor}
-            />
+            <rect x={PAD_L + PLOT_W + 2} y={slY - 7.5} width={56} height={15} rx={3} fill={bearColor} />
             <text
               x={PAD_L + PLOT_W + 30}
               y={slY + 3}
@@ -257,7 +242,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
           </g>
         )}
 
-        {/* Candlesticks (Initial setup + revealed replay bars 1-by-1) */}
+        {/* Candlesticks */}
         {visibleCandles.map((c, idx) => {
           const cx = indexToX(idx);
           const isBull = c.close >= c.open;
@@ -275,21 +260,14 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
 
           return (
             <g key={`${c.timeLabel}-${idx}`}>
-              <line
-                x1={cx}
-                y1={yHigh}
-                x2={cx}
-                y2={yLow}
-                stroke={color}
-                strokeWidth={1.35}
-              />
+              <line x1={cx} y1={yHigh} x2={cx} y2={yLow} stroke={color} strokeWidth={1.35} />
               <rect
                 x={cx - bodyW / 2}
                 y={bodyTop}
                 width={bodyW}
                 height={bodyH}
                 fill={color}
-                stroke={isLatestReplayed ? goldColor : isDecisionCandle ? '#131722' : color}
+                stroke={isLatestReplayed ? goldColor : isDecisionCandle ? (isDark ? '#F8FAFC' : '#131722') : color}
                 strokeWidth={isLatestReplayed ? 1.4 : isDecisionCandle ? 1.1 : 0.4}
                 rx={1.2}
               />
@@ -323,13 +301,13 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                 width={48}
                 height={14}
                 rx={3.5}
-                fill={decisionSubmitted ? '#131722' : goldColor}
+                fill={decisionSubmitted ? badgeDark : goldColor}
               />
               <text
                 x={decisionX}
                 y={badgeY + 2.5}
                 textAnchor="middle"
-                fill={decisionSubmitted ? '#FFFFFF' : '#131722'}
+                fill={decisionSubmitted ? '#FFFFFF' : '#0B0E14'}
                 fontSize="7.5"
                 fontWeight="800"
               >
@@ -353,7 +331,7 @@ export const InteractiveChartStage: React.FC<InteractiveChartStageProps> = ({
                   ? bullColor
                   : outcomeStatus === 'sl'
                     ? bearColor
-                    : '#131722'
+                    : badgeDark
               }
             />
             <text
