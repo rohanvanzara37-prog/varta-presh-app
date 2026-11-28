@@ -722,36 +722,31 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-1.5 bg-[var(--vp-canvas)] text-[var(--vp-text)] overflow-hidden">
-      {/* 1. Ultra-Compact Top Bar: Pair Selector + Timeframe + Voice + Analyze */}
-      <div className="flex items-center justify-between gap-1.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-1 shrink-0 overflow-hidden shadow-[var(--vp-card-shadow)]">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar min-w-0">
-          {AI_SUITE_ASSETS.map((ast) => {
-            const active = symbol === ast.symbol;
-            return (
-              <button
-                key={ast.symbol}
-                type="button"
-                onClick={() => setSymbol(ast.symbol)}
-                className={`rounded-lg px-2 py-1 text-[10.5px] font-bold cursor-pointer whitespace-nowrap transition-colors ${
-                  active
-                    ? 'bg-[#F59E0B] text-[#060911]'
-                    : 'bg-[var(--vp-elevated)] border border-[var(--vp-border)] text-[var(--vp-text)] hover:border-[#F59E0B]'
-                }`}
-              >
+      {/* 1. Ultra-Compact Top Bar: Full Unclipped Pair Selector + Timeframe + Layers + Scan */}
+      <div className="flex items-center justify-between gap-1.5 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2 py-1 shrink-0 shadow-[var(--vp-card-shadow)]">
+        <div className="flex items-center gap-1 shrink-0">
+          <select
+            aria-label="AI Suite trading pair"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value as SmcSymbol)}
+            className="shrink-0 w-auto rounded-lg border border-[#F59E0B] bg-[#F59E0B] px-2.5 py-1 text-[11px] font-extrabold text-[#060911] outline-none cursor-pointer whitespace-nowrap"
+          >
+            {AI_SUITE_ASSETS.map((ast) => (
+              <option key={ast.symbol} value={ast.symbol} className="bg-[#0F1626] text-[#FFFFFF]">
                 {ast.label}
-              </button>
-            );
-          })}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <div className="flex items-center gap-0.5 bg-[var(--vp-elevated)] border border-[var(--vp-border)] rounded-lg p-0.5">
+        <div className="flex items-center gap-1 min-w-0 flex-1 justify-end">
+          <div className="flex items-center gap-0.5 bg-[var(--vp-elevated)] border border-[var(--vp-border)] rounded-lg p-0.5 overflow-x-auto no-scrollbar min-w-0">
             {AI_TIMEFRAMES.map((tf) => (
               <button
                 key={tf}
                 type="button"
                 onClick={() => setTimeframe(tf)}
-                className={`rounded px-2 py-1 text-[10.5px] font-mono-tabular font-bold cursor-pointer uppercase ${
+                className={`rounded px-2 py-1 text-[10.5px] font-mono-tabular font-bold cursor-pointer uppercase whitespace-nowrap shrink-0 ${
                   timeframe === tf
                     ? 'bg-[#F59E0B] text-[#060911]'
                     : 'text-[var(--vp-text)] hover:text-[#F59E0B]'
@@ -832,8 +827,8 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           }
         />
 
-        {/* Compact Top-Left Sniper Countdown Pill */}
-        <div className="pointer-events-none absolute top-1.5 left-2 z-20 flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[#0F1626]/95 px-2 py-0.5 text-[9.5px] font-mono-tabular font-bold text-[#FFFFFF] shadow-sm">
+        {/* Compact Bottom-Left Sniper Countdown Pill (never overlaps top-left pattern badges) */}
+        <div className="pointer-events-none absolute bottom-2 left-2 z-20 flex items-center gap-1.5 rounded-lg border border-[var(--vp-border)] bg-[#0F1626]/95 px-2 py-0.5 text-[9.5px] font-mono-tabular font-bold text-[#FFFFFF] shadow-sm">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
               sniperTriggered ? 'bg-[#10B981] animate-ping' : 'bg-[#F59E0B] animate-pulse'
@@ -922,14 +917,14 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
         )}
       </div>
 
-      {/* 3. ONE Sleek Glassmorphic VIP AI Signal Card Directly Below Chart (Zero Scroll) */}
+      {/* 3. Clean VIP AI Signal Card Directly Below Chart */}
       <section
         aria-label="VIP AI Signal Card"
         className="shrink-0 rounded-xl border border-[var(--vp-border)] bg-[var(--vp-surface)] px-2.5 py-2 sm:px-3.5 sm:py-2.5 shadow-[var(--vp-card-shadow)] space-y-2"
       >
-        {/* Top Header Row: Signal Badge, Win Rate, RR */}
+        {/* Top Header Row: Signal Badge, Readable Black-on-Gold Win Rate, RR */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span
               className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-extrabold text-[#FFFFFF] shadow-sm whitespace-nowrap"
               style={{
@@ -938,23 +933,22 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
             >
               {vipSignal.direction === 'BUY' ? '🚀 STRONG BUY' : '🔻 STRONG SELL'}
             </span>
-            <span className="rounded-md border border-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-mono-tabular font-extrabold text-[#FFFFFF] whitespace-nowrap">
+            <span
+              className="rounded-md border border-[#D97706] bg-[#F59E0B] px-2 py-0.5 text-[10.5px] font-mono-tabular font-bold whitespace-nowrap"
+              style={{ color: '#000000', fontWeight: 700 }}
+            >
               {vipSignal.winRatePct}% Win Rate
             </span>
             <span className="rounded-md border border-[var(--vp-border)] bg-[#060911] px-2 py-0.5 text-[10.5px] font-mono-tabular font-extrabold text-[#FFFFFF] whitespace-nowrap">
               {vipSignal.rrText} RR
             </span>
           </div>
-
-          <span className="text-[10px] font-mono-tabular font-bold text-[#FFFFFF] whitespace-nowrap">
-            {activeAssetSpec.label} · {timeframe.toUpperCase()}
-          </span>
         </div>
 
-        {/* 4-Column Bold Price Row in Pure #FFFFFF Text */}
-        <div className="grid grid-cols-4 gap-1.5 font-mono-tabular">
-          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
-            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+        {/* 4-Column Equal-Height Price Row (ENTRY, SL, TP 1, TP 2) */}
+        <div className="grid grid-cols-4 items-stretch gap-1.5 font-mono-tabular">
+          <div className="flex flex-col justify-between rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1.5 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF] whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full bg-[#FBBF24] shrink-0" />
               ENTRY
             </span>
@@ -963,18 +957,18 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
             </span>
           </div>
 
-          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
-            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+          <div className="flex flex-col justify-between rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1.5 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF] whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full bg-[#FF2A5F] shrink-0" />
-              STOP LOSS
+              SL
             </span>
             <span className="block text-[11.5px] sm:text-xs font-extrabold text-[#FFFFFF] truncate">
               {vipSignal.sl.toFixed(activeAssetSpec.precision)}
             </span>
           </div>
 
-          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
-            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+          <div className="flex flex-col justify-between rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1.5 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF] whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full bg-[#00FFA3] shrink-0" />
               TP 1
             </span>
@@ -983,8 +977,8 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
             </span>
           </div>
 
-          <div className="rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1 min-w-0">
-            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF]">
+          <div className="flex flex-col justify-between rounded-lg border border-[var(--vp-border)] bg-[#060911] px-2 py-1.5 min-w-0">
+            <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase text-[#FFFFFF] whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full bg-[#00FFA3] shrink-0" />
               TP 2
             </span>
@@ -994,16 +988,18 @@ export const AiSuiteView: React.FC<AiSuiteViewProps> = ({
           </div>
         </div>
 
-        {/* Bottom 1-Line Reason + Glowing Execute Trade CTA */}
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[10.5px] font-semibold text-[#FFFFFF] truncate min-w-0 flex-1">
-            {execNotice ?? vipSignal.reason}
-          </p>
+        {/* Clean Execute CTA Row (Zero faint watermark/placeholder text) */}
+        <div className="flex items-center justify-end gap-2">
+          {execNotice && (
+            <p className="text-[10.5px] font-bold text-[#F43F5E] truncate min-w-0 flex-1">
+              {execNotice}
+            </p>
+          )}
 
           <button
             type="button"
             onClick={handleExecuteAiTrade}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-extrabold text-[#FFFFFF] cursor-pointer whitespace-nowrap shrink-0 transition-all hover:brightness-110 active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[11px] font-extrabold text-[#FFFFFF] cursor-pointer whitespace-nowrap shrink-0 transition-all hover:brightness-110 active:scale-[0.98]"
             style={{
               backgroundColor: vipSignal.direction === 'BUY' ? '#10B981' : '#F43F5E',
               boxShadow:

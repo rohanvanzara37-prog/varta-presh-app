@@ -686,34 +686,31 @@ const ChartCanvasOverlayInner: React.FC<ChartCanvasOverlayProps> = (props) => {
           }
         }
 
-        // 4. Support (#00E5FF) & Resistance (#FF4D6D) Horizontal 2px Solid Levels + Crisp Dark Pill White Text
+        // 4. Support (#00E5FF) & Resistance (#FF4D6D) Horizontal 2px Solid Levels + Left-Side Badges (x = 15px)
         if (showSupportResistance) {
           for (let i = 0; i < structure.srLevels.length; i += 1) {
             const sr = structure.srLevels[i];
             const y = toY(sr.price);
             if (y === null || y < 4 || y > height - 4) continue;
-            const xStart = Math.max(0, toX(sr.startTime) ?? 0);
             const lineColor = sr.kind === 'support' ? '#00E5FF' : '#FF4D6D';
 
             ctx.save();
             ctx.strokeStyle = lineColor;
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(xStart, y);
+            ctx.moveTo(10, y);
             ctx.lineTo(plotRight, y);
             ctx.stroke();
             ctx.restore();
 
-            const tagX = canPlaceRightTag(y, 20) ? plotRight - 6 : plotRight - 104;
-            if (tagX === plotRight - 6) usedRightYs.push(y);
             drawPillLabel(
               `${sr.label} • ${sr.price.toFixed(precision)}`,
-              tagX,
+              15,
               y,
               isLight ? 'rgba(255,255,255,0.96)' : '#0F1626',
               lineColor,
-              isLight ? lineColor : '#FFFFFF',
-              { align: 'right', fontSize: 9 }
+              isLight ? '#0F172A' : '#FFFFFF',
+              { align: 'left', fontSize: 9 }
             );
           }
 
